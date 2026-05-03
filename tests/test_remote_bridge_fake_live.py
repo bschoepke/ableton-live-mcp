@@ -446,6 +446,26 @@ def test_batch_inherits_response_controls(monkeypatch):
     assert result[1]["result"] == "abc...<truncated 3 chars>"
 
 
+def test_remote_script_read_line_preserves_buffered_requests(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+
+    class FakeSocket:
+        def __init__(self):
+            self.chunks = [b'{"id":1}\n{"id":2}', b'\n{"id":3}\n']
+
+        def recv(self, _size):
+            return self.chunks.pop(0) if self.chunks else b""
+
+    sock = FakeSocket()
+    line, buffer = bridge._read_line(sock, b"")
+    assert line == b'{"id":1}'
+    line, buffer = bridge._read_line(sock, buffer)
+    assert line == b'{"id":2}'
+    line, buffer = bridge._read_line(sock, buffer)
+    assert line == b'{"id":3}'
+    assert buffer == b""
+
+
 def test_exec_returns_result_binding(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     result = bridge._rpc_exec({"code": "song.tempo = 124\nresult = {'tempo': song.tempo}"})

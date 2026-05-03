@@ -82,8 +82,9 @@ class AbletonObjectMCP(ControlSurface):
             return
         try:
             client.settimeout(CLIENT_TIMEOUT)
+            buffer = b""
             while self._running:
-                data = self._read_line(client)
+                data, buffer = self._read_line(client, buffer)
                 if not data:
                     break
                 request = json.loads(data.decode("utf-8"))
@@ -102,18 +103,27 @@ class AbletonObjectMCP(ControlSurface):
                 pass
             self._handler_slots.release()
 
-    def _read_line(self, client):
-        chunks = []
+    def _read_line(self, client, buffer):
+        chunks = [buffer] if buffer else []
+        total = len(buffer)
+        if b"\n" in buffer:
+            line, remainder = buffer.split(b"\n", 1)
+            return line, remainder
         while True:
             chunk = client.recv(4096)
             if not chunk:
                 break
             chunks.append(chunk)
-            if sum(len(item) for item in chunks) > MAX_REQUEST_BYTES:
+            total += len(chunk)
+            if total > MAX_REQUEST_BYTES:
                 raise ValueError("Request exceeds maximum size")
             if b"\n" in chunk:
                 break
-        return b"".join(chunks).split(b"\n", 1)[0]
+        data = b"".join(chunks)
+        if b"\n" in data:
+            line, remainder = data.split(b"\n", 1)
+            return line, remainder
+        return data, b""
 
     def _dispatch(self, request):
         req_id = request.get("id")
