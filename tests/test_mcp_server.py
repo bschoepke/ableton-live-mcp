@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ableton_object_mcp.bridge import AbletonBridgeClient, AbletonBridgeError
+from ableton_object_mcp.bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig
 from ableton_object_mcp.install_remote_script import install_remote_script, remote_script_root
 from ableton_object_mcp.server import make_server
 from ableton_object_mcp.benchmark import run_benchmark
@@ -346,6 +346,22 @@ def test_bridge_error_omits_traceback_by_default(monkeypatch):
         client.request("ping")
     assert "bad call" in str(exc.value)
     assert "Traceback" not in str(exc.value)
+
+
+def test_bridge_client_defaults_can_be_configured_from_env(monkeypatch):
+    monkeypatch.setenv("ABLETON_MCP_HOST", "127.0.0.2")
+    monkeypatch.setenv("ABLETON_MCP_PORT", "9876")
+    monkeypatch.setenv("ABLETON_MCP_TIMEOUT", "45")
+    monkeypatch.setenv("ABLETON_MCP_MAX_RESPONSE_BYTES", "123456")
+
+    config = AbletonBridgeClient().config
+
+    assert config == BridgeConfig(
+        host="127.0.0.2",
+        port=9876,
+        timeout=45.0,
+        max_response_bytes=123456,
+    )
 
 
 def test_bridge_client_reuses_socket(monkeypatch):

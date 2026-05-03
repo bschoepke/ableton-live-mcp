@@ -20,10 +20,19 @@ class BridgeConfig:
     timeout: float = 10.0
     max_response_bytes: int = 8 * 1024 * 1024
 
+    @classmethod
+    def from_env(cls) -> "BridgeConfig":
+        return cls(
+            host=os.environ.get("ABLETON_MCP_HOST", cls.host),
+            port=int(os.environ.get("ABLETON_MCP_PORT", str(cls.port))),
+            timeout=float(os.environ.get("ABLETON_MCP_TIMEOUT", str(cls.timeout))),
+            max_response_bytes=int(os.environ.get("ABLETON_MCP_MAX_RESPONSE_BYTES", str(cls.max_response_bytes))),
+        )
+
 
 class AbletonBridgeClient:
     def __init__(self, config: BridgeConfig | None = None) -> None:
-        self.config = config or BridgeConfig()
+        self.config = config or BridgeConfig.from_env()
         self._ids = itertools.count(1)
         self._sock: socket.socket | None = None
         self._lock = threading.Lock()

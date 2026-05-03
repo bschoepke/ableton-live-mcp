@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from . import __version__
@@ -25,11 +24,7 @@ def schema(properties: dict[str, Any], required: list[str] | None = None) -> dic
 
 
 def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
-    bridge = client or AbletonBridgeClient(BridgeConfig(
-        host=os.environ.get("ABLETON_MCP_HOST", "127.0.0.1"),
-        port=int(os.environ.get("ABLETON_MCP_PORT", "8765")),
-        timeout=float(os.environ.get("ABLETON_MCP_TIMEOUT", "10")),
-    ))
+    bridge = client or AbletonBridgeClient(BridgeConfig.from_env())
     server = StdioMcpServer("ableton-object-mcp", __version__, ABLETON_MCP_INSTRUCTIONS)
 
     def forward(method: str):
