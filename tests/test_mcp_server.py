@@ -502,12 +502,15 @@ def test_prompt_audit_runs_expected_bridge_methods():
                 return {"ok": True}
             if method == "set_summary":
                 return {"tracks": [
-                    {"arrangement_clips": [{"id": 301, "name": "MCP Prompt Audit Existing"}]},
+                    {"index": 0, "name": "Audit Automation", "clips": [{"id": 201, "name": "MCP Prompt Audit Automation"}], "arrangement_clips": []},
+                    {"index": 1, "name": "Audit Existing MIDI", "arrangement_clips": [{"id": 301, "name": "MCP Prompt Audit Existing"}]},
                     {"arrangement_clips": [{"id": 401, "name": "MCP Prompt Audit Warp"}]},
                 ]}
+            if method == "get":
+                return {"id": 601, "properties": {"name": "Track Volume", "value": 0.85}}
             if method == "clip_notes":
                 return {"notes": [{"note_id": 1, "velocity": 64.0}]}
-            if method in {"clip_update_notes", "clip_warp_markers", "browser_load"}:
+            if method in {"clip_update_notes", "clip_warp_markers", "clip_envelope", "browser_load"}:
                 return {"ok": True}
             raise AssertionError(method)
 
@@ -517,4 +520,4 @@ def test_prompt_audit_runs_expected_bridge_methods():
     assert code == 0
     assert output["ok"] is True
     assert output["destructive"] is True
-    assert {"batch", "exec", "set_summary", "clip_notes", "clip_update_notes", "clip_warp_markers", "browser_search", "browser_load"} <= set(methods)
+    assert {"batch", "exec", "set_summary", "get", "clip_notes", "clip_update_notes", "clip_envelope", "clip_warp_markers", "browser_search", "browser_load"} <= set(methods)

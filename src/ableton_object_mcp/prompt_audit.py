@@ -108,6 +108,40 @@ def _scenario_existing_project_edit(client: AbletonBridgeClient) -> dict[str, An
     return _scenario_result("existing_project_midi_edit", "Edit notes in an existing Arrangement clip", calls)
 
 
+def _scenario_clip_automation_edit(client: AbletonBridgeClient) -> dict[str, Any]:
+    calls = [
+        _call(client, "exec", {"code": _AUTOMATION_SETUP_CODE, "timeout": 5}, "seed_existing_automation_clip"),
+        _call(client, "set_summary", {"track_query": "Audit Automation", "track_limit": 1, "clip_slot_limit": 2, "device_limit": 1, "arrangement_clip_limit": 4}, "summarize_automation_target"),
+    ]
+    clip_id = None
+    track_index = None
+    for track in calls[1]["result"].get("tracks", []):
+        if track.get("name") == "Audit Automation":
+            track_index = track.get("index")
+        for clip in track.get("clips") or []:
+            if clip.get("name") == "MCP Prompt Audit Automation":
+                clip_id = clip["id"]
+    if track_index is None:
+        raise RuntimeError("Prompt audit automation track was not found")
+    calls.append(_call(client, "get", {"ref": {"path": "live_set tracks %s mixer_device volume" % track_index}, "properties": ["name", "value"]}, "inspect_mixer_volume_parameter"))
+    parameter_id = calls[-1]["result"].get("id") if isinstance(calls[-1]["result"], dict) else None
+    if clip_id is None or parameter_id is None:
+        raise RuntimeError("Prompt audit automation target clip or parameter was not found")
+    calls.append(_call(client, "clip_envelope", {
+        "ref": {"id": clip_id},
+        "parameter": {"id": parameter_id},
+        "create": True,
+        "delete_range": {"start_time": 0.0, "end_time": 4.0},
+        "insert_steps": [
+            {"time": 0.0, "duration": 1.0, "value": 0.85},
+            {"time": 1.0, "duration": 1.0, "value": 0.55},
+        ],
+        "start_time": 0.0,
+        "end_time": 4.0,
+    }, "write_clip_volume_automation"))
+    return _scenario_result("clip_automation_edit", "Edit clip automation in an existing project", calls)
+
+
 def _scenario_audio_warp_edit(client: AbletonBridgeClient) -> dict[str, Any]:
     wav_path = _write_probe_wav()
     setup_code = _AUDIO_WARP_SETUP_CODE % str(wav_path)
@@ -185,6 +219,7 @@ def run_prompt_audit(client: AbletonBridgeClient | None = None, *, include_optio
         (_scenario_make_edm_song, False),
         (_scenario_library_sample_track, True),
         (_scenario_existing_project_edit, False),
+        (_scenario_clip_automation_edit, False),
         (_scenario_audio_warp_edit, False),
         (_scenario_plugin_discovery, True),
     ]
@@ -291,6 +326,21 @@ clip.add_new_notes(tuple(specs))
 arrangement_clip = track.duplicate_clip_to_arrangement(clip, 32.0)
 arrangement_clip.name = "MCP Prompt Audit Existing"
 result = {"track": track.name, "notes": len(specs), "arrangement_clip_count": len(track.arrangement_clips)}
+'''
+
+_AUTOMATION_SETUP_CODE = r'''
+song.create_midi_track(len(song.tracks))
+track = song.tracks[-1]
+track.name = "Audit Automation"
+slot = track.clip_slots[0]
+slot.create_clip(4.0)
+clip = slot.clip
+clip.name = "MCP Prompt Audit Automation"
+specs = [Live.Clip.MidiNoteSpecification(pitch=48, start_time=start, duration=0.25, velocity=76, mute=False) for start in (0.0, 1.0, 2.0, 3.0)]
+clip.add_new_notes(tuple(specs))
+arrangement_clip = track.duplicate_clip_to_arrangement(clip, 40.0)
+arrangement_clip.name = "MCP Prompt Audit Automation"
+result = {"track": track.name, "clip": clip.name, "arrangement_clip_count": len(track.arrangement_clips)}
 '''
 
 _AUDIO_WARP_SETUP_CODE = r'''
