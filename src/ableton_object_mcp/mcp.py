@@ -26,9 +26,10 @@ class Tool:
 
 
 class StdioMcpServer:
-    def __init__(self, name: str, version: str) -> None:
+    def __init__(self, name: str, version: str, instructions: str | None = None) -> None:
         self.name = name
         self.version = version
+        self.instructions = instructions
         self.tools: dict[str, Tool] = {}
 
     def add_tool(self, tool: Tool) -> None:
@@ -50,11 +51,14 @@ class StdioMcpServer:
         method = request.get("method")
         try:
             if method == "initialize":
-                return self._result(req_id, {
+                result = {
                     "protocolVersion": request.get("params", {}).get("protocolVersion", "2024-11-05"),
                     "serverInfo": {"name": self.name, "version": self.version},
                     "capabilities": {"tools": {}},
-                })
+                }
+                if self.instructions:
+                    result["instructions"] = self.instructions
+                return self._result(req_id, result)
             if method == "notifications/initialized":
                 return None
             if method == "tools/list":

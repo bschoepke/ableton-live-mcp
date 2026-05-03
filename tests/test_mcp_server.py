@@ -40,6 +40,16 @@ def test_lists_general_purpose_tools():
     } <= names
 
 
+def test_initialize_includes_general_model_instructions():
+    server = make_server(FakeBridge())
+    response = server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+    instructions = response["result"]["instructions"]
+    assert "third-party audio plugins" in instructions
+    assert "roots:['plugins']" in instructions
+    assert "full Live object model remains available" in instructions
+    assert len(instructions) < 1400
+
+
 def test_tool_call_forwards_arguments_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)

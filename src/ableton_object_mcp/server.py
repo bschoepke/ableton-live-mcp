@@ -9,6 +9,14 @@ from .mcp import StdioMcpServer, Tool
 
 
 ABLETON_AGENT_GUIDE = "General Live object-model bridge; examples are heuristics, not limits."
+ABLETON_MCP_INSTRUCTIONS = (
+    "Use this as a general-purpose bridge to Ableton Live's object model, not a limited recipe API. "
+    "Prefer installed Ableton browser content, Packs, user-library assets, samples, presets, devices, and indexed third-party audio plugins before synthesizing or generating assets, unless the user asks otherwise. "
+    "Discover runtime availability with live_browser_roots/live_browser_search, including roots:['plugins'] for AU/VST/plugin content; Live version, SKU, Packs, user folders, and plugin indexing vary, so fall back gracefully. "
+    "For speed and low token use, prefer one compact live_eval exec(...) summary for coherent edits, live_batch for independent generic get/set/call/children/eval operations, specific property lists, child limits, max_items, and max_depth. "
+    "Avoid broad browser/device dumps. Common gotchas: live_eval is eval so statements need exec(...); Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via the browser or create audio clips; object summaries are compact unless detail:true is requested. "
+    "These are workflow hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
+)
 
 
 def schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -21,7 +29,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         port=int(os.environ.get("ABLETON_MCP_PORT", "8765")),
         timeout=float(os.environ.get("ABLETON_MCP_TIMEOUT", "10")),
     ))
-    server = StdioMcpServer("ableton-object-mcp", __version__)
+    server = StdioMcpServer("ableton-object-mcp", __version__, ABLETON_MCP_INSTRUCTIONS)
 
     def forward(method: str):
         return lambda args: bridge.request(method, args)
