@@ -9,6 +9,7 @@ from ableton_object_mcp.bridge import AbletonBridgeClient, AbletonBridgeError
 from ableton_object_mcp.install_remote_script import install_remote_script, remote_script_root
 from ableton_object_mcp.server import make_server
 from ableton_object_mcp.benchmark import run_benchmark
+from ableton_object_mcp.prompt_audit import run_prompt_audit
 from ableton_object_mcp.smoke import run_smoke
 
 
@@ -110,7 +111,7 @@ def test_tool_call_validates_arguments_before_bridge():
 def test_set_summary_tool_forwards_limits_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)
-    args = {"track_limit": 8, "clip_slot_limit": 4, "device_limit": 4, "arrangement_clip_limit": 2}
+    args = {"track_limit": 8, "clip_slot_limit": 4, "device_limit": 4, "arrangement_clip_limit": 2, "track_query": "bass"}
     response = server.handle({
         "jsonrpc": "2.0",
         "id": 21,
@@ -478,3 +479,40 @@ def test_benchmark_skips_optional_failures():
     assert output["summary"]["skipped"] == 1
     skipped = [check for check in output["checks"] if check.get("skipped")]
     assert skipped[0]["name"] == "device_parameter_filter"
+
+
+def test_prompt_audit_runs_expected_bridge_methods():
+    class PromptBridge:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, method, params):
+            self.calls.append((method, params))
+            if method == "browser_search" and params.get("query") == "cowbell":
+                return {"results": [{"id": 101, "name": "Cowbell.wav"}]}
+            if method == "browser_search":
+                return {"results": [{"id": 202, "name": "Plugin"}]}
+            if method == "batch":
+                return [{"ok": True, "result": {"results": []}}]
+            if method == "exec" and "track_path" in params.get("code", ""):
+                return {"track_path": "live_set tracks 1", "track": "Audit Library Sample"}
+            if method == "exec":
+                return {"ok": True}
+            if method == "set_summary":
+                return {"tracks": [
+                    {"arrangement_clips": [{"id": 301, "name": "MCP Prompt Audit Existing"}]},
+                    {"arrangement_clips": [{"id": 401, "name": "MCP Prompt Audit Warp"}]},
+                ]}
+            if method == "clip_notes":
+                return {"notes": [{"note_id": 1, "velocity": 64.0}]}
+            if method in {"clip_update_notes", "clip_warp_markers", "browser_load"}:
+                return {"ok": True}
+            raise AssertionError(method)
+
+    bridge = PromptBridge()
+    code, output = run_prompt_audit(bridge)
+    methods = [method for method, _params in bridge.calls]
+    assert code == 0
+    assert output["ok"] is True
+    assert output["destructive"] is True
+    assert {"batch", "exec", "set_summary", "clip_notes", "clip_update_notes", "clip_warp_markers", "browser_search", "browser_load"} <= set(methods)

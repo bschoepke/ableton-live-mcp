@@ -178,6 +178,7 @@ class AbletonObjectMCP(ControlSurface):
         clip_slot_limit = int(params.get("clip_slot_limit") if params.get("clip_slot_limit") is not None else 16)
         device_limit = int(params.get("device_limit") if params.get("device_limit") is not None else 16)
         arrangement_clip_limit = int(params.get("arrangement_clip_limit") if params.get("arrangement_clip_limit") is not None else 0)
+        track_query = (params.get("track_query") or "").strip().lower()
         include_returns = params.get("include_return_tracks")
         if include_returns is None:
             include_returns = True
@@ -185,14 +186,20 @@ class AbletonObjectMCP(ControlSurface):
         if include_master is None:
             include_master = True
         tracks = []
+        tracks_scanned = 0
         for index, track in enumerate(song.tracks):
-            if track_limit >= 0 and index >= track_limit:
+            tracks_scanned += 1
+            if track_query and track_query not in getattr(track, "name", "").lower():
+                continue
+            if track_limit >= 0 and len(tracks) >= track_limit:
                 tracks.append({"truncated": True})
                 break
             tracks.append(self._track_summary(track, index, clip_slot_limit, device_limit, arrangement_clip_limit))
         returns = []
         if include_returns:
             for index, track in enumerate(song.return_tracks):
+                if track_query and track_query not in getattr(track, "name", "").lower():
+                    continue
                 returns.append(self._track_summary(track, index, clip_slot_limit, device_limit, 0))
         result = {
             "tempo": song.tempo,
@@ -200,6 +207,7 @@ class AbletonObjectMCP(ControlSurface):
             "signature_denominator": song.signature_denominator,
             "current_song_time": song.current_song_time,
             "tracks": tracks,
+            "tracks_scanned": tracks_scanned,
             "return_tracks": returns,
             "scene_count": len(song.scenes),
         }

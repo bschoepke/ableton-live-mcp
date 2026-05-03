@@ -20,6 +20,7 @@ ableton-object-mcp = "ableton_object_mcp.server:main"
 ableton-object-mcp-validate = "ableton_object_mcp.validate:main"
 ableton-object-mcp-smoke = "ableton_object_mcp.smoke:main"
 ableton-object-mcp-benchmark = "ableton_object_mcp.benchmark:main"
+ableton-object-mcp-prompt-audit = "ableton_object_mcp.prompt_audit:main"
 ableton-object-mcp-install-remote-script = "ableton_object_mcp.install_remote_script:main"
 
 [tool.pytest.ini_options]

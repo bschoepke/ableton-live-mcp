@@ -68,6 +68,12 @@ This repo implements a general-purpose Model Context Protocol server for Ableton
    ableton-object-mcp-benchmark
    ```
 
+8. Run destructive real-prompt audits only against disposable sets:
+
+   ```sh
+   ableton-object-mcp-prompt-audit --yes
+   ```
+
 Publish releases from a clean git archive or build artifact, not by zipping a working directory. Local generated audio and cache folders are ignored but may still exist in development workspaces.
 
 ## MCP Tools
@@ -97,7 +103,7 @@ Publish releases from a clean git archive or build artifact, not by zipping a wo
 
 ## Validation
 
-Use `ableton-object-mcp-validate` for a quick connection/version check. Use `ableton-object-mcp-smoke` for broader object-model coverage against a running Live instance: bounded `get`/`children`, `eval`, `batch`, browser roots/search, plugin root discovery, listeners, and event draining. Use `ableton-object-mcp-benchmark` to record latency and payload sizes for common non-destructive workflows, including compact existing-set summaries and optional project-content probes. The smoke and benchmark suites are intentionally non-destructive; they do not create tracks, clips, devices, or modify the open set.
+Use `ableton-object-mcp-validate` for a quick connection/version check. Use `ableton-object-mcp-smoke` for broader object-model coverage against a running Live instance: bounded `get`/`children`, `eval`, `batch`, browser roots/search, plugin root discovery, listeners, and event draining. Use `ableton-object-mcp-benchmark` to record latency and payload sizes for common non-destructive workflows, including compact existing-set summaries and optional project-content probes. The smoke and benchmark suites are intentionally non-destructive; they do not create tracks, clips, devices, or modify the open set. Use `ableton-object-mcp-prompt-audit --yes` for destructive end-to-end prompt workflows such as creating an EDM arrangement, loading an installed sample, editing existing MIDI notes, editing automation/warp state, and discovering plugins.
 
 ## Agent Usage Guide
 
@@ -109,6 +115,7 @@ Common workflows that work well:
 
 - Batch multi-step edits with `live_exec`, setting `result` to a compact summary instead of returning large object dumps.
 - For existing-project prompts, start with `live_set_summary` to understand the current set before editing in place.
+- If the prompt names a track, pass `track_query` to `live_set_summary` to avoid returning unrelated tracks.
 - For Arrangement-editing prompts, request `arrangement_clip_limit` in `live_set_summary` so clip names, ids, and positions are available without a custom object walk.
 - Batch independent generic operations with `live_batch` when the work does not need custom Python code.
 - Discover library content with `live_browser_search` using bounded roots, depth, and result limits. Search results include reusable BrowserItem ids.

@@ -324,6 +324,11 @@ def test_set_summary_compacts_existing_project_state(monkeypatch):
     assert result["return_tracks"][0]["name"] == "A-Reverb"
     assert result["master_track"]["name"] == "Main"
 
+    filtered = bridge._rpc_set_summary({"track_query": "track 2", "include_return_tracks": False, "include_master_track": False})
+    assert filtered["tracks_scanned"] == 2
+    assert [track["name"] for track in filtered["tracks"]] == ["Track 2"]
+    assert filtered["return_tracks"] == []
+
 
 def test_clip_notes_can_be_listed_and_updated(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)

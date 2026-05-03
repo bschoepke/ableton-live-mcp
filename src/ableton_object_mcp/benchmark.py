@@ -69,6 +69,15 @@ def _benchmarks(include_browser: bool) -> list[tuple[str, RequestFactory, bool]]
             "include_return_tracks": True,
             "include_master_track": True,
         }), False),
+        ("set_summary_targeted_track", lambda: ("set_summary", {
+            "track_query": "Audit Existing MIDI",
+            "track_limit": 4,
+            "clip_slot_limit": 2,
+            "device_limit": 2,
+            "arrangement_clip_limit": 4,
+            "include_return_tracks": False,
+            "include_master_track": False,
+        }), True),
         ("batch_status", lambda: ("batch", {
             "operations": [
                 {"method": "get", "params": {"ref": {"path": "live_set"}, "properties": ["tempo"]}},

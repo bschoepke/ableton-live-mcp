@@ -67,6 +67,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "clip_slot_limit": {"type": "integer"},
         "device_limit": {"type": "integer"},
         "arrangement_clip_limit": {"type": "integer"},
+        "track_query": {"type": "string"},
         "include_return_tracks": {"type": "boolean"},
         "include_master_track": {"type": "boolean"},
         **response_controls,
