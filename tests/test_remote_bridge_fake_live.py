@@ -199,6 +199,12 @@ def test_device_parameters_are_compact_and_addressable(monkeypatch):
     param = bridge._resolve({"id": result[0]["id"]})
     assert param.name == "Threshold"
 
+    limited = bridge._rpc_device_parameters({"ref": {"path": "live_set tracks 0 devices 0"}, "query": "threshold", "limit": 5})
+    assert limited[-1].get("truncated") is None
+
+    truncated = bridge._rpc_device_parameters({"ref": {"path": "live_set tracks 0 devices 0"}, "limit": 1})
+    assert truncated[-1] == {"truncated": True}
+
 
 def test_app_browser_path_roots_and_stale_id_errors(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)

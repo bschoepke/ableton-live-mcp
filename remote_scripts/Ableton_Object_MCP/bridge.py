@@ -208,12 +208,17 @@ class AbletonObjectMCP(ControlSurface):
         query = (params.get("query") or "").strip().lower()
         terms = [term for term in query.split() if term]
         limit = params.get("limit")
-        values, truncated = self._take(getattr(device, "parameters"), limit)
         result = []
-        for param in values:
+        max_matches = DEFAULT_CHILD_LIMIT if limit is None else limit
+        unlimited = max_matches is not None and max_matches < 0
+        truncated = False
+        for param in getattr(device, "parameters"):
             name = getattr(param, "name", "")
             if terms and not all(term in name.lower() for term in terms):
                 continue
+            if not unlimited and len(result) >= max_matches:
+                truncated = True
+                break
             item = self._parameter_summary(param)
             result.append(item)
         if truncated:
