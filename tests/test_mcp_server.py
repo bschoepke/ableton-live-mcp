@@ -42,6 +42,7 @@ def test_lists_general_purpose_tools():
         "live_browser_capabilities",
         "live_browser_search",
         "live_browser_load",
+        "live_browser_preview",
         "live_observe",
         "live_events",
     } <= names
@@ -215,6 +216,29 @@ def test_browser_load_tool_forwards_item_ref_to_bridge():
     })
     assert bridge.calls == [("browser_load", args)]
     assert response["result"]["structuredContent"]["method"] == "browser_load"
+
+
+def test_browser_preview_tool_forwards_item_ref_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {"item": {"id": 123}}
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 61,
+        "method": "tools/call",
+        "params": {"name": "live_browser_preview", "arguments": args},
+    })
+    assert bridge.calls == [("browser_preview", args)]
+    assert response["result"]["structuredContent"]["method"] == "browser_preview"
+
+    stop_args = {"stop": True}
+    server.handle({
+        "jsonrpc": "2.0",
+        "id": 62,
+        "method": "tools/call",
+        "params": {"name": "live_browser_preview", "arguments": stop_args},
+    })
+    assert bridge.calls[-1] == ("browser_preview", stop_args)
 
 
 def test_tool_list_stays_compact():

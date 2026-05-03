@@ -85,6 +85,7 @@ Publish releases from a clean git archive or build artifact, not by zipping a wo
 - `live_browser_capabilities`: list available browser roots, filter types, and whether the installed Live build exposes semantic/similarity search through the Python object model.
 - `live_browser_search`: bounded search over any available `app.browser` roots.
 - `live_browser_load`: load a browser item returned by `live_browser_search`.
+- `live_browser_preview`: preview a browser item or stop previewing.
 - `live_eval`: evaluate a Python expression with `song`, `app`, `obj`, and `Live` bindings.
 - `live_observe`: add or remove a listener for a property; events are retained by the bridge.
 - `live_events`: drain retained listener events.
@@ -108,6 +109,7 @@ Common workflows that work well:
 - For existing-project prompts, start with `live_set_summary` to understand the current set before editing in place.
 - Batch independent generic operations with `live_batch` when the work does not need custom Python code.
 - Discover library content with `live_browser_search` using bounded roots, depth, and result limits. Search results include reusable BrowserItem ids.
+- Preview candidate samples or presets with `live_browser_preview` before loading them, then call it with `stop: true` when done.
 - Discover third-party audio plugins through the `plugins` browser root. Plugin formats/vendors are whatever the local Live install indexes, for example AU/VST roots on that machine.
 - Load devices or presets by traversing `app.browser` to a loadable `BrowserItem`, selecting the target track with `song.view.selected_track`, then calling `app.browser.load_item(item)`.
 - Load individual samples the same way: create/select a MIDI track, load the sample `BrowserItem`, then create MIDI notes for the generated sample device. This is the reliable path for “put this sample in Simpler” style prompts.

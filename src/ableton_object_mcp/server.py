@@ -151,6 +151,10 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "item": browser_item_ref,
         "target_track": ref,
     }, ["item"]), forward("browser_load")))
+    server.add_tool(Tool("live_browser_preview", "Preview or stop previewing a BrowserItem.", schema({
+        "item": browser_item_ref,
+        "stop": {"type": "boolean"},
+    }), forward("browser_preview")))
     server.add_tool(Tool("live_eval", (
         "Evaluate a Python expression inside Live with song, app, obj, and Live bindings. "
         + ABLETON_AGENT_GUIDE

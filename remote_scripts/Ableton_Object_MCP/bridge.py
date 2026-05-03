@@ -466,6 +466,15 @@ class AbletonObjectMCP(ControlSurface):
         Live.Application.get_application().browser.load_item(item)
         return self._browser_item_result(None, item, None)
 
+    def _rpc_browser_preview(self, params):
+        browser = Live.Application.get_application().browser
+        if params.get("stop"):
+            browser.stop_preview()
+            return {"previewing": False}
+        item = self._resolve(params.get("item"))
+        browser.preview_item(item)
+        return {"previewing": True, "item": self._browser_item_result(None, item, None)}
+
     def _rpc_eval(self, params):
         ref = params.get("ref")
         obj = self._resolve(ref) if ref else None

@@ -67,9 +67,17 @@ class FakeBrowser:
             ]),
         ])
         self.loaded = []
+        self.previewed = []
+        self.stopped_preview = False
 
     def load_item(self, item):
         self.loaded.append(item.name)
+
+    def preview_item(self, item):
+        self.previewed.append(item.name)
+
+    def stop_preview(self):
+        self.stopped_preview = True
 
 
 class FakeApplication:
@@ -349,6 +357,12 @@ def test_browser_roots_search_and_load(monkeypatch):
     bridge._rpc_browser_load({"item": {"id": plugins["results"][0]["id"]}, "target_track": {"path": "live_set tracks 0"}})
     assert app.browser.loaded == ["Plugin Synth"]
     assert song.view.selected_track.name == "Track 1"
+
+    preview = bridge._rpc_browser_preview({"item": {"id": drums["results"][0]["id"]}})
+    assert preview["previewing"] is True
+    assert app.browser.previewed == ["505 Cowbell Hi.flac"]
+    assert bridge._rpc_browser_preview({"stop": True}) == {"previewing": False}
+    assert app.browser.stopped_preview is True
 
 
 def test_browser_capabilities_report_roots_and_semantic_attrs(monkeypatch):
