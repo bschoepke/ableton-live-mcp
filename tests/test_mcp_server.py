@@ -79,6 +79,34 @@ def test_tool_call_forwards_arguments_to_bridge():
     assert "\n" not in content
 
 
+def test_tool_call_validates_arguments_before_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 20,
+        "method": "tools/call",
+        "params": {
+            "name": "live_call",
+            "arguments": {"ref": {"path": "live_set"}, "method": "create_midi_track", "unexpected": True},
+        },
+    })
+    assert "unknown fields: unexpected" in response["error"]["message"]
+    assert bridge.calls == []
+
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 21,
+        "method": "tools/call",
+        "params": {
+            "name": "live_browser_search",
+            "arguments": {"query": "drum", "limit": 0},
+        },
+    })
+    assert "arguments.limit must be >= 1" in response["error"]["message"]
+    assert bridge.calls == []
+
+
 def test_set_summary_tool_forwards_limits_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)

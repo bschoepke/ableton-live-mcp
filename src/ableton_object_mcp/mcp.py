@@ -68,7 +68,10 @@ class StdioMcpServer:
                 name = params.get("name")
                 if name not in self.tools:
                     raise ValueError(f"Unknown tool: {name}")
-                result = self.tools[name].handler(params.get("arguments", {}) or {})
+                tool = self.tools[name]
+                arguments = params.get("arguments", {}) or {}
+                _validate(arguments, tool.input_schema, "arguments")
+                result = tool.handler(arguments)
                 return self._result(req_id, {
                     "content": [{"type": "text", "text": json.dumps(result, separators=(",", ":"))}],
                     "structuredContent": result,
@@ -80,3 +83,54 @@ class StdioMcpServer:
     @staticmethod
     def _result(req_id: Any, result: Any) -> Json:
         return {"jsonrpc": "2.0", "id": req_id, "result": result}
+
+
+def _validate(value: Any, schema: Json, path: str) -> None:
+    if not schema:
+        return
+    if "oneOf" in schema:
+        errors = []
+        for option in schema["oneOf"]:
+            try:
+                _validate(value, option, path)
+                return
+            except ValueError as exc:
+                errors.append(str(exc))
+        raise ValueError("%s does not match any allowed shape: %s" % (path, "; ".join(errors)))
+    expected = schema.get("type")
+    if expected:
+        _validate_type(value, expected, path)
+    if "minimum" in schema and value < schema["minimum"]:
+        raise ValueError("%s must be >= %s" % (path, schema["minimum"]))
+    if expected == "object":
+        if schema.get("additionalProperties") is False:
+            allowed = set(schema.get("properties", {}).keys())
+            extra = sorted(set(value.keys()) - allowed)
+            if extra:
+                raise ValueError("%s has unknown fields: %s" % (path, ", ".join(extra)))
+        for name in schema.get("required", []):
+            if name not in value:
+                raise ValueError("%s.%s is required" % (path, name))
+        for name, item in value.items():
+            child_schema = schema.get("properties", {}).get(name)
+            if child_schema:
+                _validate(item, child_schema, "%s.%s" % (path, name))
+            elif isinstance(schema.get("additionalProperties"), dict):
+                _validate(item, schema["additionalProperties"], "%s.%s" % (path, name))
+    elif expected == "array" and "items" in schema:
+        for index, item in enumerate(value):
+            _validate(item, schema["items"], "%s[%s]" % (path, index))
+
+
+def _validate_type(value: Any, expected: str, path: str) -> None:
+    checks = {
+        "object": lambda item: isinstance(item, dict),
+        "array": lambda item: isinstance(item, list),
+        "string": lambda item: isinstance(item, str),
+        "integer": lambda item: isinstance(item, int) and not isinstance(item, bool),
+        "number": lambda item: isinstance(item, (int, float)) and not isinstance(item, bool),
+        "boolean": lambda item: isinstance(item, bool),
+    }
+    check = checks.get(expected)
+    if check and not check(value):
+        raise ValueError("%s must be %s" % (path, expected))
