@@ -278,6 +278,40 @@ class AbletonObjectMCP(ControlSurface):
             result.append({"truncated": True})
         return result
 
+    def _rpc_parameter_set(self, params):
+        param = self._resolve(params.get("ref"))
+        before = self._parameter_summary(param)
+        if not hasattr(param, "value"):
+            raise AttributeError("Object has no value property")
+        value = params.get("value")
+        if value is None:
+            raise ValueError("value is required")
+        min_value = before.get("min")
+        max_value = before.get("max")
+        if params.get("coerce"):
+            if min_value is not None and value < min_value:
+                value = min_value
+            if max_value is not None and value > max_value:
+                value = max_value
+            if before.get("is_quantized"):
+                value = int(round(value))
+        else:
+            if min_value is not None and value < min_value:
+                raise ValueError("value %s is below parameter min %s" % (value, min_value))
+            if max_value is not None and value > max_value:
+                raise ValueError("value %s is above parameter max %s" % (value, max_value))
+            if before.get("is_quantized") and int(value) != value:
+                raise ValueError("quantized parameter requires an integer value or coerce:true")
+        param.value = value
+        after = self._parameter_summary(param)
+        return {
+            "parameter": after,
+            "before": before,
+            "requested_value": params.get("value"),
+            "applied_value": after.get("value"),
+            "changed": after.get("value") != before.get("value"),
+        }
+
     def _rpc_clip_notes(self, params):
         clip = self._resolve(params.get("ref"))
         limit = int(params.get("limit") if params.get("limit") is not None else 512)
@@ -361,6 +395,54 @@ class AbletonObjectMCP(ControlSurface):
             "event_count": total,
             "truncated": truncated,
             "events": events,
+        }
+
+    def _rpc_clip_velocity_envelope(self, params):
+        clip = self._resolve(params.get("ref"))
+        parameter = self._resolve(params.get("parameter"))
+        if not getattr(clip, "is_midi_clip", False):
+            raise ValueError("clip_velocity_envelope requires a MIDI clip")
+        start = float(params.get("start_time") if params.get("start_time") is not None else 0.0)
+        end = params.get("end_time")
+        if end is None:
+            end = getattr(clip, "length", start + 16.0)
+        end = float(end)
+        minimum = params.get("min_value")
+        maximum = params.get("max_value")
+        summary = self._parameter_summary(parameter)
+        if minimum is None:
+            minimum = summary.get("min", 0.0)
+        if maximum is None:
+            maximum = summary.get("max", 1.0)
+        minimum = float(minimum)
+        maximum = float(maximum)
+        if params.get("invert"):
+            minimum, maximum = maximum, minimum
+        envelope = clip.automation_envelope(parameter)
+        if envelope is None:
+            envelope = clip.create_automation_envelope(parameter)
+        if params.get("clear", True):
+            envelope.delete_events_in_range(start, end)
+        notes = [note for note in clip.get_all_notes_extended() if start <= note.start_time < end]
+        for note in notes:
+            velocity = float(getattr(note, "velocity", 0.0))
+            normalized = max(0.0, min(1.0, velocity / 127.0))
+            value = minimum + (maximum - minimum) * normalized
+            duration = float(params.get("step_duration") if params.get("step_duration") is not None else getattr(note, "duration", 0.125))
+            envelope.insert_step(float(note.start_time), duration, value)
+        all_events = list(envelope.events_in_range(start, end))
+        limit = int(params.get("limit") if params.get("limit") is not None else 128)
+        truncated = False
+        if limit >= 0 and len(all_events) > limit:
+            all_events = all_events[:limit]
+            truncated = True
+        return {
+            "clip": self._clip_summary(clip, None),
+            "parameter": self._parameter_summary(parameter),
+            "notes_mapped": len(notes),
+            "event_count": len(list(envelope.events_in_range(start, end))),
+            "truncated": truncated,
+            "events": [self._automation_event_summary(event) for event in all_events],
         }
 
     def _rpc_clip_warp_markers(self, params):

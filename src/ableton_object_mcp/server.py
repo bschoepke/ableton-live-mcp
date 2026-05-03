@@ -92,6 +92,12 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "limit": {"type": "integer", "minimum": 0},
         **response_controls,
     }, ["ref"]), forward("device_parameters")))
+    server.add_tool(Tool("live_parameter_set", "Set one DeviceParameter value with min/max and quantized validation.", schema({
+        "ref": ref,
+        "value": {"type": "number"},
+        "coerce": {"type": "boolean", "description": "Clamp to min/max and round quantized values instead of rejecting."},
+        **response_controls,
+    }, ["ref", "value"]), forward("parameter_set")))
     server.add_tool(Tool("live_clip_notes", "List MIDI notes from a clip compactly.", schema({
         "ref": ref,
         "limit": {"type": "integer", "minimum": 0},
@@ -132,6 +138,18 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "end_time": {"type": "number"},
         "limit": {"type": "integer", "minimum": 0},
     }, ["ref", "parameter"]), forward("clip_envelope")))
+    server.add_tool(Tool("live_clip_velocity_envelope", "Create parameter automation from MIDI note velocities in a clip.", schema({
+        "ref": ref,
+        "parameter": ref,
+        "min_value": {"type": "number"},
+        "max_value": {"type": "number"},
+        "invert": {"type": "boolean"},
+        "clear": {"type": "boolean"},
+        "step_duration": {"type": "number"},
+        "start_time": {"type": "number"},
+        "end_time": {"type": "number"},
+        "limit": {"type": "integer", "minimum": 0},
+    }, ["ref", "parameter"]), forward("clip_velocity_envelope")))
     server.add_tool(Tool("live_clip_warp_markers", "Inspect or edit audio clip warp state and markers.", schema({
         "ref": ref,
         "warping": {"type": "boolean"},

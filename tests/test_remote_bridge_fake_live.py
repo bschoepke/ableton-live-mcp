@@ -372,6 +372,29 @@ def test_clip_envelope_can_be_inspected_inserted_and_cleared(monkeypatch):
     assert cleared["has_envelope"] is False
 
 
+def test_clip_velocity_envelope_maps_note_velocities(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    clip = song.tracks[0].clip_slots[0].clip
+    clip._notes = [
+        types.SimpleNamespace(note_id=1, pitch=60, start_time=0.0, duration=0.5, velocity=40.0, mute=False, probability=1.0, velocity_deviation=0.0, release_velocity=64.0),
+        types.SimpleNamespace(note_id=2, pitch=64, start_time=1.0, duration=0.5, velocity=80.0, mute=False, probability=1.0, velocity_deviation=0.0, release_velocity=64.0),
+        types.SimpleNamespace(note_id=3, pitch=67, start_time=2.0, duration=0.5, velocity=120.0, mute=False, probability=1.0, velocity_deviation=0.0, release_velocity=64.0),
+    ]
+    parameter = song.tracks[0].devices[0].parameters[1]
+    parameter_ref = {"id": bridge._parameter_summary(parameter)["id"]}
+    result = bridge._rpc_clip_velocity_envelope({
+        "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
+        "parameter": parameter_ref,
+        "min_value": 0.0,
+        "max_value": 1.0,
+        "start_time": 0.0,
+        "end_time": 4.0,
+    })
+    assert result["notes_mapped"] == 3
+    assert result["event_count"] == 6
+    assert [round(event["value"], 3) for event in result["events"][::2]] == [0.315, 0.63, 0.945]
+
+
 def test_clip_warp_markers_can_be_inspected_and_edited(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     clip_ref = {"path": "live_set tracks 0 clip_slots 0 clip"}
@@ -410,6 +433,39 @@ def test_device_parameters_are_compact_and_addressable(monkeypatch):
 
     truncated = bridge._rpc_device_parameters({"ref": {"path": "live_set tracks 0 devices 0"}, "limit": 1})
     assert truncated[-1] == {"truncated": True}
+
+
+def test_parameter_set_validates_and_coerces_values(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    threshold = song.tracks[0].devices[0].parameters[1]
+    threshold_ref = {"id": bridge._parameter_summary(threshold)["id"]}
+
+    changed = bridge._rpc_parameter_set({"ref": threshold_ref, "value": 0.25})
+    assert changed["before"]["value"] == 0.85
+    assert changed["parameter"]["value"] == 0.25
+    assert changed["applied_value"] == 0.25
+    assert changed["changed"] is True
+
+    try:
+        bridge._rpc_parameter_set({"ref": threshold_ref, "value": 2.0})
+    except ValueError as exc:
+        assert "above parameter max" in str(exc)
+    else:
+        raise AssertionError("expected max validation error")
+
+    coerced = bridge._rpc_parameter_set({"ref": threshold_ref, "value": 2.0, "coerce": True})
+    assert coerced["parameter"]["value"] == 1.0
+    assert coerced["changed"] is True
+
+    device_on = song.tracks[0].devices[0].parameters[0]
+    device_on_ref = {"id": bridge._parameter_summary(device_on)["id"]}
+    try:
+        bridge._rpc_parameter_set({"ref": device_on_ref, "value": 0.6})
+    except ValueError as exc:
+        assert "quantized parameter" in str(exc)
+    else:
+        raise AssertionError("expected quantized validation error")
+    assert bridge._rpc_parameter_set({"ref": device_on_ref, "value": 0.6, "coerce": True})["parameter"]["value"] == 1
 
 
 def test_app_browser_path_roots_and_stale_id_errors(monkeypatch):

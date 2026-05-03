@@ -34,9 +34,11 @@ def test_lists_general_purpose_tools():
         "live_call",
         "live_children",
         "live_device_parameters",
+        "live_parameter_set",
         "live_clip_notes",
         "live_clip_update_notes",
         "live_clip_envelope",
+        "live_clip_velocity_envelope",
         "live_clip_warp_markers",
         "live_eval",
         "live_exec",
@@ -155,6 +157,20 @@ def test_device_parameters_tool_forwards_to_bridge():
     assert response["result"]["structuredContent"]["method"] == "device_parameters"
 
 
+def test_parameter_set_tool_forwards_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {"ref": {"id": 99}, "value": 0.75, "coerce": True}
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 36,
+        "method": "tools/call",
+        "params": {"name": "live_parameter_set", "arguments": args},
+    })
+    assert bridge.calls == [("parameter_set", args)]
+    assert response["result"]["structuredContent"]["method"] == "parameter_set"
+
+
 def test_clip_note_tools_forward_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)
@@ -195,6 +211,25 @@ def test_clip_envelope_tool_forwards_to_bridge():
     })
     assert bridge.calls == [("clip_envelope", args)]
     assert response["result"]["structuredContent"]["method"] == "clip_envelope"
+
+
+def test_clip_velocity_envelope_tool_forwards_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {
+        "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
+        "parameter": {"id": 42},
+        "min_value": 0.2,
+        "max_value": 0.8,
+    }
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 37,
+        "method": "tools/call",
+        "params": {"name": "live_clip_velocity_envelope", "arguments": args},
+    })
+    assert bridge.calls == [("clip_velocity_envelope", args)]
+    assert response["result"]["structuredContent"]["method"] == "clip_velocity_envelope"
 
 
 def test_clip_warp_markers_tool_forwards_to_bridge():
