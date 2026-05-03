@@ -81,6 +81,7 @@ Publish releases from a clean git archive or build artifact, not by zipping a wo
 - `live_clip_notes`: list MIDI notes from a clip with note ids, pitch, time, duration, and velocity.
 - `live_clip_update_notes`: update existing MIDI notes by `note_id`.
 - `live_clip_envelope`: inspect or edit one clip automation envelope for a parameter.
+- `live_clip_warp_markers`: inspect or edit audio clip warp state and markers.
 - `live_batch`: run several generic bridge operations in one Live main-thread request.
 - `live_browser_roots`: list available `app.browser` root categories.
 - `live_browser_capabilities`: list available browser roots, filter types, and whether the installed Live build exposes semantic/similarity search through the Python object model.
@@ -118,6 +119,7 @@ Common workflows that work well:
 - Inspect device parameters with `live_device_parameters` before setting them. Use returned parameter ids with `live_set` on `value`, and verify `display`/`display_value` afterward. Many Live parameters expose normalized internal values even when the UI shows dB, Hz, ms, or percent.
 - For existing MIDI clip edits, inspect with `live_clip_notes` and update with `live_clip_update_notes`. When using raw `live_exec`, mutate the `MidiNote` objects returned by `clip.get_all_notes_extended()` and pass that same vector to `clip.apply_note_modifications`; do not construct `MidiNoteSpecification` for existing notes.
 - For existing clip automation edits, get the target parameter id from `live_device_parameters` or `live_get`, then use `live_clip_envelope` to inspect, create, clear a range, and insert step automation.
+- For existing audio clip warp edits, use `live_clip_warp_markers`. Raw object-model calls require `Live.Clip.WarpMarker(sample_time, beat_time)` for new markers and `clip.move_warp_marker(marker_beat_time, beat_time_delta)` for moving existing markers.
 - Create Session MIDI clips with `clip_slot.create_clip(length)` and add notes with `Live.Clip.MidiNoteSpecification(pitch, start_time, duration, velocity, mute)`.
 - Place existing Session clips into the timeline with `track.duplicate_clip_to_arrangement(slot.clip, destination_time)`.
 - Create Arrangement audio clips from local files with `track.create_audio_clip(path, destination_time)`.
@@ -138,6 +140,7 @@ Common errors to avoid:
 - `live_browser_search` is a convenience layer over `app.browser`; use `live_eval` for custom ranking, metadata, unusual browser roots, or workflows not covered by the search schema.
 - Live 12 Sound Similarity/Semantic Search is a Browser feature, but in Live 12.3.8 the Python object model exposed through Control Surfaces does not show semantic/similarity search methods on `app.browser`. Use `live_browser_capabilities` to check the current Live build. If future versions expose it, use the generic object-model tools to call it; otherwise fall back to tags/name/path browser search.
 - Object summaries are compact by default. Set `detail: true` when `repr` or `canonical_path` is needed.
+- Do not reuse raw `_live_ptr` values returned manually from `live_exec` as bridge ids. Use ids returned by bridge summaries such as `live_get`, `live_set_summary`, `live_device_parameters`, or `live_browser_search`.
 - Tracebacks are omitted by default to keep common Live API errors readable. Set `include_traceback: true` on the bridge request or `ABLETON_MCP_TRACEBACK=1` in the Python client environment when debugging.
 
 Token and latency tips:

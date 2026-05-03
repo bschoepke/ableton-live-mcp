@@ -36,6 +36,7 @@ def test_lists_general_purpose_tools():
         "live_clip_notes",
         "live_clip_update_notes",
         "live_clip_envelope",
+        "live_clip_warp_markers",
         "live_eval",
         "live_exec",
         "live_batch",
@@ -165,6 +166,23 @@ def test_clip_envelope_tool_forwards_to_bridge():
     })
     assert bridge.calls == [("clip_envelope", args)]
     assert response["result"]["structuredContent"]["method"] == "clip_envelope"
+
+
+def test_clip_warp_markers_tool_forwards_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {
+        "ref": {"id": 77},
+        "move_markers": [{"beat_time": 4.0, "beat_time_delta": 0.25}],
+    }
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 35,
+        "method": "tools/call",
+        "params": {"name": "live_clip_warp_markers", "arguments": args},
+    })
+    assert bridge.calls == [("clip_warp_markers", args)]
+    assert response["result"]["structuredContent"]["method"] == "clip_warp_markers"
 
 
 def test_browser_search_tool_forwards_query_to_bridge():

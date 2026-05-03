@@ -345,6 +345,35 @@ class AbletonObjectMCP(ControlSurface):
             "events": events,
         }
 
+    def _rpc_clip_warp_markers(self, params):
+        clip = self._resolve(params.get("ref"))
+        if "warping" in params:
+            clip.warping = bool(params.get("warping"))
+        if params.get("warp_mode") is not None:
+            clip.warp_mode = int(params.get("warp_mode"))
+        for beat_time in params.get("remove_beat_times") or []:
+            clip.remove_warp_marker(float(beat_time))
+        for move in params.get("move_markers") or []:
+            clip.move_warp_marker(float(move["beat_time"]), float(move["beat_time_delta"]))
+        for marker in params.get("add_markers") or []:
+            clip.add_warp_marker(Live.Clip.WarpMarker(float(marker["sample_time"]), float(marker["beat_time"])))
+        limit = int(params.get("limit") if params.get("limit") is not None else 128)
+        markers = list(getattr(clip, "warp_markers", []))
+        total = len(markers)
+        truncated = False
+        if limit >= 0 and len(markers) > limit:
+            markers = markers[:limit]
+            truncated = True
+        return {
+            "clip": self._clip_summary(clip, None),
+            "warping": getattr(clip, "warping", None),
+            "warp_mode": getattr(clip, "warp_mode", None),
+            "available_warp_modes": list(getattr(clip, "available_warp_modes", [])),
+            "marker_count": total,
+            "truncated": truncated,
+            "markers": [self._warp_marker_summary(marker) for marker in markers],
+        }
+
     def _rpc_batch(self, params):
         results = []
         continue_on_error = bool(params.get("continue_on_error"))
@@ -756,6 +785,12 @@ class AbletonObjectMCP(ControlSurface):
         return {
             "time": getattr(event, "time", None),
             "value": getattr(event, "value", None),
+        }
+
+    def _warp_marker_summary(self, marker):
+        return {
+            "beat_time": getattr(marker, "beat_time", None),
+            "sample_time": getattr(marker, "sample_time", None),
         }
 
     def _object_id(self, obj):

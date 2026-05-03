@@ -148,6 +148,12 @@ class FakeEnvelope:
         return self._events[0].value if self._events else 0.0
 
 
+class FakeWarpMarker:
+    def __init__(self, sample_time, beat_time):
+        self.sample_time = sample_time
+        self.beat_time = beat_time
+
+
 class FakeClip:
     def __init__(self, name):
         self.name = name
@@ -174,6 +180,10 @@ class FakeClip:
             )
         ]
         self._envelopes = {}
+        self.warping = True
+        self.warp_mode = 0
+        self.available_warp_modes = FakeVector([0, 1, 2, 3, 4, 6])
+        self.warp_markers = FakeVector([FakeWarpMarker(0.0, 0.0), FakeWarpMarker(2.0, 4.0)])
 
     def get_all_notes_extended(self):
         return self._notes
@@ -194,6 +204,23 @@ class FakeClip:
     def clear_envelope(self, parameter):
         self._envelopes.pop(parameter, None)
         self.has_envelopes = bool(self._envelopes)
+
+    def add_warp_marker(self, marker):
+        self.warp_markers.append(marker)
+
+    def move_warp_marker(self, beat_time, beat_time_delta):
+        for marker in self.warp_markers:
+            if marker.beat_time == beat_time:
+                marker.beat_time += beat_time_delta
+                return
+        raise RuntimeError("The specified warp marker doesn't exist")
+
+    def remove_warp_marker(self, beat_time):
+        for index, marker in enumerate(self.warp_markers):
+            if marker.beat_time == beat_time:
+                del self.warp_markers[index]
+                return
+        raise RuntimeError("The specified warp marker doesn't exist")
 
 
 class FakeClipSlot:
@@ -232,6 +259,7 @@ def load_bridge_module(monkeypatch):
     app = FakeApplication()
     live = types.ModuleType("Live")
     live.Application = types.SimpleNamespace(get_application=lambda: app)
+    live.Clip = types.SimpleNamespace(WarpMarker=FakeWarpMarker)
     framework = types.ModuleType("_Framework")
     control_surface = types.ModuleType("_Framework.ControlSurface")
     control_surface.ControlSurface = FakeControlSurface
@@ -337,6 +365,29 @@ def test_clip_envelope_can_be_inspected_inserted_and_cleared(monkeypatch):
 
     cleared = bridge._rpc_clip_envelope({"ref": clip_ref, "parameter": parameter_ref, "clear": True})
     assert cleared["has_envelope"] is False
+
+
+def test_clip_warp_markers_can_be_inspected_and_edited(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    clip_ref = {"path": "live_set tracks 0 clip_slots 0 clip"}
+
+    initial = bridge._rpc_clip_warp_markers({"ref": clip_ref})
+    assert initial["warping"] is True
+    assert initial["marker_count"] == 2
+
+    updated = bridge._rpc_clip_warp_markers({
+        "ref": clip_ref,
+        "warping": True,
+        "warp_mode": 1,
+        "move_markers": [{"beat_time": 4.0, "beat_time_delta": 0.25}],
+        "add_markers": [{"sample_time": 1.0, "beat_time": 1.0}],
+    })
+    assert updated["warp_mode"] == 1
+    assert {"beat_time": 4.25, "sample_time": 2.0} in updated["markers"]
+    assert {"beat_time": 1.0, "sample_time": 1.0} in updated["markers"]
+
+    removed = bridge._rpc_clip_warp_markers({"ref": clip_ref, "remove_beat_times": [1.0]})
+    assert {"beat_time": 1.0, "sample_time": 1.0} not in removed["markers"]
 
 
 def test_device_parameters_are_compact_and_addressable(monkeypatch):

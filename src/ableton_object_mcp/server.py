@@ -15,7 +15,7 @@ ABLETON_MCP_INSTRUCTIONS = (
     "Discover runtime availability with live_browser_capabilities/live_browser_roots/live_browser_search, including roots:['plugins'] for AU/VST/plugin content; Live version, SKU, Packs, user folders, and plugin indexing vary, so fall back gracefully. "
     "For existing projects, start with live_set_summary before custom inspection. "
     "For speed and low token use, prefer one compact live_exec summary for coherent edits, live_batch for independent generic get/set/call/children/eval/exec operations, specific property lists, child limits, max_items, and max_depth. "
-    "Avoid broad browser/device dumps. Common gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via the browser or create audio clips; object summaries are compact unless detail:true is requested. "
+    "Avoid broad browser/device dumps. Common gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via the browser or create audio clips; use ids from bridge summaries, not raw _live_ptr values; object summaries are compact unless detail:true is requested. "
     "These are workflow hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
 
@@ -136,6 +136,21 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "end_time": {"type": "number"},
         "limit": {"type": "integer", "minimum": 0},
     }, ["ref", "parameter"]), forward("clip_envelope")))
+    server.add_tool(Tool("live_clip_warp_markers", "Inspect or edit audio clip warp state and markers.", schema({
+        "ref": ref,
+        "warping": {"type": "boolean"},
+        "warp_mode": {"type": "integer"},
+        "add_markers": {"type": "array", "items": {"type": "object", "properties": {
+            "sample_time": {"type": "number"},
+            "beat_time": {"type": "number"},
+        }, "required": ["sample_time", "beat_time"], "additionalProperties": False}},
+        "move_markers": {"type": "array", "items": {"type": "object", "properties": {
+            "beat_time": {"type": "number"},
+            "beat_time_delta": {"type": "number"},
+        }, "required": ["beat_time", "beat_time_delta"], "additionalProperties": False}},
+        "remove_beat_times": {"type": "array", "items": {"type": "number"}},
+        "limit": {"type": "integer", "minimum": 0},
+    }, ["ref"]), forward("clip_warp_markers")))
     server.add_tool(Tool("live_batch", "Run multiple generic bridge operations in one Live main-thread request; preserves full object-model flexibility.", schema({
         "operations": {"type": "array", "items": {"type": "object", "properties": {
             "method": {"type": "string", "description": "Bridge method name such as get, set, call, children, or eval."},
