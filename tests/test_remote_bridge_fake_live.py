@@ -244,6 +244,23 @@ def test_browser_search_can_stop_on_limit(monkeypatch):
     assert result["truncated"] is True
 
 
+def test_browser_stop_on_limit_waits_for_good_score(monkeypatch):
+    bridge, _song, app = make_bridge(monkeypatch)
+    app.browser.instruments = FakeBrowserItem("instruments", folder=True, children=[
+        FakeBrowserItem("Folder", folder=True, children=[
+            FakeBrowserItem("Secret Kick.adg", loadable=True),
+            FakeBrowserItem("Operator Kick.adv", loadable=True),
+        ]),
+    ])
+    result = bridge._rpc_browser_search({
+        "query": "operator kick",
+        "roots": ["instruments"],
+        "limit": 1,
+        "stop_on_limit": True,
+    })
+    assert result["results"][0]["name"] == "Operator Kick.adv"
+
+
 def test_encode_bounds_cycles_and_detail(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     cycle = []

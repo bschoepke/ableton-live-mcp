@@ -250,6 +250,7 @@ class AbletonObjectMCP(ControlSurface):
             loadable_only = True
         include_folders = bool(params.get("include_folders"))
         stop_on_limit = bool(params.get("stop_on_limit"))
+        stop_score = int(params.get("stop_score") if params.get("stop_score") is not None else 1)
         match_all_terms = params.get("match_all_terms")
         if match_all_terms is None:
             match_all_terms = True
@@ -311,8 +312,10 @@ class AbletonObjectMCP(ControlSurface):
             is_loadable = bool(getattr(item, "is_loadable", False))
             if is_match(item, path_text):
                 if (include_folders or not is_folder) and (not loadable_only or is_loadable):
-                    matches.append((score(item, path_text), len(current_path), self._browser_item_result(root_name, item, path_text)))
-                    if stop_on_limit and len(matches) >= limit:
+                    item_score = score(item, path_text)
+                    matches.append((item_score, len(current_path), self._browser_item_result(root_name, item, path_text)))
+                    good_matches = matches if not terms else [match for match in matches if match[0] <= stop_score]
+                    if stop_on_limit and len(good_matches) >= limit:
                         truncated = True
                         return
             if depth >= max_depth:
