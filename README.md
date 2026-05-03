@@ -129,7 +129,7 @@ Token and latency tips:
 
 - Prefer one `live_exec` call for a coherent edit over many small `live_call` calls.
 - Prefer `live_batch` for several ordinary `get`, `set`, `call`, `children`, or `eval` operations that should share one bridge round trip.
-- Batch related browser searches with `live_batch`; use `stop_on_limit: true` for “first good match” lookups, and leave it false when global ranking matters.
+- Batch related browser searches with `live_batch`; use `stop_on_limit: true` for exact built-in device lookups, add `stop_score: 1` for “first good sample/plugin match” lookups, and leave early stop false when global ranking matters.
 - Prefer `live_browser_search` over ad hoc recursive browser traversals for normal library lookup.
 - Pass `roots: ["plugins"]` to search installed third-party audio plugins specifically.
 - Ask `live_get` only for specific properties and children.

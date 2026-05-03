@@ -250,7 +250,7 @@ class AbletonObjectMCP(ControlSurface):
             loadable_only = True
         include_folders = bool(params.get("include_folders"))
         stop_on_limit = bool(params.get("stop_on_limit"))
-        stop_score = int(params.get("stop_score") if params.get("stop_score") is not None else 1)
+        stop_score = int(params.get("stop_score") if params.get("stop_score") is not None else 0)
         match_all_terms = params.get("match_all_terms")
         if match_all_terms is None:
             match_all_terms = True

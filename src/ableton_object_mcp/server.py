@@ -106,7 +106,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "loadable_only": {"type": "boolean", "description": "Only return loadable browser items. Default true."},
         "include_folders": {"type": "boolean", "description": "Include matching folders. Default false."},
         "stop_on_limit": {"type": "boolean", "description": "Stop traversal as soon as limit matches are found. Faster but less globally ranked. Default false."},
-        "stop_score": {"type": "integer", "description": "With stop_on_limit, only stop after this match quality or better. 0 exact name, 1 query in name, 2 all terms in name, 3 query in path. Default 1."},
+        "stop_score": {"type": "integer", "description": "With stop_on_limit, only stop after this match quality or better. 0 exact name, 1 query in name, 2 all terms in name, 3 query in path. Default 0; use 1 for first-good sample/plugin hunts."},
         "match_all_terms": {"type": "boolean", "description": "Require every query term to match. Default true."},
     }), forward("browser_search")))
     server.add_tool(Tool("live_browser_load", "Load a BrowserItem returned by live_browser_search. Convenience only; app.browser.load_item remains available through live_eval.", schema({

@@ -238,6 +238,7 @@ def test_browser_search_can_stop_on_limit(monkeypatch):
         "include_folders": True,
         "loadable_only": False,
         "stop_on_limit": True,
+        "stop_score": 1,
     })
     assert len(result["results"]) == 1
     assert result["visited"] == 1
