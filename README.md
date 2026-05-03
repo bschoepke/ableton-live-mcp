@@ -108,6 +108,7 @@ Common workflows that work well:
 - Create Session MIDI clips with `clip_slot.create_clip(length)` and add notes with `Live.Clip.MidiNoteSpecification(pitch, start_time, duration, velocity, mute)`.
 - Place existing Session clips into the timeline with `track.duplicate_clip_to_arrangement(slot.clip, destination_time)`.
 - Create Arrangement audio clips from local files with `track.create_audio_clip(path, destination_time)`.
+- For generated WAV hooks that are not indexed in Live's browser, create Arrangement audio clips from the file path. Use browser loading for indexed library/user samples.
 - Search browser categories with bounded traversal and name filters before assuming a sample or preset exists.
 - Return only stable summaries after large edits, for example track names, device names, clip counts, and selected clip names.
 
@@ -128,6 +129,7 @@ Token and latency tips:
 
 - Prefer one `live_exec` call for a coherent edit over many small `live_call` calls.
 - Prefer `live_batch` for several ordinary `get`, `set`, `call`, `children`, or `eval` operations that should share one bridge round trip.
+- Batch related browser searches with `live_batch`; use `stop_on_limit: true` for “first good match” lookups, and leave it false when global ranking matters.
 - Prefer `live_browser_search` over ad hoc recursive browser traversals for normal library lookup.
 - Pass `roots: ["plugins"]` to search installed third-party audio plugins specifically.
 - Ask `live_get` only for specific properties and children.
