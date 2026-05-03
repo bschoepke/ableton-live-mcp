@@ -17,19 +17,20 @@ dev = ["pytest>=8.0"]
 debug = ["pytest>=8.0"]
 
 [project.scripts]
-ableton-live-mcp = "ableton_live_mcp.server:main"
-ableton-live-mcp-validate = "ableton_live_mcp.validate:main"
-ableton-live-mcp-install-remote-script = "ableton_live_mcp.install_remote_script:main"
+ableton-live-mcp = "server:main"
+ableton-live-mcp-validate = "validate:main"
+ableton-live-mcp-install-remote-script = "install_remote_script:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ableton_live_mcp"]
+only-include = ["src"]
+sources = ["src"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"remote_scripts/Ableton_Live_MCP" = "ableton_live_mcp/remote_scripts/Ableton_Live_MCP"
+"remote_scripts/Ableton_Live_MCP" = "remote_scripts/Ableton_Live_MCP"
 
 [tool.hatch.build.targets.sdist]
 include = [

@@ -56,19 +56,19 @@ This repo implements a general-purpose Model Context Protocol server for Ableton
 6. For source checkouts and debug builds, run the broader non-destructive smoke suite before publishing or debugging customer reports:
 
    ```sh
-   ABLETON_LIVE_MCP_DEBUG=1 python -m ableton_live_mcp.smoke
+   ABLETON_LIVE_MCP_DEBUG=1 python -m smoke
    ```
 
 7. Benchmark common non-destructive workflows when optimizing latency or token use:
 
    ```sh
-   ABLETON_LIVE_MCP_DEBUG=1 python -m ableton_live_mcp.benchmark
+   ABLETON_LIVE_MCP_DEBUG=1 python -m benchmark
    ```
 
 8. Run destructive real-prompt audits only against disposable sets:
 
    ```sh
-   ABLETON_LIVE_MCP_DEBUG=1 python -m ableton_live_mcp.prompt_audit --yes
+   ABLETON_LIVE_MCP_DEBUG=1 python -m prompt_audit --yes
    ```
 
 For now this repo is intended to be self-contained: an agent can install it from the checkout, install the bundled Remote Script, and register the local MCP command. If you publish a release later, build it from a clean git archive or build artifact, not by zipping a working directory.
@@ -106,7 +106,7 @@ For now this repo is intended to be self-contained: an agent can install it from
 
 ## Validation
 
-Use `ableton-live-mcp-validate` for a quick connection/version check. The broader smoke, benchmark, and destructive prompt-audit modules are development/debug surfaces, not published end-user MCP commands. From a source checkout or debug build, set `ABLETON_LIVE_MCP_DEBUG=1` and run them with `python -m ableton_live_mcp.smoke`, `python -m ableton_live_mcp.benchmark`, or `python -m ableton_live_mcp.prompt_audit --yes`. The smoke and benchmark suites are intentionally non-destructive; they do not create tracks, clips, devices, or modify the open set. The prompt audit is destructive and is only for disposable sets.
+Use `ableton-live-mcp-validate` for a quick connection/version check. The broader smoke, benchmark, and destructive prompt-audit modules are development/debug surfaces, not published end-user MCP commands. From a source checkout or debug build, set `ABLETON_LIVE_MCP_DEBUG=1` and run them with `python -m smoke`, `python -m benchmark`, or `python -m prompt_audit --yes`. The smoke and benchmark suites are intentionally non-destructive; they do not create tracks, clips, devices, or modify the open set. The prompt audit is destructive and is only for disposable sets.
 
 ## Agent Usage Guide
 

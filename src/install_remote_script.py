@@ -4,7 +4,6 @@ import argparse
 import platform
 import shutil
 import sys
-from importlib import resources
 from pathlib import Path
 
 
@@ -12,17 +11,12 @@ DEFAULT_REMOTE_SCRIPT = "Ableton_Live_MCP"
 
 
 def _resource_root() -> Path | None:
-    try:
-        root = resources.files("ableton_live_mcp") / "remote_scripts"
-        if root.is_dir():
-            return Path(str(root))
-    except Exception:
-        return None
-    return None
+    root = Path(__file__).resolve().parent / "remote_scripts"
+    return root if root.is_dir() else None
 
 
 def _source_root() -> Path | None:
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = Path(__file__).resolve().parents[1]
     root = repo_root / "remote_scripts"
     return root if root.is_dir() else None
 

@@ -4,8 +4,8 @@ import json
 import sys
 from typing import Any
 
-from .bridge import AbletonBridgeClient, AbletonBridgeError
-from .debug import require_debug_cli
+from bridge import AbletonBridgeClient, AbletonBridgeError
+from debug import require_debug_cli
 
 
 def _ok(name: str, result: Any) -> dict[str, Any]:

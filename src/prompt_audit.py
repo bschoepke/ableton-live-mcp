@@ -13,8 +13,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .bridge import AbletonBridgeClient, AbletonBridgeError
-from .debug import require_debug_cli
+from bridge import AbletonBridgeClient, AbletonBridgeError
+from debug import require_debug_cli
 
 
 Scenario = Callable[[AbletonBridgeClient], dict[str, Any]]

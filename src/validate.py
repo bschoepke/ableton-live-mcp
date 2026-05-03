@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sys
 
-from .bridge import AbletonBridgeClient, AbletonBridgeError
+from bridge import AbletonBridgeClient, AbletonBridgeError
 
 
 def main() -> int:

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import __version__
-from .bridge import AbletonBridgeClient, BridgeConfig
-from .mcp import StdioMcpServer, Tool
+from bridge import AbletonBridgeClient, BridgeConfig
+from mcp import StdioMcpServer, Tool
+
+
+__version__ = "0.1.0"
 
 
 ABLETON_AGENT_GUIDE = "General Live object-model bridge; examples are heuristics, not limits."

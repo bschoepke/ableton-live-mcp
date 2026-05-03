@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from ableton_live_mcp.bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig
-from ableton_live_mcp.install_remote_script import install_remote_script, remote_script_root
-from ableton_live_mcp.server import make_server
-from ableton_live_mcp.benchmark import run_benchmark
-from ableton_live_mcp.prompt_audit import run_prompt_audit
-from ableton_live_mcp.smoke import run_smoke
+from benchmark import run_benchmark
+from bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig
+from install_remote_script import install_remote_script, remote_script_root
+from prompt_audit import run_prompt_audit
+from server import make_server
+from smoke import run_smoke
 
 
 class FakeBridge:
@@ -593,9 +593,9 @@ def test_remote_script_resources_available_from_source_checkout():
 
 def test_debug_commands_are_not_published_console_scripts():
     pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
-    assert 'ableton-live-mcp = "ableton_live_mcp.server:main"' in pyproject
-    assert 'ableton-live-mcp-validate = "ableton_live_mcp.validate:main"' in pyproject
-    assert 'ableton-live-mcp-install-remote-script = "ableton_live_mcp.install_remote_script:main"' in pyproject
+    assert 'ableton-live-mcp = "server:main"' in pyproject
+    assert 'ableton-live-mcp-validate = "validate:main"' in pyproject
+    assert 'ableton-live-mcp-install-remote-script = "install_remote_script:main"' in pyproject
     assert "ableton-live-mcp-smoke =" not in pyproject
     assert "ableton-live-mcp-benchmark =" not in pyproject
     assert "ableton-live-mcp-prompt-audit =" not in pyproject
