@@ -463,3 +463,18 @@ def test_benchmark_records_latency_and_payload_size():
     assert output["ok"] is True
     assert output["summary"]["max_median_ms"] is not None
     assert output["summary"]["max_median_bytes"] > 0
+
+
+def test_benchmark_skips_optional_failures():
+    class BenchBridge:
+        def request(self, method, params):
+            if method == "device_parameters":
+                raise RuntimeError("no devices")
+            return {"method": method, "params": params}
+
+    code, output = run_benchmark(BenchBridge(), iterations=1, include_browser=False)
+    assert code == 0
+    assert output["ok"] is True
+    assert output["summary"]["skipped"] == 1
+    skipped = [check for check in output["checks"] if check.get("skipped")]
+    assert skipped[0]["name"] == "device_parameter_filter"

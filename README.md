@@ -97,7 +97,7 @@ Publish releases from a clean git archive or build artifact, not by zipping a wo
 
 ## Validation
 
-Use `ableton-object-mcp-validate` for a quick connection/version check. Use `ableton-object-mcp-smoke` for broader object-model coverage against a running Live instance: bounded `get`/`children`, `eval`, `batch`, browser roots/search, plugin root discovery, listeners, and event draining. Use `ableton-object-mcp-benchmark` to record latency and payload sizes for common non-destructive workflows. The smoke and benchmark suites are intentionally non-destructive; they do not create tracks, clips, devices, or modify the open set.
+Use `ableton-object-mcp-validate` for a quick connection/version check. Use `ableton-object-mcp-smoke` for broader object-model coverage against a running Live instance: bounded `get`/`children`, `eval`, `batch`, browser roots/search, plugin root discovery, listeners, and event draining. Use `ableton-object-mcp-benchmark` to record latency and payload sizes for common non-destructive workflows, including compact existing-set summaries and optional project-content probes. The smoke and benchmark suites are intentionally non-destructive; they do not create tracks, clips, devices, or modify the open set.
 
 ## Agent Usage Guide
 

@@ -49,6 +49,10 @@ def _fail(name: str, exc: Exception) -> dict[str, Any]:
     return {"name": name, "ok": False, "error": str(exc)}
 
 
+def _skip(name: str, exc: Exception) -> dict[str, Any]:
+    return {"name": name, "ok": True, "skipped": True, "reason": str(exc)}
+
+
 def _benchmarks(include_browser: bool) -> list[tuple[str, RequestFactory, bool]]:
     items: list[tuple[str, RequestFactory, bool]] = [
         ("ping", lambda: ("ping", {}), False),
@@ -57,6 +61,14 @@ def _benchmarks(include_browser: bool) -> list[tuple[str, RequestFactory, bool]]
             "properties": ["tempo", "signature_numerator", "signature_denominator", "current_song_time"],
             "children": {"tracks": 8, "scenes": 8, "return_tracks": 4},
         }), False),
+        ("set_summary_existing_project", lambda: ("set_summary", {
+            "track_limit": 16,
+            "clip_slot_limit": 4,
+            "device_limit": 4,
+            "arrangement_clip_limit": 4,
+            "include_return_tracks": True,
+            "include_master_track": True,
+        }), False),
         ("batch_status", lambda: ("batch", {
             "operations": [
                 {"method": "get", "params": {"ref": {"path": "live_set"}, "properties": ["tempo"]}},
@@ -64,6 +76,15 @@ def _benchmarks(include_browser: bool) -> list[tuple[str, RequestFactory, bool]]
                 {"method": "eval", "params": {"expr": "len(song.tracks), len(song.scenes), len(song.return_tracks)"}},
             ],
         }), False),
+        ("device_parameter_filter", lambda: ("device_parameters", {
+            "ref": {"path": "live_set tracks 0 devices 0"},
+            "query": "filter",
+            "limit": 8,
+        }), True),
+        ("clip_warp_marker_inspect", lambda: ("clip_warp_markers", {
+            "ref": {"path": "live_set tracks 0 arrangement_clips 0"},
+            "limit": 16,
+        }), True),
         ("arrangement_capability_summary", lambda: ("eval", {
             "expr": "sorted([n for n in dir(song) if 'track' in n.lower() or 'scene' in n.lower() or 'clip' in n.lower()])[:60]",
             "max_items": 80,
@@ -85,6 +106,15 @@ def _benchmarks(include_browser: bool) -> list[tuple[str, RequestFactory, bool]]
                 "limit": 8,
                 "max_depth": 7,
                 "max_visited": 8000,
+            }), True),
+            ("browser_sample_first_good", lambda: ("browser_search", {
+                "query": "cowbell",
+                "roots": ["drums", "samples", "user_library"],
+                "limit": 1,
+                "max_depth": 7,
+                "max_visited": 8000,
+                "stop_on_limit": True,
+                "stop_score": 1,
             }), True),
             ("browser_plugin_search", lambda: ("browser_search", {
                 "query": "",
@@ -111,12 +141,13 @@ def run_benchmark(
         try:
             checks.append(_measure(client, name, request, iterations))
         except Exception as exc:
-            failed = _fail(name, exc)
-            failed["optional"] = optional
-            checks.append(failed)
+            if optional:
+                checks.append(_skip(name, exc))
+            else:
+                checks.append(_fail(name, exc))
     hard_failures = [check for check in checks if not check["ok"] and not check.get("optional")]
-    medians = [check["median_ms"] for check in checks if check["ok"]]
-    sizes = [check["median_bytes"] for check in checks if check["ok"]]
+    medians = [check["median_ms"] for check in checks if check["ok"] and not check.get("skipped")]
+    sizes = [check["median_bytes"] for check in checks if check["ok"] and not check.get("skipped")]
     output = {
         "ok": not hard_failures,
         "iterations": iterations,
@@ -124,6 +155,7 @@ def run_benchmark(
         "summary": {
             "total": len(checks),
             "passed": sum(1 for check in checks if check["ok"]),
+            "skipped": sum(1 for check in checks if check.get("skipped")),
             "failed": sum(1 for check in checks if not check["ok"]),
             "hard_failed": len(hard_failures),
             "median_of_medians_ms": round(statistics.median(medians), 3) if medians else None,
