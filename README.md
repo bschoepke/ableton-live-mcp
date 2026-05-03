@@ -12,6 +12,8 @@ Back up your Live Set before using this. The MCP can edit your set directly and 
 
 [![Ableton Live MCP demo](https://img.youtube.com/vi/8dRRrIY7NI0/maxresdefault.jpg)](https://youtu.be/8dRRrIY7NI0)
 
+https://www.youtube.com/watch?v=8dRRrIY7NI0
+
 The chat messages I sent to Codex to make this:
 
 _in ableton, make a self reflective song, with audio vocals (via macos say) and chip tunes and 80's drum machines. should be a real edm banger_
