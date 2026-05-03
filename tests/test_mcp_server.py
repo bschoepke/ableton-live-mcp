@@ -8,6 +8,7 @@ import pytest
 from ableton_object_mcp.bridge import AbletonBridgeClient, AbletonBridgeError
 from ableton_object_mcp.install_remote_script import install_remote_script, remote_script_root
 from ableton_object_mcp.server import make_server
+from ableton_object_mcp.benchmark import run_benchmark
 from ableton_object_mcp.smoke import run_smoke
 
 
@@ -31,6 +32,7 @@ def test_lists_general_purpose_tools():
         "live_call",
         "live_children",
         "live_eval",
+        "live_exec",
         "live_batch",
         "live_browser_roots",
         "live_browser_search",
@@ -102,6 +104,20 @@ def test_browser_search_tool_forwards_query_to_bridge():
     assert response["result"]["structuredContent"]["method"] == "browser_search"
 
 
+def test_exec_tool_forwards_code_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {"code": "result = {'tracks': len(song.tracks)}", "max_items": 10}
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 41,
+        "method": "tools/call",
+        "params": {"name": "live_exec", "arguments": args},
+    })
+    assert bridge.calls == [("exec", args)]
+    assert response["result"]["structuredContent"]["method"] == "exec"
+
+
 def test_browser_search_schema_mentions_plugins_root():
     server = make_server(FakeBridge())
     response = server.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/list"})
@@ -138,7 +154,7 @@ def test_tool_list_stays_compact():
     payload = json.dumps(response, separators=(",", ":"))
     assert len(payload) < 14000
     live_eval = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_eval")
-    assert "exec" in live_eval["description"]
+    assert "live_exec" in live_eval["description"]
     assert "duplicate session clips" not in live_eval["description"].lower()
 
 
@@ -150,7 +166,7 @@ def test_bridge_error_omits_traceback_by_default(monkeypatch):
         "id": 1,
         "error": {"code": -32000, "message": "bad call", "data": "Traceback: noisy"},
     }
-    monkeypatch.setattr(client, "_read_line", lambda _sock: json.dumps(message).encode("utf-8"))
+    monkeypatch.setattr(client, "_read_line", lambda _sock, _max_bytes: json.dumps(message).encode("utf-8"))
 
     class FakeSocket:
         def __enter__(self):
@@ -263,3 +279,15 @@ def test_smoke_suite_treats_plugin_search_as_optional():
     assert output["ok"] is True
     failed = [check["name"] for check in output["checks"] if not check["ok"]]
     assert failed == ["browser_plugin_search"]
+
+
+def test_benchmark_records_latency_and_payload_size():
+    class BenchBridge:
+        def request(self, method, params):
+            return {"method": method, "params": params}
+
+    code, output = run_benchmark(BenchBridge(), iterations=1, include_browser=False)
+    assert code == 0
+    assert output["ok"] is True
+    assert output["summary"]["max_median_ms"] is not None
+    assert output["summary"]["max_median_bytes"] > 0

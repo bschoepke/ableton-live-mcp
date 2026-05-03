@@ -18,6 +18,7 @@ class BridgeConfig:
     host: str = "127.0.0.1"
     port: int = 8765
     timeout: float = 10.0
+    max_response_bytes: int = 8 * 1024 * 1024
 
 
 class AbletonBridgeClient:
@@ -64,7 +65,7 @@ class AbletonBridgeClient:
         sock = self._socket()
         line = (json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8")
         sock.sendall(line)
-        return self._read_line(sock)
+        return self._read_line(sock, self.config.max_response_bytes)
 
     def _socket(self) -> socket.socket:
         if self._sock is None:
@@ -73,12 +74,16 @@ class AbletonBridgeClient:
         return self._sock
 
     @staticmethod
-    def _read_line(sock: socket.socket) -> bytes:
+    def _read_line(sock: socket.socket, max_bytes: int = 8 * 1024 * 1024) -> bytes:
         chunks: list[bytes] = []
+        total = 0
         while True:
             chunk = sock.recv(4096)
             if not chunk:
                 break
+            total += len(chunk)
+            if max_bytes >= 0 and total > max_bytes:
+                raise OSError(f"Ableton bridge response exceeds {max_bytes} bytes")
             chunks.append(chunk)
             if b"\n" in chunk:
                 break

@@ -17,6 +17,9 @@ MAX_REQUEST_BYTES = 1024 * 1024
 MAX_OBJECTS = 2000
 DEFAULT_MAX_ITEMS = 200
 DEFAULT_MAX_DEPTH = 8
+DEFAULT_MAX_STRING_LENGTH = 4096
+DEFAULT_CHILD_LIMIT = 200
+DEFAULT_MAIN_THREAD_TIMEOUT = 10
 DEFAULT_BROWSER_ROOTS = ("instruments", "audio_effects", "midi_effects", "drums", "samples", "sounds", "packs", "plugins", "user_library", "user_folders", "current_project")
 
 
@@ -145,7 +148,8 @@ class AbletonObjectMCP(ControlSurface):
                 done.set()
 
         self.schedule_message(0, invoke)
-        if not done.wait(10):
+        timeout = float(params.get("timeout") or DEFAULT_MAIN_THREAD_TIMEOUT)
+        if not done.wait(timeout):
             abandoned["value"] = True
             raise RuntimeError("Timed out waiting for Live main thread")
         if result["error"]:
@@ -171,8 +175,10 @@ class AbletonObjectMCP(ControlSurface):
         else:
             child_items = [(name, params.get("child_limit")) for name in child_specs]
         for name, limit in child_items:
-            values = self._take(getattr(obj, name), limit)
+            values, truncated = self._take(getattr(obj, name), limit)
             children[name] = [self._object_summary(child, detail) for child in values]
+            if truncated:
+                children[name].append({"truncated": True})
         summary = self._object_summary(obj, detail)
         summary["properties"] = props
         summary["children"] = children
@@ -191,15 +197,25 @@ class AbletonObjectMCP(ControlSurface):
     def _rpc_children(self, params):
         obj = self._resolve(params.get("ref"))
         limit = params.get("limit")
-        values = self._take(getattr(obj, params["child"]), limit)
-        return [self._object_summary(child, self._detail(params)) for child in values]
+        values, truncated = self._take(getattr(obj, params["child"]), limit)
+        result = [self._object_summary(child, self._detail(params)) for child in values]
+        if truncated:
+            result.append({"truncated": True})
+        return result
 
     def _rpc_batch(self, params):
         results = []
         continue_on_error = bool(params.get("continue_on_error"))
+        inherited = {}
+        for name in ("detail", "include_repr", "max_items", "max_depth", "max_string_length", "timeout"):
+            if params.get(name) is not None:
+                inherited[name] = params.get(name)
         for index, op in enumerate(params.get("operations") or []):
             method = op.get("method")
             op_params = op.get("params") or {}
+            for name, value in inherited.items():
+                if op_params.get(name) is None:
+                    op_params[name] = value
             try:
                 value = getattr(self, "_rpc_" + method)(op_params)
                 results.append({"ok": True, "result": self._encode(value, self._encode_options(op_params))})
@@ -233,6 +249,7 @@ class AbletonObjectMCP(ControlSurface):
         if loadable_only is None:
             loadable_only = True
         include_folders = bool(params.get("include_folders"))
+        stop_on_limit = bool(params.get("stop_on_limit"))
         match_all_terms = params.get("match_all_terms")
         if match_all_terms is None:
             match_all_terms = True
@@ -247,19 +264,19 @@ class AbletonObjectMCP(ControlSurface):
             root = getattr(browser, name)
             if self._is_browser_item(root):
                 try:
-                    return list(root.iter_children)
+                    return root.iter_children
                 except Exception:
-                    return [root]
+                    return (root,)
             try:
-                return list(root)
+                return iter(root)
             except Exception:
-                return []
+                return ()
 
         def children_of(item):
             try:
-                return list(item.iter_children)
+                return item.iter_children
             except Exception:
-                return []
+                return ()
 
         def is_match(item, path_text):
             if not terms:
@@ -295,6 +312,9 @@ class AbletonObjectMCP(ControlSurface):
             if is_match(item, path_text):
                 if (include_folders or not is_folder) and (not loadable_only or is_loadable):
                     matches.append((score(item, path_text), len(current_path), self._browser_item_result(root_name, item, path_text)))
+                    if stop_on_limit and len(matches) >= limit:
+                        truncated = True
+                        return
             if depth >= max_depth:
                 return
             for child in children_of(item):
@@ -334,6 +354,20 @@ class AbletonObjectMCP(ControlSurface):
         }
         return eval(params["expr"], env, {})
 
+    def _rpc_exec(self, params):
+        ref = params.get("ref")
+        obj = self._resolve(ref) if ref else None
+        env = {
+            "Live": Live,
+            "song": self.song(),
+            "app": Live.Application.get_application(),
+            "obj": obj,
+            "this": self,
+            "result": None,
+        }
+        exec(params["code"], env, env)
+        return env.get("result")
+
     def _rpc_observe(self, params):
         obj = self._resolve(params.get("ref"))
         prop = params["property"]
@@ -361,14 +395,26 @@ class AbletonObjectMCP(ControlSurface):
     def _resolve(self, ref):
         ref = ref or {"path": "live_set"}
         if "id" in ref:
-            return self._objects[int(ref["id"])]
+            obj_id = int(ref["id"])
+            if obj_id not in self._objects:
+                raise KeyError("Unknown or stale object id %s; rerun get/search and use the new id" % obj_id)
+            return self._objects[obj_id]
         return self._resolve_path(ref.get("path") or "live_set")
 
     def _resolve_path(self, path):
         parts = path.split()
-        if not parts or parts[0] not in ("live_set", "song"):
-            raise ValueError("Path must start with live_set or song")
-        obj = self.song()
+        if not parts:
+            raise ValueError("Path must start with live_set, song, app, browser, or this")
+        if parts[0] in ("live_set", "song"):
+            obj = self.song()
+        elif parts[0] == "app":
+            obj = Live.Application.get_application()
+        elif parts[0] == "browser":
+            obj = Live.Application.get_application().browser
+        elif parts[0] == "this":
+            obj = self
+        else:
+            raise ValueError("Path must start with live_set, song, app, browser, or this")
         index = 1
         while index < len(parts):
             attr = parts[index]
@@ -445,17 +491,25 @@ class AbletonObjectMCP(ControlSurface):
     def _encode_options(self, params):
         max_items = DEFAULT_MAX_ITEMS
         max_depth = DEFAULT_MAX_DEPTH
+        max_string_length = DEFAULT_MAX_STRING_LENGTH
         if params:
             if params.get("max_items") is not None:
                 max_items = params.get("max_items")
             if params.get("max_depth") is not None:
                 max_depth = params.get("max_depth")
-        return {"detail": self._detail(params), "max_items": max_items, "max_depth": max_depth, "depth": 0, "seen": set()}
+            if params.get("max_string_length") is not None:
+                max_string_length = params.get("max_string_length")
+        return {"detail": self._detail(params), "max_items": max_items, "max_depth": max_depth, "max_string_length": max_string_length, "depth": 0, "seen": set()}
 
     def _encode(self, value, options=None):
         if options is None:
             options = self._encode_options(None)
-        if value is None or isinstance(value, (bool, int, float, str)):
+        if value is None or isinstance(value, (bool, int, float)):
+            return value
+        if isinstance(value, str):
+            limit = options.get("max_string_length")
+            if limit is not None and limit >= 0 and len(value) > limit:
+                return value[:limit] + "...<truncated %s chars>" % (len(value) - limit)
             return value
         obj_id = id(value)
         if obj_id in options["seen"]:
@@ -490,13 +544,15 @@ class AbletonObjectMCP(ControlSurface):
 
     def _take(self, values, limit):
         if limit is None:
-            return list(values)
+            limit = DEFAULT_CHILD_LIMIT
+        if limit is not None and limit < 0:
+            return list(values), False
         result = []
         for index, value in enumerate(values):
             if index >= limit:
-                break
+                return result, True
             result.append(value)
-        return result
+        return result, False
 
     def _remember_object(self, obj_id, obj):
         if obj_id in self._objects:

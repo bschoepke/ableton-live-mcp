@@ -62,6 +62,12 @@ This repo implements a general-purpose Model Context Protocol server for Ableton
    ableton-object-mcp-smoke
    ```
 
+7. Benchmark common non-destructive workflows when optimizing latency or token use:
+
+   ```sh
+   ableton-object-mcp-benchmark
+   ```
+
 Publish releases from a clean git archive or build artifact, not by zipping a working directory. Local generated audio and cache folders are ignored but may still exist in development workspaces.
 
 ## MCP Tools
@@ -83,7 +89,7 @@ Publish releases from a clean git archive or build artifact, not by zipping a wo
 
 ## Validation
 
-Use `ableton-object-mcp-validate` for a quick connection/version check. Use `ableton-object-mcp-smoke` for broader object-model coverage against a running Live instance: bounded `get`/`children`, `eval`, `batch`, browser roots/search, plugin root discovery, listeners, and event draining. The smoke suite is intentionally non-destructive; it does not create tracks, clips, devices, or modify the open set.
+Use `ableton-object-mcp-validate` for a quick connection/version check. Use `ableton-object-mcp-smoke` for broader object-model coverage against a running Live instance: bounded `get`/`children`, `eval`, `batch`, browser roots/search, plugin root discovery, listeners, and event draining. Use `ableton-object-mcp-benchmark` to record latency and payload sizes for common non-destructive workflows. The smoke and benchmark suites are intentionally non-destructive; they do not create tracks, clips, devices, or modify the open set.
 
 ## Agent Usage Guide
 
@@ -93,7 +99,7 @@ Prefer Ableton library content before generating assets. When a user asks for in
 
 Common workflows that work well:
 
-- Batch multi-step edits with `live_eval` and `exec(..., globals())`, returning a compact summary instead of large object dumps.
+- Batch multi-step edits with `live_exec`, setting `result` to a compact summary instead of returning large object dumps.
 - Batch independent generic operations with `live_batch` when the work does not need custom Python code.
 - Discover library content with `live_browser_search` using bounded roots, depth, and result limits. Search results include reusable BrowserItem ids.
 - Discover third-party audio plugins through the `plugins` browser root. Plugin formats/vendors are whatever the local Live install indexes, for example AU/VST roots on that machine.
@@ -106,7 +112,7 @@ Common workflows that work well:
 
 Common errors to avoid:
 
-- `live_eval` uses Python `eval`; assignment statements or multi-line imperative code must be wrapped in `exec(...)`.
+- `live_eval` uses Python `eval`; use `live_exec` for assignment statements or multi-line imperative code.
 - `ClipSlot.create_clip` and other numeric Live API arguments require numbers, not stringified numbers.
 - `Simpler.sample` is readable through the Live API but not directly settable; load samples through browser workflows when possible, or use audio clips as a fallback.
 - Browser roots differ in shape: some expose `iter_children`, while vectors such as `user_folders` may need normal iteration.
@@ -119,7 +125,7 @@ Common errors to avoid:
 
 Token and latency tips:
 
-- Prefer one `live_eval` call for a coherent edit over many small `live_call` calls.
+- Prefer one `live_exec` call for a coherent edit over many small `live_call` calls.
 - Prefer `live_batch` for several ordinary `get`, `set`, `call`, `children`, or `eval` operations that should share one bridge round trip.
 - Prefer `live_browser_search` over ad hoc recursive browser traversals for normal library lookup.
 - Pass `roots: ["plugins"]` to search installed third-party audio plugins specifically.

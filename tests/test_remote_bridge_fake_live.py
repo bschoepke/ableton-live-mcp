@@ -151,12 +151,26 @@ def test_resolve_get_children_and_call(monkeypatch):
         "children": {"tracks": 1},
     })
     assert result["properties"]["tempo"] == 120.0
-    assert len(result["children"]["tracks"]) == 1
+    assert len([item for item in result["children"]["tracks"] if not item.get("truncated")]) == 1
+    assert result["children"]["tracks"][-1] == {"truncated": True}
     assert "repr" not in result["children"]["tracks"][0]
 
     children = bridge._rpc_children({"ref": {"path": "live_set"}, "child": "tracks", "limit": 1})
-    assert len(children) == 1
+    assert len([item for item in children if not item.get("truncated")]) == 1
+    assert children[-1] == {"truncated": True}
     assert bridge._rpc_call({"ref": {"path": "live_set"}, "method": "get_beats_loop_start"}) == "1.1.1"
+
+
+def test_app_browser_path_roots_and_stale_id_errors(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    assert bridge._resolve_path("app").get_version_string() == "12.3.8"
+    assert bridge._resolve_path("browser instruments").name == "instruments"
+    try:
+        bridge._resolve({"id": 123456})
+    except KeyError as exc:
+        assert "Unknown or stale object id" in str(exc)
+    else:
+        raise AssertionError("expected stale id error")
 
 
 def test_batch_and_id_resolution(monkeypatch):
@@ -170,6 +184,26 @@ def test_batch_and_id_resolution(monkeypatch):
     })
     assert [item["ok"] for item in result] == [True, True]
     assert result[0]["result"]["properties"]["tempo"] == 120.0
+
+
+def test_batch_inherits_response_controls(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    result = bridge._rpc_batch({
+        "max_items": 2,
+        "max_string_length": 3,
+        "operations": [
+            {"method": "eval", "params": {"expr": "list(range(5))"}},
+            {"method": "eval", "params": {"expr": "'abcdef'"}},
+        ],
+    })
+    assert result[0]["result"] == [0, 1, {"truncated": True, "omitted": 3}]
+    assert result[1]["result"] == "abc...<truncated 3 chars>"
+
+
+def test_exec_returns_result_binding(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    result = bridge._rpc_exec({"code": "song.tempo = 124\nresult = {'tempo': song.tempo}"})
+    assert result == {"tempo": 124}
 
 
 def test_browser_roots_search_and_load(monkeypatch):
@@ -193,6 +227,21 @@ def test_browser_roots_search_and_load(monkeypatch):
     bridge._rpc_browser_load({"item": {"id": plugins["results"][0]["id"]}, "target_track": {"path": "live_set tracks 0"}})
     assert app.browser.loaded == ["Plugin Synth"]
     assert song.view.selected_track.name == "Track 1"
+
+
+def test_browser_search_can_stop_on_limit(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    result = bridge._rpc_browser_search({
+        "query": "",
+        "roots": ["drums"],
+        "limit": 1,
+        "include_folders": True,
+        "loadable_only": False,
+        "stop_on_limit": True,
+    })
+    assert len(result["results"]) == 1
+    assert result["visited"] == 1
+    assert result["truncated"] is True
 
 
 def test_encode_bounds_cycles_and_detail(monkeypatch):

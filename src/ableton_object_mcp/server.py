@@ -13,8 +13,8 @@ ABLETON_MCP_INSTRUCTIONS = (
     "Use this as a general-purpose bridge to Ableton Live's object model, not a limited recipe API. "
     "Prefer installed Ableton browser content, Packs, user-library assets, samples, presets, devices, and indexed third-party audio plugins before synthesizing or generating assets, unless the user asks otherwise. "
     "Discover runtime availability with live_browser_roots/live_browser_search, including roots:['plugins'] for AU/VST/plugin content; Live version, SKU, Packs, user folders, and plugin indexing vary, so fall back gracefully. "
-    "For speed and low token use, prefer one compact live_eval exec(...) summary for coherent edits, live_batch for independent generic get/set/call/children/eval operations, specific property lists, child limits, max_items, and max_depth. "
-    "Avoid broad browser/device dumps. Common gotchas: live_eval is eval so statements need exec(...); Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via the browser or create audio clips; object summaries are compact unless detail:true is requested. "
+        "For speed and low token use, prefer one compact live_exec summary for coherent edits, live_batch for independent generic get/set/call/children/eval/exec operations, specific property lists, child limits, max_items, and max_depth. "
+        "Avoid broad browser/device dumps. Common gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via the browser or create audio clips; object summaries are compact unless detail:true is requested. "
     "These are workflow hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
 
@@ -48,6 +48,8 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "detail": {"type": "boolean", "description": "Include repr/canonical_path in Live object summaries. Default false for compact output."},
         "max_items": {"type": "integer", "description": "Maximum encoded list items. Use -1 for unbounded. Default 200."},
         "max_depth": {"type": "integer", "description": "Maximum encoded nesting depth. Default 8."},
+        "max_string_length": {"type": "integer", "description": "Maximum encoded string length. Use -1 for unbounded. Default 4096."},
+        "timeout": {"type": "number", "description": "Main-thread timeout in seconds for long Live operations. Default 10."},
     }
     server.add_tool(Tool("live_get", "Resolve an object and read selected properties/children. Use child_limit/detail/max_items to control output size.", schema({
         "ref": ref,
@@ -103,6 +105,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "max_visited": {"type": "integer", "minimum": 1, "description": "Maximum browser items visited. Default 5000."},
         "loadable_only": {"type": "boolean", "description": "Only return loadable browser items. Default true."},
         "include_folders": {"type": "boolean", "description": "Include matching folders. Default false."},
+        "stop_on_limit": {"type": "boolean", "description": "Stop traversal as soon as limit matches are found. Faster but less globally ranked. Default false."},
         "match_all_terms": {"type": "boolean", "description": "Require every query term to match. Default true."},
     }), forward("browser_search")))
     server.add_tool(Tool("live_browser_load", "Load a BrowserItem returned by live_browser_search. Convenience only; app.browser.load_item remains available through live_eval.", schema({
@@ -112,12 +115,21 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     server.add_tool(Tool("live_eval", (
         "Evaluate a Python expression inside Live with song, app, obj, and Live bindings. "
         + ABLETON_AGENT_GUIDE
-        + " Use exec(...) for statements; prefer installed browser/library assets before generated assets unless asked."
+        + " Use live_exec for statements; prefer installed browser/library assets before generated assets unless asked."
     ), schema({
         "expr": {"type": "string"},
         "ref": ref,
         **response_controls,
     }, ["expr"]), forward("eval")))
+    server.add_tool(Tool("live_exec", (
+        "Execute Python statements inside Live with song, app, obj, this, Live, and result bindings. "
+        + "Set result to a compact dict/list summary to return it. "
+        + ABLETON_AGENT_GUIDE
+    ), schema({
+        "code": {"type": "string"},
+        "ref": ref,
+        **response_controls,
+    }, ["code"]), forward("exec")))
     server.add_tool(Tool("live_observe", "Add or remove a listener for an object's property.", schema({
         "ref": ref,
         "property": {"type": "string"},
