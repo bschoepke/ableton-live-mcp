@@ -13,23 +13,56 @@ This repo implements a general-purpose Model Context Protocol server for Ableton
 1. Install the Python package in the agent environment:
 
    ```sh
+   python -m pip install ableton-object-mcp
+   ```
+
+   For local development from a source checkout, use:
+
+   ```sh
    python -m pip install -e ".[dev]"
    ```
 
-2. Copy or symlink the Remote Script directory into Ableton's MIDI Remote Scripts folder:
+2. Install the Ableton Remote Script:
 
    ```sh
-   mkdir -p "$HOME/Music/Ableton/User Library/Remote Scripts"
-   ln -s "$PWD/remote_scripts/Ableton_Object_MCP" "$HOME/Music/Ableton/User Library/Remote Scripts/Ableton_Object_MCP"
+   ableton-object-mcp-install-remote-script
    ```
+
+   This installs `Ableton_Object_MCP` into `~/Music/Ableton/User Library/Remote Scripts`. The package also ships an `AbletonMCP` alias for compatibility with earlier local installs; select only one Control Surface in Live, because both aliases bind the same local port.
 
 3. Start Ableton Live 12, open Settings, and select `Ableton_Object_MCP` as a Control Surface.
 
-4. Validate the bridge:
+4. Register the MCP server with your MCP client. The command is:
+
+   ```sh
+   ableton-object-mcp
+   ```
+
+   Example MCP client configuration:
+
+   ```json
+   {
+     "mcpServers": {
+       "ableton": {
+         "command": "ableton-object-mcp"
+       }
+     }
+   }
+   ```
+
+5. Validate the bridge:
 
    ```sh
    ableton-object-mcp-validate
    ```
+
+6. Run the broader non-destructive smoke suite before publishing or debugging customer reports:
+
+   ```sh
+   ableton-object-mcp-smoke
+   ```
+
+Publish releases from a clean git archive or build artifact, not by zipping a working directory. Local generated audio and cache folders are ignored but may still exist in development workspaces.
 
 ## MCP Tools
 
@@ -47,6 +80,10 @@ This repo implements a general-purpose Model Context Protocol server for Ableton
 - `live_ping`: report bridge and Live version details.
 
 `live_eval` is powerful by design. Bind the bridge only to `127.0.0.1`, use it for local agent automation, and do not expose the port to untrusted networks.
+
+## Validation
+
+Use `ableton-object-mcp-validate` for a quick connection/version check. Use `ableton-object-mcp-smoke` for broader object-model coverage against a running Live instance: bounded `get`/`children`, `eval`, `batch`, browser roots/search, plugin root discovery, listeners, and event draining. The smoke suite is intentionally non-destructive; it does not create tracks, clips, devices, or modify the open set.
 
 ## Agent Usage Guide
 

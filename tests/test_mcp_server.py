@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 
 from ableton_object_mcp.bridge import AbletonBridgeClient, AbletonBridgeError
+from ableton_object_mcp.install_remote_script import install_remote_script, remote_script_root
 from ableton_object_mcp.server import make_server
+from ableton_object_mcp.smoke import run_smoke
 
 
 class FakeBridge:
@@ -201,3 +203,53 @@ def test_remote_script_bridge_alias_stays_identical():
     canonical = root / "remote_scripts" / "Ableton_Object_MCP" / "bridge.py"
     alias = root / "remote_scripts" / "AbletonMCP" / "bridge.py"
     assert alias.read_text() == canonical.read_text()
+
+
+def test_remote_script_installer_copies_selected_alias(tmp_path):
+    target = install_remote_script("Ableton_Object_MCP", tmp_path)
+    assert target == tmp_path / "Ableton_Object_MCP"
+    assert (target / "__init__.py").exists()
+    assert (target / "bridge.py").exists()
+    assert not (tmp_path / "AbletonMCP").exists()
+
+
+def test_remote_script_installer_rejects_unknown_alias(tmp_path):
+    with pytest.raises(ValueError):
+        install_remote_script("Unknown", tmp_path)
+
+
+def test_remote_script_resources_available_from_source_checkout():
+    root = remote_script_root()
+    assert (root / "Ableton_Object_MCP" / "bridge.py").exists()
+    assert (root / "AbletonMCP" / "bridge.py").exists()
+
+
+def test_smoke_suite_runs_expected_bridge_methods():
+    class SmokeBridge:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, method, params):
+            self.calls.append((method, params))
+            return {"method": method, "params": params}
+
+    bridge = SmokeBridge()
+    code, output = run_smoke(bridge)
+    methods = [method for method, _params in bridge.calls]
+    assert code == 0
+    assert output["ok"] is True
+    assert {"ping", "get", "children", "eval", "batch", "browser_roots", "browser_search", "observe", "events"} <= set(methods)
+
+
+def test_smoke_suite_treats_plugin_search_as_optional():
+    class SmokeBridge:
+        def request(self, method, params):
+            if method == "browser_search" and params.get("roots") == ["plugins"]:
+                raise RuntimeError("plugins unavailable")
+            return {"method": method, "params": params}
+
+    code, output = run_smoke(SmokeBridge())
+    assert code == 0
+    assert output["ok"] is True
+    failed = [check["name"] for check in output["checks"] if not check["ok"]]
+    assert failed == ["browser_plugin_search"]

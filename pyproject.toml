@@ -18,6 +18,8 @@ dev = ["pytest>=8.0"]
 [project.scripts]
 ableton-object-mcp = "ableton_object_mcp.server:main"
 ableton-object-mcp-validate = "ableton_object_mcp.validate:main"
+ableton-object-mcp-smoke = "ableton_object_mcp.smoke:main"
+ableton-object-mcp-install-remote-script = "ableton_object_mcp.install_remote_script:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -25,3 +27,17 @@ pythonpath = ["src"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ableton_object_mcp"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"remote_scripts/Ableton_Object_MCP" = "ableton_object_mcp/remote_scripts/Ableton_Object_MCP"
+"remote_scripts/AbletonMCP" = "ableton_object_mcp/remote_scripts/AbletonMCP"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/remote_scripts",
+    "/tests",
+    "/README.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
