@@ -40,11 +40,15 @@ def run_smoke(client: AbletonBridgeClient | None = None) -> tuple[int, dict[str,
     checks.append(_call(client, "full_object_eval", "eval", {
         "expr": "sorted([name for name in dir(song) if 'track' in name.lower() or 'scene' in name.lower()])[:40]",
     }))
+    checks.append(_call(client, "exec_summary", "exec", {
+        "code": "result = {'tracks': len(song.tracks), 'scenes': len(song.scenes), 'tempo': song.tempo}",
+    }))
     checks.append(_call(client, "batch_roundtrip", "batch", {
         "operations": [
             {"method": "get", "params": {"ref": {"path": "live_set"}, "properties": ["tempo"]}},
             {"method": "children", "params": {"ref": {"path": "live_set"}, "child": "tracks", "limit": 2}},
             {"method": "eval", "params": {"expr": "app.get_version_string() if hasattr(app, 'get_version_string') else 'unknown'"}},
+            {"method": "exec", "params": {"code": "result = len(song.tracks)"}},
         ],
     }))
     checks.append(_call(client, "browser_roots", "browser_roots", {}))

@@ -264,7 +264,7 @@ def test_smoke_suite_runs_expected_bridge_methods():
     methods = [method for method, _params in bridge.calls]
     assert code == 0
     assert output["ok"] is True
-    assert {"ping", "get", "children", "eval", "batch", "browser_roots", "browser_search", "observe", "events"} <= set(methods)
+    assert {"ping", "get", "children", "eval", "exec", "batch", "browser_roots", "browser_search", "observe", "events"} <= set(methods)
 
 
 def test_smoke_suite_treats_plugin_search_as_optional():
