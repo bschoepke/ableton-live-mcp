@@ -12,7 +12,7 @@ ABLETON_AGENT_GUIDE = "General Live object-model bridge; examples are heuristics
 ABLETON_MCP_INSTRUCTIONS = (
     "Use this as a general-purpose bridge to Ableton Live's object model, not a limited recipe API. "
     "Prefer installed Ableton browser content, Packs, user-library assets, samples, presets, devices, and indexed third-party audio plugins before synthesizing or generating assets, unless the user asks otherwise. "
-    "Discover runtime availability with live_browser_roots/live_browser_search, including roots:['plugins'] for AU/VST/plugin content; Live version, SKU, Packs, user folders, and plugin indexing vary, so fall back gracefully. "
+        "Discover runtime availability with live_browser_capabilities/live_browser_roots/live_browser_search, including roots:['plugins'] for AU/VST/plugin content; Live version, SKU, Packs, user folders, and plugin indexing vary, so fall back gracefully. "
         "For speed and low token use, prefer one compact live_exec summary for coherent edits, live_batch for independent generic get/set/call/children/eval/exec operations, specific property lists, child limits, max_items, and max_depth. "
         "Avoid broad browser/device dumps. Common gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via the browser or create audio clips; object summaries are compact unless detail:true is requested. "
     "These are workflow hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
@@ -97,6 +97,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "additionalProperties": False,
     }
     server.add_tool(Tool("live_browser_roots", "List available app.browser root categories. Convenience only; full browser objects remain accessible via live_eval/live_call.", schema({}), forward("browser_roots")))
+    server.add_tool(Tool("live_browser_capabilities", "List app.browser roots, filter types, and whether this Live build exposes semantic/similarity search in the Python object model.", schema({}), forward("browser_capabilities")))
     server.add_tool(Tool("live_browser_search", "General bounded search over app.browser roots. Returns BrowserItem ids for load or deeper object-model inspection.", schema({
         "query": {"type": "string", "description": "Space-separated search terms matched against browser item names and paths. Empty browses top items."},
         "roots": {"type": "array", "items": {"type": "string"}, "description": "Browser roots such as instruments, audio_effects, drums, samples, sounds, packs, plugins, user_library. Default common library roots."},

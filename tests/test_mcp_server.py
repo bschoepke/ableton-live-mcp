@@ -35,6 +35,7 @@ def test_lists_general_purpose_tools():
         "live_exec",
         "live_batch",
         "live_browser_roots",
+        "live_browser_capabilities",
         "live_browser_search",
         "live_browser_load",
         "live_observe",
@@ -102,6 +103,19 @@ def test_browser_search_tool_forwards_query_to_bridge():
     })
     assert bridge.calls == [("browser_search", args)]
     assert response["result"]["structuredContent"]["method"] == "browser_search"
+
+
+def test_browser_capabilities_tool_forwards_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 40,
+        "method": "tools/call",
+        "params": {"name": "live_browser_capabilities", "arguments": {}},
+    })
+    assert bridge.calls == [("browser_capabilities", {})]
+    assert response["result"]["structuredContent"]["method"] == "browser_capabilities"
 
 
 def test_exec_tool_forwards_code_to_bridge():

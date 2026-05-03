@@ -237,6 +237,27 @@ class AbletonObjectMCP(ControlSurface):
                 roots.append({"name": name, "kind": root.__class__.__name__})
         return roots
 
+    def _rpc_browser_capabilities(self, _params):
+        browser = Live.Application.get_application().browser
+        roots = self._rpc_browser_roots({})
+        filter_types = {}
+        try:
+            for name, value in Live.Browser.FilterType.names.items():
+                filter_types[str(name)] = int(value)
+        except Exception:
+            pass
+        attrs = [name for name in dir(browser) if not name.startswith("_")]
+        semantic_terms = ("semantic", "similar", "similarity")
+        semantic_attrs = [name for name in attrs if any(term in name.lower() for term in semantic_terms)]
+        return {
+            "roots": roots,
+            "filter_type": getattr(browser, "filter_type", None),
+            "filter_types": filter_types,
+            "semantic_search_exposed": bool(semantic_attrs),
+            "semantic_search_attrs": semantic_attrs,
+            "browser_attrs": attrs,
+        }
+
     def _rpc_browser_search(self, params):
         browser = Live.Application.get_application().browser
         query = (params.get("query") or "").strip().lower()

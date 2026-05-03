@@ -229,6 +229,14 @@ def test_browser_roots_search_and_load(monkeypatch):
     assert song.view.selected_track.name == "Track 1"
 
 
+def test_browser_capabilities_report_roots_and_semantic_attrs(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    result = bridge._rpc_browser_capabilities({})
+    assert "plugins" in {root["name"] for root in result["roots"]}
+    assert result["semantic_search_exposed"] is False
+    assert "instruments" in result["browser_attrs"]
+
+
 def test_browser_search_can_stop_on_limit(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     result = bridge._rpc_browser_search({

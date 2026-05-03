@@ -78,6 +78,7 @@ Publish releases from a clean git archive or build artifact, not by zipping a wo
 - `live_children`: list children from an object.
 - `live_batch`: run several generic bridge operations in one Live main-thread request.
 - `live_browser_roots`: list available `app.browser` root categories.
+- `live_browser_capabilities`: list available browser roots, filter types, and whether the installed Live build exposes semantic/similarity search through the Python object model.
 - `live_browser_search`: bounded search over any available `app.browser` roots.
 - `live_browser_load`: load a browser item returned by `live_browser_search`.
 - `live_eval`: evaluate a Python expression with `song`, `app`, `obj`, and `Live` bindings.
@@ -122,6 +123,7 @@ Common errors to avoid:
 - Do not assume Suite-only devices, third-party plugins, specific packs, or large factory libraries exist. Discover, choose the best available item, and keep the set usable if the preferred item is missing.
 - Avoid broad recursive browser dumps and full device parameter dumps unless required; they are slow and expensive.
 - `live_browser_search` is a convenience layer over `app.browser`; use `live_eval` for custom ranking, metadata, unusual browser roots, or workflows not covered by the search schema.
+- Live 12 Sound Similarity/Semantic Search is a Browser feature, but in Live 12.3.8 the Python object model exposed through Control Surfaces does not show semantic/similarity search methods on `app.browser`. Use `live_browser_capabilities` to check the current Live build. If future versions expose it, use the generic object-model tools to call it; otherwise fall back to tags/name/path browser search.
 - Object summaries are compact by default. Set `detail: true` when `repr` or `canonical_path` is needed.
 - Tracebacks are omitted by default to keep common Live API errors readable. Set `include_traceback: true` on the bridge request or `ABLETON_MCP_TRACEBACK=1` in the Python client environment when debugging.
 
