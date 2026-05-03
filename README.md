@@ -76,6 +76,7 @@ Publish releases from a clean git archive or build artifact, not by zipping a wo
 - `live_set`: set a writable property.
 - `live_call`: call an object method with positional and keyword arguments.
 - `live_children`: list children from an object.
+- `live_device_parameters`: list compact device parameter metadata and return parameter ids for deliberate `live_set` updates.
 - `live_batch`: run several generic bridge operations in one Live main-thread request.
 - `live_browser_roots`: list available `app.browser` root categories.
 - `live_browser_capabilities`: list available browser roots, filter types, and whether the installed Live build exposes semantic/similarity search through the Python object model.
@@ -106,6 +107,7 @@ Common workflows that work well:
 - Discover third-party audio plugins through the `plugins` browser root. Plugin formats/vendors are whatever the local Live install indexes, for example AU/VST roots on that machine.
 - Load devices or presets by traversing `app.browser` to a loadable `BrowserItem`, selecting the target track with `song.view.selected_track`, then calling `app.browser.load_item(item)`.
 - Load individual samples the same way: create/select a MIDI track, load the sample `BrowserItem`, then create MIDI notes for the generated sample device. This is the reliable path for “put this sample in Simpler” style prompts.
+- Inspect device parameters with `live_device_parameters` before setting them. Use returned parameter ids with `live_set` on `value`, and verify `display`/`display_value` afterward. Many Live parameters expose normalized internal values even when the UI shows dB, Hz, ms, or percent.
 - Create Session MIDI clips with `clip_slot.create_clip(length)` and add notes with `Live.Clip.MidiNoteSpecification(pitch, start_time, duration, velocity, mute)`.
 - Place existing Session clips into the timeline with `track.duplicate_clip_to_arrangement(slot.clip, destination_time)`.
 - Create Arrangement audio clips from local files with `track.create_audio_clip(path, destination_time)`.
@@ -118,6 +120,7 @@ Common errors to avoid:
 - `live_eval` uses Python `eval`; use `live_exec` for assignment statements or multi-line imperative code.
 - `ClipSlot.create_clip` and other numeric Live API arguments require numbers, not stringified numbers.
 - `Simpler.sample` is readable through the Live API but not directly settable; load samples through browser workflows when possible, or use audio clips as a fallback.
+- Device parameter `value` is not always in the same units shown in the UI. Avoid writing dB/Hz/ms values blindly; inspect min/max/display metadata and verify the display string after setting.
 - Browser roots differ in shape: some expose `iter_children`, while vectors such as `user_folders` may need normal iteration.
 - Cue marker creation and naming may not be reliable through every bridge/session state; arrange actual clips first and treat cue points as optional.
 - Do not assume Suite-only devices, third-party plugins, specific packs, or large factory libraries exist. Discover, choose the best available item, and keep the set usable if the preferred item is missing.

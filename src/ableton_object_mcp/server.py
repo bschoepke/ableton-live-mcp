@@ -80,6 +80,12 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "limit": {"type": "integer", "minimum": 0},
         **response_controls,
     }, ["ref", "child"]), forward("children")))
+    server.add_tool(Tool("live_device_parameters", "Return compact parameter metadata for a Device. Use returned parameter ids with live_set on property 'value', then verify display values.", schema({
+        "ref": ref,
+        "query": {"type": "string", "description": "Optional space-separated terms matched against parameter names."},
+        "limit": {"type": "integer", "minimum": 0},
+        **response_controls,
+    }, ["ref"]), forward("device_parameters")))
     server.add_tool(Tool("live_batch", "Run multiple generic bridge operations in one Live main-thread request; preserves full object-model flexibility.", schema({
         "operations": {"type": "array", "items": {"type": "object", "properties": {
             "method": {"type": "string", "description": "Bridge method name such as get, set, call, children, or eval."},

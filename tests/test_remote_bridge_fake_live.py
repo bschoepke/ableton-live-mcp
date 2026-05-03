@@ -97,11 +97,39 @@ class FakeListenerObject:
         self.removed.append(callback)
 
 
+class FakeParameter:
+    def __init__(self, name, value=0.5, minimum=0.0, maximum=1.0, quantized=False, items=None):
+        self.name = name
+        self.value = value
+        self.min = minimum
+        self.max = maximum
+        self.default_value = value
+        self.display_value = value * 100
+        self.is_quantized = quantized
+        self.value_items = items or []
+
+    def str_for_value(self, value):
+        return "%s display" % value
+
+
+class FakeDevice:
+    def __init__(self):
+        self.name = "Compressor"
+        self.parameters = FakeVector([
+            FakeParameter("Device On", 1.0, quantized=True, items=["Off", "On"]),
+            FakeParameter("Threshold", 0.85),
+            FakeParameter("Ratio", 0.75),
+        ])
+
+
 class FakeSong:
     def __init__(self):
         self.tempo = 120.0
         self.current_song_time = 0.0
-        self.tracks = FakeVector([types.SimpleNamespace(name="Track 1"), types.SimpleNamespace(name="Track 2")])
+        self.tracks = FakeVector([
+            types.SimpleNamespace(name="Track 1", devices=FakeVector([FakeDevice()])),
+            types.SimpleNamespace(name="Track 2", devices=FakeVector([])),
+        ])
         self.scenes = FakeVector([types.SimpleNamespace(name="Scene 1")])
         self.view = types.SimpleNamespace(selected_track=None)
 
@@ -159,6 +187,17 @@ def test_resolve_get_children_and_call(monkeypatch):
     assert len([item for item in children if not item.get("truncated")]) == 1
     assert children[-1] == {"truncated": True}
     assert bridge._rpc_call({"ref": {"path": "live_set"}, "method": "get_beats_loop_start"}) == "1.1.1"
+
+
+def test_device_parameters_are_compact_and_addressable(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    result = bridge._rpc_device_parameters({"ref": {"path": "live_set tracks 0 devices 0"}, "query": "threshold"})
+    assert len(result) == 1
+    assert result[0]["name"] == "Threshold"
+    assert result[0]["display"] == "0.85 display"
+    assert "id" in result[0]
+    param = bridge._resolve({"id": result[0]["id"]})
+    assert param.name == "Threshold"
 
 
 def test_app_browser_path_roots_and_stale_id_errors(monkeypatch):

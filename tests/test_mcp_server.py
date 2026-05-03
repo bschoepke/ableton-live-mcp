@@ -31,6 +31,7 @@ def test_lists_general_purpose_tools():
         "live_set",
         "live_call",
         "live_children",
+        "live_device_parameters",
         "live_eval",
         "live_exec",
         "live_batch",
@@ -89,6 +90,20 @@ def test_batch_tool_forwards_operations_to_bridge():
     })
     assert bridge.calls == [("batch", args)]
     assert response["result"]["structuredContent"]["method"] == "batch"
+
+
+def test_device_parameters_tool_forwards_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {"ref": {"path": "live_set tracks 0 devices 0"}, "query": "threshold", "limit": 5}
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 31,
+        "method": "tools/call",
+        "params": {"name": "live_device_parameters", "arguments": args},
+    })
+    assert bridge.calls == [("device_parameters", args)]
+    assert response["result"]["structuredContent"]["method"] == "device_parameters"
 
 
 def test_browser_search_tool_forwards_query_to_bridge():

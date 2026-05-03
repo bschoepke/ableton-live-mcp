@@ -203,6 +203,23 @@ class AbletonObjectMCP(ControlSurface):
             result.append({"truncated": True})
         return result
 
+    def _rpc_device_parameters(self, params):
+        device = self._resolve(params.get("ref"))
+        query = (params.get("query") or "").strip().lower()
+        terms = [term for term in query.split() if term]
+        limit = params.get("limit")
+        values, truncated = self._take(getattr(device, "parameters"), limit)
+        result = []
+        for param in values:
+            name = getattr(param, "name", "")
+            if terms and not all(term in name.lower() for term in terms):
+                continue
+            item = self._parameter_summary(param)
+            result.append(item)
+        if truncated:
+            result.append({"truncated": True})
+        return result
+
     def _rpc_batch(self, params):
         results = []
         continue_on_error = bool(params.get("continue_on_error"))
@@ -490,6 +507,30 @@ class AbletonObjectMCP(ControlSurface):
             pass
         try:
             result["source"] = item.source
+        except Exception:
+            pass
+        return result
+
+    def _parameter_summary(self, param):
+        obj_id = self._object_id(param)
+        self._remember_object(obj_id, param)
+        result = {
+            "id": obj_id,
+            "name": getattr(param, "name", ""),
+            "value": getattr(param, "value", None),
+        }
+        for attr in ("min", "max", "default_value", "display_value", "is_quantized"):
+            try:
+                result[attr] = getattr(param, attr)
+            except Exception:
+                pass
+        try:
+            result["display"] = param.str_for_value(param.value)
+        except Exception:
+            pass
+        try:
+            if getattr(param, "is_quantized", False):
+                result["value_items"] = list(param.value_items)
         except Exception:
             pass
         return result
