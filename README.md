@@ -104,6 +104,7 @@ Common workflows that work well:
 - Discover library content with `live_browser_search` using bounded roots, depth, and result limits. Search results include reusable BrowserItem ids.
 - Discover third-party audio plugins through the `plugins` browser root. Plugin formats/vendors are whatever the local Live install indexes, for example AU/VST roots on that machine.
 - Load devices or presets by traversing `app.browser` to a loadable `BrowserItem`, selecting the target track with `song.view.selected_track`, then calling `app.browser.load_item(item)`.
+- Load individual samples the same way: create/select a MIDI track, load the sample `BrowserItem`, then create MIDI notes for the generated sample device. This is the reliable path for “put this sample in Simpler” style prompts.
 - Create Session MIDI clips with `clip_slot.create_clip(length)` and add notes with `Live.Clip.MidiNoteSpecification(pitch, start_time, duration, velocity, mute)`.
 - Place existing Session clips into the timeline with `track.duplicate_clip_to_arrangement(slot.clip, destination_time)`.
 - Create Arrangement audio clips from local files with `track.create_audio_clip(path, destination_time)`.
