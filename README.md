@@ -149,6 +149,7 @@ Common errors to avoid:
 - Object summaries are compact by default. Set `detail: true` when `repr` or `canonical_path` is needed.
 - Do not reuse raw `_live_ptr` values returned manually from `live_exec` as bridge ids. Use ids returned by bridge summaries such as `live_get`, `live_set_summary`, `live_device_parameters`, or `live_browser_search`.
 - Tracebacks are omitted by default to keep common Live API errors readable. Set `include_traceback: true` on the bridge request or `ABLETON_MCP_TRACEBACK=1` in the Python client environment when debugging.
+- `timeout` bounds how long the bridge waits for Live's main thread. If a long mutation has already started inside Live, it may still run to completion after a timeout; keep large edits chunked and return compact progress summaries.
 
 Token and latency tips:
 

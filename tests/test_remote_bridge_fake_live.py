@@ -471,6 +471,26 @@ def test_remote_script_read_line_preserves_buffered_requests(monkeypatch):
     assert buffer == b""
 
 
+def test_run_on_main_abandons_request_that_has_not_started(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    callbacks = []
+    invoked = []
+    bridge._main_thread_id = -1
+    bridge.schedule_message = lambda _delay, callback: callbacks.append(callback)
+    bridge._rpc_marker = lambda _params: invoked.append(True)
+
+    try:
+        bridge._run_on_main("marker", {"timeout": 0.001})
+    except RuntimeError as exc:
+        assert "Timed out waiting for Live main thread" in str(exc)
+    else:
+        raise AssertionError("expected timeout")
+
+    assert invoked == []
+    callbacks[0]()
+    assert invoked == []
+
+
 def test_exec_returns_result_binding(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     result = bridge._rpc_exec({"code": "song.tempo = 124\nresult = {'tempo': song.tempo}"})
