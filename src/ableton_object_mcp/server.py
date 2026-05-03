@@ -160,6 +160,8 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "type": "object",
         "properties": {
             "id": {"type": "integer", "description": "Browser item id returned by live_browser_search."},
+            "uri": {"type": "string", "description": "Stable BrowserItem uri returned by live_browser_search, when Live exposes it."},
+            "path": {"type": "string", "description": "Browser path returned by live_browser_search; fallback for stale ids."},
         },
         "additionalProperties": False,
     }
@@ -177,7 +179,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "stop_score": {"type": "integer", "description": "0 exact, 1 query in name, 3 path."},
         "match_all_terms": {"type": "boolean"},
     }), forward("browser_search")))
-    server.add_tool(Tool("live_browser_load", "Load BrowserItem from search.", schema({
+    server.add_tool(Tool("live_browser_load", "Load BrowserItem from search by id, uri, or path.", schema({
         "item": browser_item_ref,
         "target_track": ref,
     }, ["item"]), forward("browser_load")))

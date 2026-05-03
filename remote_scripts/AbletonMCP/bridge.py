@@ -548,7 +548,7 @@ class AbletonObjectMCP(ControlSurface):
         return {"query": query, "roots": root_names, "visited": visited, "truncated": truncated, "results": results}
 
     def _rpc_browser_load(self, params):
-        item = self._resolve(params.get("item"))
+        item = self._resolve_browser_item(params.get("item"))
         target = params.get("target_track")
         if target:
             self.song().view.selected_track = self._resolve(target)
@@ -560,7 +560,7 @@ class AbletonObjectMCP(ControlSurface):
         if params.get("stop"):
             browser.stop_preview()
             return {"previewing": False}
-        item = self._resolve(params.get("item"))
+        item = self._resolve_browser_item(params.get("item"))
         browser.preview_item(item)
         return {"previewing": True, "item": self._browser_item_result(None, item, None)}
 
@@ -622,6 +622,73 @@ class AbletonObjectMCP(ControlSurface):
                 raise KeyError("Unknown or stale object id %s; rerun get/search and use the new id" % obj_id)
             return self._objects[obj_id]
         return self._resolve_path(ref.get("path") or "live_set")
+
+    def _resolve_browser_item(self, ref):
+        if not ref:
+            raise ValueError("Browser item ref is required")
+        if "id" in ref:
+            try:
+                return self._resolve(ref)
+            except KeyError:
+                if not (ref.get("uri") or ref.get("path")):
+                    raise
+        uri = ref.get("uri")
+        path = ref.get("path")
+        if not (uri or path):
+            return self._resolve(ref)
+        item = self._find_browser_item(uri=uri, path=path)
+        if item is None:
+            raise KeyError("Could not resolve browser item by uri/path; rerun browser_search")
+        return item
+
+    def _find_browser_item(self, uri=None, path=None):
+        browser = Live.Application.get_application().browser
+        wanted_path = path.lower() if path else None
+
+        def roots_for(name):
+            if not hasattr(browser, name):
+                return []
+            root = getattr(browser, name)
+            if self._is_browser_item(root):
+                try:
+                    return root.iter_children
+                except Exception:
+                    return (root,)
+            try:
+                return iter(root)
+            except Exception:
+                return ()
+
+        def children_of(item):
+            try:
+                return item.iter_children
+            except Exception:
+                return ()
+
+        def walk(item, current_path, depth):
+            path_text = " > ".join([part for part in current_path if part])
+            if uri:
+                try:
+                    if item.uri == uri:
+                        return item
+                except Exception:
+                    pass
+            if wanted_path and path_text.lower() == wanted_path:
+                return item
+            if depth >= DEFAULT_MAX_DEPTH:
+                return None
+            for child in children_of(item):
+                found = walk(child, current_path + [getattr(child, "name", "")], depth + 1)
+                if found is not None:
+                    return found
+            return None
+
+        for root_name in DEFAULT_BROWSER_ROOTS:
+            for item in roots_for(root_name):
+                found = walk(item, [root_name, getattr(item, "name", "")], 0)
+                if found is not None:
+                    return found
+        return None
 
     def _resolve_path(self, path):
         parts = path.split()

@@ -274,7 +274,7 @@ def test_remote_bridge_default_browser_roots_include_plugins():
 def test_browser_load_tool_forwards_item_ref_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)
-    args = {"item": {"id": 123}, "target_track": {"path": "live_set tracks 0"}}
+    args = {"item": {"id": 123, "uri": "fake:item", "path": "sounds > Bass > Fake.adg"}, "target_track": {"path": "live_set tracks 0"}}
     response = server.handle({
         "jsonrpc": "2.0",
         "id": 6,

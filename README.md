@@ -119,6 +119,7 @@ Common workflows that work well:
 - For Arrangement-editing prompts, request `arrangement_clip_limit` in `live_set_summary` so clip names, ids, and positions are available without a custom object walk.
 - Batch independent generic operations with `live_batch` when the work does not need custom Python code.
 - Discover library content with `live_browser_search` using bounded roots, depth, and result limits. Search results include reusable BrowserItem ids.
+- For long browser workflows, pass the whole search result item to `live_browser_load` or `live_browser_preview`. BrowserItem ids are fastest, but `uri`/`path` let the bridge re-resolve an item if Live invalidates an old BrowserItem object id.
 - Preview candidate samples or presets with `live_browser_preview` before loading them, then call it with `stop: true` when done.
 - Discover third-party audio plugins through the `plugins` browser root. Plugin formats/vendors are whatever the local Live install indexes, for example AU/VST roots on that machine.
 - Load devices or presets by traversing `app.browser` to a loadable `BrowserItem`, selecting the target track with `song.view.selected_track`, then calling `app.browser.load_item(item)`.

@@ -526,6 +526,18 @@ def test_browser_roots_search_and_load(monkeypatch):
     assert app.browser.stopped_preview is True
 
 
+def test_browser_load_can_reresolve_stale_id_by_uri_or_path(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    result = bridge._rpc_browser_search({"query": "cowbell", "roots": ["drums"], "limit": 1, "max_depth": 5})
+    item = result["results"][0]
+    bridge._objects.clear()
+
+    bridge._rpc_browser_load({"item": item, "target_track": {"path": "live_set tracks 0"}})
+
+    assert app.browser.loaded == ["505 Cowbell Hi.flac"]
+    assert song.view.selected_track.name == "Track 1"
+
+
 def test_browser_capabilities_report_roots_and_semantic_attrs(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     result = bridge._rpc_browser_capabilities({})
