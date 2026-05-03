@@ -11,14 +11,14 @@ DEFAULT_REMOTE_SCRIPT = "Ableton_Live_MCP"
 
 
 def _resource_root() -> Path | None:
-    root = Path(__file__).resolve().parent / "remote_scripts"
-    return root if root.is_dir() else None
+    script = Path(__file__).resolve().parent / DEFAULT_REMOTE_SCRIPT
+    return script.parent if script.is_dir() else None
 
 
 def _source_root() -> Path | None:
     repo_root = Path(__file__).resolve().parents[1]
-    root = repo_root / "remote_scripts"
-    return root if root.is_dir() else None
+    script = repo_root / DEFAULT_REMOTE_SCRIPT
+    return script.parent if script.is_dir() else None
 
 
 def remote_script_root() -> Path:

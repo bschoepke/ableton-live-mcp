@@ -328,7 +328,7 @@ def load_bridge_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "_Framework", framework)
     monkeypatch.setitem(sys.modules, "_Framework.ControlSurface", control_surface)
 
-    path = Path(__file__).resolve().parents[1] / "remote_scripts" / "Ableton_Live_MCP" / "bridge.py"
+    path = Path(__file__).resolve().parents[1] / "Ableton_Live_MCP" / "bridge.py"
     spec = importlib.util.spec_from_file_location("fake_ableton_bridge", path)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader

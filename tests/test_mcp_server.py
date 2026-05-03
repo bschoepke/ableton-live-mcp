@@ -387,7 +387,7 @@ def test_browser_search_schema_mentions_plugins_root():
 
 def test_remote_bridge_default_browser_roots_include_plugins():
     root = Path(__file__).resolve().parents[1]
-    bridge_source = (root / "remote_scripts" / "Ableton_Live_MCP" / "bridge.py").read_text()
+    bridge_source = (root / "Ableton_Live_MCP" / "bridge.py").read_text()
     assert '"plugins"' in bridge_source
     assert "def _rpc_browser_search" in bridge_source
     assert "def _rpc_browser_load" in bridge_source
@@ -569,7 +569,7 @@ def test_bridge_client_rejects_oversized_response():
 
 def test_remote_script_default_bridge_exists():
     root = Path(__file__).resolve().parents[1]
-    canonical = root / "remote_scripts" / "Ableton_Live_MCP" / "bridge.py"
+    canonical = root / "Ableton_Live_MCP" / "bridge.py"
     assert canonical.exists()
     assert "class AbletonLiveMCP" in canonical.read_text()
 

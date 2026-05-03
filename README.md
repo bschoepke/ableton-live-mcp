@@ -5,7 +5,7 @@ This repo implements a general-purpose Model Context Protocol server for Ableton
 ## Architecture
 
 - `ableton-live-mcp` is a stdio MCP server used by coding agents.
-- `remote_scripts/Ableton_Live_MCP` is an Ableton Control Surface script that opens a localhost JSON RPC bridge.
+- `Ableton_Live_MCP` is an Ableton Control Surface script that opens a localhost JSON RPC bridge.
 - The MCP tools map to generic Live object-model operations, so an agent can compose arbitrary workflows supported by Live's APIs.
 
 ## Install

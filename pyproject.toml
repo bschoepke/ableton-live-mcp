@@ -30,12 +30,12 @@ only-include = ["src"]
 sources = ["src"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"remote_scripts/Ableton_Live_MCP" = "remote_scripts/Ableton_Live_MCP"
+"Ableton_Live_MCP" = "Ableton_Live_MCP"
 
 [tool.hatch.build.targets.sdist]
 include = [
     "/src",
-    "/remote_scripts",
+    "/Ableton_Live_MCP",
     "/tests",
     "/README.md",
     "/LICENSE",
