@@ -38,13 +38,13 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     ref = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Live API path, e.g. 'live_set tracks 0 clip_slots 0'."},
-            "id": {"type": "integer", "description": "Live object id returned by the bridge."},
+            "path": {"type": "string", "description": "Live API path."},
+            "id": {"type": "integer", "description": "Bridge object id."},
         },
         "additionalProperties": False,
     }
 
-    server.add_tool(Tool("live_ping", "Check Ableton bridge health and Live version.", schema({}), forward("ping")))
+    server.add_tool(Tool("live_ping", "Check bridge health/version.", schema({}), forward("ping")))
     response_controls = {
         "detail": {"type": "boolean", "description": "Include repr/canonical_path."},
         "max_items": {"type": "integer", "description": "Max encoded items; -1 unbounded."},
@@ -62,7 +62,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "child_limit": {"type": "integer", "minimum": 0},
         **response_controls,
     }, ["ref"]), forward("get")))
-    server.add_tool(Tool("live_set_summary", "Compact non-destructive set summary.", schema({
+    server.add_tool(Tool("live_set_summary", "Compact set summary.", schema({
         "track_limit": {"type": "integer", "description": "Max tracks; -1 unbounded."},
         "clip_slot_limit": {"type": "integer", "description": "Max clip slots per track."},
         "device_limit": {"type": "integer", "description": "Max devices per track."},
@@ -95,6 +95,28 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "limit": {"type": "integer", "minimum": 0},
         **response_controls,
     }, ["ref"]), forward("device_parameters")))
+    server.add_tool(Tool("live_clip_notes", "List MIDI notes from a clip compactly.", schema({
+        "ref": ref,
+        "limit": {"type": "integer", "minimum": 0},
+        "start_time": {"type": "number"},
+        "end_time": {"type": "number"},
+        **response_controls,
+    }, ["ref"]), forward("clip_notes")))
+    server.add_tool(Tool("live_clip_update_notes", "Update existing MIDI notes by note_id.", schema({
+        "ref": ref,
+        "updates": {"type": "array", "items": {"type": "object", "properties": {
+            "note_id": {"type": "integer"},
+            "pitch": {"type": "integer"},
+            "start_time": {"type": "number"},
+            "duration": {"type": "number"},
+            "velocity": {"type": "number"},
+            "mute": {"type": "boolean"},
+            "probability": {"type": "number"},
+            "velocity_deviation": {"type": "number"},
+            "release_velocity": {"type": "number"},
+        }, "required": ["note_id"], "additionalProperties": False}},
+        **response_controls,
+    }, ["ref", "updates"]), forward("clip_update_notes")))
     server.add_tool(Tool("live_batch", "Run multiple generic bridge operations in one Live main-thread request; preserves full object-model flexibility.", schema({
         "operations": {"type": "array", "items": {"type": "object", "properties": {
             "method": {"type": "string", "description": "Bridge method name such as get, set, call, children, or eval."},
@@ -111,21 +133,21 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         },
         "additionalProperties": False,
     }
-    server.add_tool(Tool("live_browser_roots", "List available app.browser root categories. Convenience only; full browser objects remain accessible via live_eval/live_call.", schema({}), forward("browser_roots")))
-    server.add_tool(Tool("live_browser_capabilities", "List app.browser roots, filter types, and whether this Live build exposes semantic/similarity search in the Python object model.", schema({}), forward("browser_capabilities")))
-    server.add_tool(Tool("live_browser_search", "General bounded search over app.browser roots. Returns BrowserItem ids for load or deeper object-model inspection.", schema({
-        "query": {"type": "string", "description": "Space-separated search terms matched against browser item names and paths. Empty browses top items."},
-        "roots": {"type": "array", "items": {"type": "string"}, "description": "Browser roots such as instruments, audio_effects, drums, samples, sounds, packs, plugins, user_library. Default common library roots."},
-        "limit": {"type": "integer", "minimum": 1, "description": "Maximum matches returned. Default 25."},
-        "max_depth": {"type": "integer", "minimum": 0, "description": "Maximum browser traversal depth. Default 8."},
-        "max_visited": {"type": "integer", "minimum": 1, "description": "Maximum browser items visited. Default 5000."},
-        "loadable_only": {"type": "boolean", "description": "Only return loadable browser items. Default true."},
-        "include_folders": {"type": "boolean", "description": "Include matching folders. Default false."},
-        "stop_on_limit": {"type": "boolean", "description": "Stop traversal as soon as limit matches are found. Faster but less globally ranked. Default false."},
-        "stop_score": {"type": "integer", "description": "With stop_on_limit, only stop after this match quality or better. 0 exact name, 1 query in name, 2 all terms in name, 3 query in path. Default 0; use 1 for first-good sample/plugin hunts."},
-        "match_all_terms": {"type": "boolean", "description": "Require every query term to match. Default true."},
+    server.add_tool(Tool("live_browser_roots", "List app.browser roots.", schema({}), forward("browser_roots")))
+    server.add_tool(Tool("live_browser_capabilities", "Browser roots/filter types/semantic API exposure.", schema({}), forward("browser_capabilities")))
+    server.add_tool(Tool("live_browser_search", "Bounded app.browser search; returns BrowserItem ids.", schema({
+        "query": {"type": "string", "description": "Search terms."},
+        "roots": {"type": "array", "items": {"type": "string"}, "description": "Roots: instruments, drums, samples, plugins, etc."},
+        "limit": {"type": "integer", "minimum": 1, "description": "Max matches."},
+        "max_depth": {"type": "integer", "minimum": 0, "description": "Max depth."},
+        "max_visited": {"type": "integer", "minimum": 1, "description": "Max visited."},
+        "loadable_only": {"type": "boolean"},
+        "include_folders": {"type": "boolean"},
+        "stop_on_limit": {"type": "boolean"},
+        "stop_score": {"type": "integer", "description": "0 exact, 1 query in name, 3 path."},
+        "match_all_terms": {"type": "boolean"},
     }), forward("browser_search")))
-    server.add_tool(Tool("live_browser_load", "Load a BrowserItem returned by live_browser_search. Convenience only; app.browser.load_item remains available through live_eval.", schema({
+    server.add_tool(Tool("live_browser_load", "Load BrowserItem from search.", schema({
         "item": browser_item_ref,
         "target_track": ref,
     }, ["item"]), forward("browser_load")))

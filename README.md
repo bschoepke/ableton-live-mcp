@@ -78,6 +78,8 @@ Publish releases from a clean git archive or build artifact, not by zipping a wo
 - `live_call`: call an object method with positional and keyword arguments.
 - `live_children`: list children from an object.
 - `live_device_parameters`: list compact device parameter metadata and return parameter ids for deliberate `live_set` updates.
+- `live_clip_notes`: list MIDI notes from a clip with note ids, pitch, time, duration, and velocity.
+- `live_clip_update_notes`: update existing MIDI notes by `note_id`.
 - `live_batch`: run several generic bridge operations in one Live main-thread request.
 - `live_browser_roots`: list available `app.browser` root categories.
 - `live_browser_capabilities`: list available browser roots, filter types, and whether the installed Live build exposes semantic/similarity search through the Python object model.
@@ -110,6 +112,7 @@ Common workflows that work well:
 - Load devices or presets by traversing `app.browser` to a loadable `BrowserItem`, selecting the target track with `song.view.selected_track`, then calling `app.browser.load_item(item)`.
 - Load individual samples the same way: create/select a MIDI track, load the sample `BrowserItem`, then create MIDI notes for the generated sample device. This is the reliable path for “put this sample in Simpler” style prompts.
 - Inspect device parameters with `live_device_parameters` before setting them. Use returned parameter ids with `live_set` on `value`, and verify `display`/`display_value` afterward. Many Live parameters expose normalized internal values even when the UI shows dB, Hz, ms, or percent.
+- For existing MIDI clip edits, inspect with `live_clip_notes` and update with `live_clip_update_notes`. When using raw `live_exec`, mutate the `MidiNote` objects returned by `clip.get_all_notes_extended()` and pass that same vector to `clip.apply_note_modifications`; do not construct `MidiNoteSpecification` for existing notes.
 - Create Session MIDI clips with `clip_slot.create_clip(length)` and add notes with `Live.Clip.MidiNoteSpecification(pitch, start_time, duration, velocity, mute)`.
 - Place existing Session clips into the timeline with `track.duplicate_clip_to_arrangement(slot.clip, destination_time)`.
 - Create Arrangement audio clips from local files with `track.create_audio_clip(path, destination_time)`.

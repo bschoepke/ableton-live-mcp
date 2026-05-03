@@ -33,6 +33,8 @@ def test_lists_general_purpose_tools():
         "live_call",
         "live_children",
         "live_device_parameters",
+        "live_clip_notes",
+        "live_clip_update_notes",
         "live_eval",
         "live_exec",
         "live_batch",
@@ -119,6 +121,29 @@ def test_device_parameters_tool_forwards_to_bridge():
     })
     assert bridge.calls == [("device_parameters", args)]
     assert response["result"]["structuredContent"]["method"] == "device_parameters"
+
+
+def test_clip_note_tools_forward_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    read_args = {"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}, "limit": 16}
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 32,
+        "method": "tools/call",
+        "params": {"name": "live_clip_notes", "arguments": read_args},
+    })
+    assert response["result"]["structuredContent"]["method"] == "clip_notes"
+
+    update_args = {"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}, "updates": [{"note_id": 1, "velocity": 90}]}
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 33,
+        "method": "tools/call",
+        "params": {"name": "live_clip_update_notes", "arguments": update_args},
+    })
+    assert bridge.calls == [("clip_notes", read_args), ("clip_update_notes", update_args)]
+    assert response["result"]["structuredContent"]["method"] == "clip_update_notes"
 
 
 def test_browser_search_tool_forwards_query_to_bridge():

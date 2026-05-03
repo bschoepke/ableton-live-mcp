@@ -259,6 +259,50 @@ class AbletonObjectMCP(ControlSurface):
             result.append({"truncated": True})
         return result
 
+    def _rpc_clip_notes(self, params):
+        clip = self._resolve(params.get("ref"))
+        limit = int(params.get("limit") if params.get("limit") is not None else 512)
+        start = params.get("start_time")
+        end = params.get("end_time")
+        notes = list(clip.get_all_notes_extended())
+        if start is not None:
+            notes = [note for note in notes if note.start_time >= float(start)]
+        if end is not None:
+            notes = [note for note in notes if note.start_time < float(end)]
+        total = len(notes)
+        truncated = False
+        if limit >= 0 and len(notes) > limit:
+            notes = notes[:limit]
+            truncated = True
+        return {
+            "clip": self._clip_summary(clip, None),
+            "note_count": total,
+            "truncated": truncated,
+            "notes": [self._note_summary(note) for note in notes],
+        }
+
+    def _rpc_clip_update_notes(self, params):
+        clip = self._resolve(params.get("ref"))
+        updates = params.get("updates") or []
+        notes = clip.get_all_notes_extended()
+        by_id = dict((note.note_id, note) for note in notes)
+        changed = []
+        for update in updates:
+            note_id = update.get("note_id")
+            if note_id not in by_id:
+                raise KeyError("Unknown note_id %s in clip %s" % (note_id, getattr(clip, "name", "")))
+            note = by_id[note_id]
+            for attr in ("pitch", "start_time", "duration", "velocity", "mute", "probability", "velocity_deviation", "release_velocity"):
+                if attr in update:
+                    setattr(note, attr, update[attr])
+            changed.append(note)
+        clip.apply_note_modifications(notes)
+        return {
+            "clip": self._clip_summary(clip, None),
+            "updated": len(changed),
+            "notes": [self._note_summary(note) for note in changed],
+        }
+
     def _rpc_batch(self, params):
         results = []
         continue_on_error = bool(params.get("continue_on_error"))
@@ -629,7 +673,8 @@ class AbletonObjectMCP(ControlSurface):
 
     def _clip_summary(self, clip, slot_index):
         summary = self._object_summary(clip, False)
-        summary["slot"] = slot_index
+        if slot_index is not None:
+            summary["slot"] = slot_index
         summary["name"] = getattr(clip, "name", "")
         for attr in ("is_midi_clip", "is_audio_clip", "is_session_clip", "is_arrangement_clip", "length", "loop_start", "loop_end", "muted", "has_envelopes"):
             try:
@@ -637,6 +682,19 @@ class AbletonObjectMCP(ControlSurface):
             except Exception:
                 pass
         return summary
+
+    def _note_summary(self, note):
+        return {
+            "note_id": note.note_id,
+            "pitch": note.pitch,
+            "start_time": note.start_time,
+            "duration": note.duration,
+            "velocity": note.velocity,
+            "mute": note.mute,
+            "probability": note.probability,
+            "velocity_deviation": note.velocity_deviation,
+            "release_velocity": note.release_velocity,
+        }
 
     def _object_id(self, obj):
         live_id = getattr(obj, "_live_ptr", None)

@@ -134,6 +134,26 @@ class FakeClip:
         self.loop_end = 4.0
         self.muted = False
         self.has_envelopes = False
+        self._notes = [
+            types.SimpleNamespace(
+                note_id=1,
+                pitch=60,
+                start_time=0.0,
+                duration=0.5,
+                velocity=40.0,
+                mute=False,
+                probability=1.0,
+                velocity_deviation=0.0,
+                release_velocity=64.0,
+            )
+        ]
+
+    def get_all_notes_extended(self):
+        return self._notes
+
+    def apply_note_modifications(self, notes):
+        updates = {note.note_id: note for note in notes}
+        self._notes = [updates.get(note.note_id, note) for note in self._notes]
 
 
 class FakeClipSlot:
@@ -228,6 +248,22 @@ def test_set_summary_compacts_existing_project_state(monkeypatch):
     assert result["tracks"][-1] == {"truncated": True}
     assert result["return_tracks"][0]["name"] == "A-Reverb"
     assert result["master_track"]["name"] == "Main"
+
+
+def test_clip_notes_can_be_listed_and_updated(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
+    assert notes["note_count"] == 1
+    assert notes["notes"][0]["velocity"] == 40.0
+
+    updated = bridge._rpc_clip_update_notes({
+        "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
+        "updates": [{"note_id": 1, "velocity": 88.0}],
+    })
+    assert updated["updated"] == 1
+    assert updated["notes"][0]["velocity"] == 88.0
+    notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
+    assert notes["notes"][0]["velocity"] == 88.0
 
 
 def test_device_parameters_are_compact_and_addressable(monkeypatch):
