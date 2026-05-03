@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ableton-object-mcp"
+version = "0.1.0"
+description = "General-purpose MCP bridge for Ableton Live's object model."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Codex" }]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+ableton-object-mcp = "ableton_object_mcp.server:main"
+ableton-object-mcp-validate = "ableton_object_mcp.validate:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ableton_object_mcp"]
