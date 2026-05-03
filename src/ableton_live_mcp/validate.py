@@ -18,7 +18,7 @@ def main() -> int:
         for name, method, params in checks:
             results[name] = client.request(method, params)
     except AbletonBridgeError as exc:
-        print(f"Ableton Object MCP validation failed: {exc}", file=sys.stderr)
+        print(f"Ableton Live MCP validation failed: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(results, indent=2, sort_keys=True))
     version_text = json.dumps(results).lower()

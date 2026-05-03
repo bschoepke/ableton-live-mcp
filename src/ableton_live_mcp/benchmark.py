@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .bridge import AbletonBridgeClient, AbletonBridgeError
+from .debug import require_debug_cli
 
 
 RequestFactory = Callable[[], tuple[str, dict[str, Any]]]
@@ -176,14 +177,16 @@ def run_benchmark(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Benchmark common Ableton Object MCP workflows.")
+    if not require_debug_cli("ableton-live-mcp benchmark"):
+        return 2
+    parser = argparse.ArgumentParser(description="Benchmark common Ableton Live MCP workflows.")
     parser.add_argument("--iterations", type=int, default=3, help="Iterations per benchmark. Default: 3.")
     parser.add_argument("--no-browser", action="store_true", help="Skip browser/library/plugin traversal benchmarks.")
     args = parser.parse_args()
     try:
         code, output = run_benchmark(iterations=max(1, args.iterations), include_browser=not args.no_browser)
     except AbletonBridgeError as exc:
-        print(f"Ableton Object MCP benchmark failed: {exc}", file=sys.stderr)
+        print(f"Ableton Live MCP benchmark failed: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(output, indent=2, sort_keys=True))
     return code

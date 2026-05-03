@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import platform
 import shutil
 import sys
 from importlib import resources
 from pathlib import Path
 
 
-DEFAULT_REMOTE_SCRIPT = "Ableton_Object_MCP"
-ALIASES = ("Ableton_Object_MCP", "AbletonMCP")
+DEFAULT_REMOTE_SCRIPT = "Ableton_Live_MCP"
 
 
 def _resource_root() -> Path | None:
     try:
-        root = resources.files("ableton_object_mcp") / "remote_scripts"
+        root = resources.files("ableton_live_mcp") / "remote_scripts"
         if root.is_dir():
             return Path(str(root))
     except Exception:
@@ -35,12 +35,14 @@ def remote_script_root() -> Path:
 
 
 def default_install_dir() -> Path:
+    if platform.system() == "Windows":
+        return Path.home() / "Documents" / "Ableton" / "User Library" / "Remote Scripts"
     return Path.home() / "Music" / "Ableton" / "User Library" / "Remote Scripts"
 
 
 def install_remote_script(name: str = DEFAULT_REMOTE_SCRIPT, target_dir: Path | None = None, force: bool = False) -> Path:
-    if name not in ALIASES:
-        raise ValueError("Unknown Remote Script %r. Expected one of: %s" % (name, ", ".join(ALIASES)))
+    if name != DEFAULT_REMOTE_SCRIPT:
+        raise ValueError("Unknown Remote Script %r. Expected: %s" % (name, DEFAULT_REMOTE_SCRIPT))
     source = remote_script_root() / name
     if not source.is_dir():
         raise FileNotFoundError("Remote Script %s is not available at %s" % (name, source))
@@ -59,15 +61,15 @@ def install_remote_script(name: str = DEFAULT_REMOTE_SCRIPT, target_dir: Path | 
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Install the Ableton Object MCP Remote Script into the Ableton User Library.")
-    parser.add_argument("--name", choices=ALIASES, default=DEFAULT_REMOTE_SCRIPT, help="Remote Script package to install. Default: %(default)s")
+    parser = argparse.ArgumentParser(description="Install the Ableton Live MCP Remote Script into the Ableton User Library.")
+    parser.add_argument("--name", choices=(DEFAULT_REMOTE_SCRIPT,), default=DEFAULT_REMOTE_SCRIPT, help="Remote Script package to install. Default: %(default)s")
     parser.add_argument("--target-dir", type=Path, default=default_install_dir(), help="Ableton Remote Scripts directory. Default: %(default)s")
     parser.add_argument("--force", action="store_true", help="Replace an existing installed Remote Script directory.")
-    parser.add_argument("--list", action="store_true", help="List packaged Remote Script aliases and exit.")
+    parser.add_argument("--list", action="store_true", help="List packaged Remote Scripts and exit.")
     args = parser.parse_args(argv)
 
     if args.list:
-        print("\n".join(ALIASES))
+        print(DEFAULT_REMOTE_SCRIPT)
         return 0
 
     try:

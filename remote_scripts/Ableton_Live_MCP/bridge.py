@@ -1,6 +1,7 @@
 from __future__ import absolute_import, print_function
 
 import json
+import hashlib
 import socket
 import sys
 import threading
@@ -23,7 +24,7 @@ DEFAULT_MAIN_THREAD_TIMEOUT = 10
 DEFAULT_BROWSER_ROOTS = ("instruments", "audio_effects", "midi_effects", "drums", "samples", "sounds", "packs", "plugins", "user_library", "user_folders", "current_project")
 
 
-class AbletonObjectMCP(ControlSurface):
+class AbletonLiveMCP(ControlSurface):
     def __init__(self, c_instance):
         ControlSurface.__init__(self, c_instance)
         self._objects = {}
@@ -55,7 +56,7 @@ class AbletonObjectMCP(ControlSurface):
         thread = threading.Thread(target=self._accept_loop)
         thread.daemon = True
         thread.start()
-        self.log_message("Ableton_Object_MCP listening on %s:%s" % (HOST, PORT))
+        self.log_message("Ableton_Live_MCP listening on %s:%s" % (HOST, PORT))
 
     def _accept_loop(self):
         while self._running:
@@ -66,7 +67,7 @@ class AbletonObjectMCP(ControlSurface):
                 thread.start()
             except Exception:
                 if self._running:
-                    self.log_message("Ableton_Object_MCP accept error: %s" % traceback.format_exc())
+                    self.log_message("Ableton_Live_MCP accept error: %s" % traceback.format_exc())
 
     def _handle_client(self, client):
         acquired = self._handler_slots.acquire(False)
@@ -140,6 +141,7 @@ class AbletonObjectMCP(ControlSurface):
 
     def _run_on_main(self, method, params):
         if threading.current_thread().ident == self._main_thread_id:
+            self._check_expected_set_signature(params)
             return self._encode(getattr(self, "_rpc_" + method)(params), self._encode_options(params))
         done = threading.Event()
         result = {"value": None, "error": None}
@@ -150,6 +152,7 @@ class AbletonObjectMCP(ControlSurface):
                 done.set()
                 return
             try:
+                self._check_expected_set_signature(params)
                 value = getattr(self, "_rpc_" + method)(params)
                 result["value"] = self._encode(value, self._encode_options(params))
             except Exception:
@@ -206,6 +209,7 @@ class AbletonObjectMCP(ControlSurface):
             "signature_numerator": song.signature_numerator,
             "signature_denominator": song.signature_denominator,
             "current_song_time": song.current_song_time,
+            "set_signature": self._set_signature(),
             "tracks": tracks,
             "tracks_scanned": tracks_scanned,
             "return_tracks": returns,
@@ -356,6 +360,58 @@ class AbletonObjectMCP(ControlSurface):
             "notes": [self._note_summary(note) for note in changed],
         }
 
+    def _rpc_clip_add_notes(self, params):
+        clip = self._resolve(params.get("ref"))
+        if not getattr(clip, "is_midi_clip", False):
+            raise ValueError("clip_add_notes requires a MIDI clip")
+        if params.get("clear"):
+            try:
+                clip.remove_notes_extended(from_pitch=0, pitch_span=128, from_time=0.0, time_span=float(getattr(clip, "length", 0.0)))
+            except TypeError:
+                clip.remove_notes(0.0, 0, float(getattr(clip, "length", 0.0)), 128)
+        clear_range = params.get("clear_range")
+        if clear_range:
+            try:
+                clip.remove_notes_extended(
+                    from_pitch=int(clear_range["from_pitch"]),
+                    pitch_span=int(clear_range["pitch_span"]),
+                    from_time=float(clear_range["from_time"]),
+                    time_span=float(clear_range["time_span"]),
+                )
+            except TypeError:
+                clip.remove_notes(
+                    float(clear_range["from_time"]),
+                    int(clear_range["from_pitch"]),
+                    float(clear_range["time_span"]),
+                    int(clear_range["pitch_span"]),
+                )
+        specs = []
+        for note in params.get("notes") or []:
+            specs.append(Live.Clip.MidiNoteSpecification(
+                pitch=int(note["pitch"]),
+                start_time=float(note["start_time"]),
+                duration=float(note["duration"]),
+                velocity=float(note["velocity"]),
+                mute=bool(note.get("mute", False)),
+            ))
+        if specs:
+            clip.add_new_notes(tuple(specs))
+        return {
+            "clip": self._clip_summary(clip, None),
+            "added": len(specs),
+            "note_count": len(list(clip.get_all_notes_extended())),
+        }
+
+    def _rpc_clip_duplicate_to_arrangement(self, params):
+        track = self._resolve(params.get("track"))
+        clip = self._resolve(params.get("clip"))
+        track.duplicate_clip_to_arrangement(clip, float(params["destination_time"]))
+        return {
+            "track": self._track_summary(track, None, 0, 0, 8),
+            "clip": self._clip_summary(clip, None),
+            "destination_time": float(params["destination_time"]),
+        }
+
     def _rpc_clip_envelope(self, params):
         clip = self._resolve(params.get("ref"))
         parameter = self._resolve(params.get("parameter"))
@@ -474,11 +530,36 @@ class AbletonObjectMCP(ControlSurface):
             "markers": [self._warp_marker_summary(marker) for marker in markers],
         }
 
+    def _rpc_track_create_audio_clip(self, params):
+        track = self._resolve(params.get("ref"))
+        clip = track.create_audio_clip(str(params["file_path"]), float(params["destination_time"]))
+        if params.get("name"):
+            clip.name = params.get("name")
+        return {
+            "track": self._track_summary(track, None, 0, 0, 8),
+            "clip": self._clip_summary(clip, None),
+            "destination_time": float(params["destination_time"]),
+        }
+
+    def _rpc_track_insert_device(self, params):
+        track = self._resolve(params.get("ref"))
+        index = int(params.get("device_index") if params.get("device_index") is not None else -1)
+        before = len(getattr(track, "devices", []))
+        result = track.insert_device(str(params["device_name"]), index)
+        after = len(getattr(track, "devices", []))
+        return {
+            "track": self._track_summary(track, None, 0, 16, 0),
+            "device_name": str(params["device_name"]),
+            "device_index": index,
+            "inserted": after > before,
+            "result": result,
+        }
+
     def _rpc_batch(self, params):
         results = []
         continue_on_error = bool(params.get("continue_on_error"))
         inherited = {}
-        for name in ("detail", "include_repr", "max_items", "max_depth", "max_string_length", "timeout"):
+        for name in ("detail", "include_repr", "max_items", "max_depth", "max_string_length", "timeout", "expected_set_signature"):
             if params.get(name) is not None:
                 inherited[name] = params.get(name)
         for index, op in enumerate(params.get("operations") or []):
@@ -1032,6 +1113,71 @@ class AbletonObjectMCP(ControlSurface):
             return result
         return self._object_summary(value, options["detail"])
 
+    def _check_expected_set_signature(self, params):
+        expected = params.get("expected_set_signature") if params else None
+        if not expected:
+            return
+        current = self._set_signature()
+        if current != expected:
+            raise RuntimeError("Set changed since last inspection; expected set_signature %s but current is %s. Re-read live_set_summary before applying destructive edits." % (expected, current))
+
+    def _set_signature(self):
+        song = self.song()
+        payload = {
+            "tempo": getattr(song, "tempo", None),
+            "signature_numerator": getattr(song, "signature_numerator", None),
+            "signature_denominator": getattr(song, "signature_denominator", None),
+            "scenes": [getattr(scene, "name", "") for scene in getattr(song, "scenes", [])],
+            "tracks": [self._track_signature(track) for track in getattr(song, "tracks", [])],
+            "returns": [self._track_signature(track) for track in getattr(song, "return_tracks", [])],
+            "master": self._track_signature(getattr(song, "master_track", None)),
+        }
+        text = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+
+    def _track_signature(self, track):
+        if track is None:
+            return None
+        clips = []
+        try:
+            for index, slot in enumerate(track.clip_slots):
+                if getattr(slot, "has_clip", False):
+                    clips.append((index, self._clip_signature(slot.clip)))
+        except Exception:
+            pass
+        arrangement = []
+        try:
+            arrangement = [self._clip_signature(clip) for clip in track.arrangement_clips]
+        except Exception:
+            pass
+        devices = []
+        try:
+            devices = [(self._object_id(device), getattr(device, "name", ""), getattr(device, "class_name", "")) for device in track.devices]
+        except Exception:
+            pass
+        state = {}
+        for attr in ("name", "mute", "solo", "arm", "implicit_arm"):
+            try:
+                state[attr] = getattr(track, attr)
+            except Exception:
+                pass
+        return {
+            "id": self._object_id(track),
+            "state": state,
+            "devices": devices,
+            "clips": clips,
+            "arrangement": arrangement,
+        }
+
+    def _clip_signature(self, clip):
+        state = {}
+        for attr in ("name", "is_midi_clip", "is_audio_clip", "is_session_clip", "is_arrangement_clip", "length", "loop_start", "loop_end", "muted", "start_time", "end_time"):
+            try:
+                state[attr] = getattr(clip, attr)
+            except Exception:
+                pass
+        return (self._object_id(clip), state)
+
     def _take(self, values, limit):
         if limit is None:
             limit = DEFAULT_CHILD_LIMIT
@@ -1086,3 +1232,6 @@ class AbletonObjectMCP(ControlSurface):
             return int(str(version).split(".")[0])
         except Exception:
             return None
+
+
+AbletonObjectMCP = AbletonLiveMCP

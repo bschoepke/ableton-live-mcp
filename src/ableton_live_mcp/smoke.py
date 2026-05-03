@@ -5,6 +5,7 @@ import sys
 from typing import Any
 
 from .bridge import AbletonBridgeClient, AbletonBridgeError
+from .debug import require_debug_cli
 
 
 def _ok(name: str, result: Any) -> dict[str, Any]:
@@ -96,10 +97,12 @@ def run_smoke(client: AbletonBridgeClient | None = None) -> tuple[int, dict[str,
 
 
 def main() -> int:
+    if not require_debug_cli("ableton-live-mcp smoke"):
+        return 2
     try:
         code, output = run_smoke()
     except AbletonBridgeError as exc:
-        print(f"Ableton Object MCP smoke failed: {exc}", file=sys.stderr)
+        print(f"Ableton Live MCP smoke failed: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(output, indent=2, sort_keys=True))
     return code

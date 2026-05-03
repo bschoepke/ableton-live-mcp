@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ableton-object-mcp"
+name = "ableton-live-mcp"
 version = "0.1.0"
 description = "General-purpose MCP bridge for Ableton Live's object model."
 readme = "README.md"
@@ -14,25 +14,22 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+debug = ["pytest>=8.0"]
 
 [project.scripts]
-ableton-object-mcp = "ableton_object_mcp.server:main"
-ableton-object-mcp-validate = "ableton_object_mcp.validate:main"
-ableton-object-mcp-smoke = "ableton_object_mcp.smoke:main"
-ableton-object-mcp-benchmark = "ableton_object_mcp.benchmark:main"
-ableton-object-mcp-prompt-audit = "ableton_object_mcp.prompt_audit:main"
-ableton-object-mcp-install-remote-script = "ableton_object_mcp.install_remote_script:main"
+ableton-live-mcp = "ableton_live_mcp.server:main"
+ableton-live-mcp-validate = "ableton_live_mcp.validate:main"
+ableton-live-mcp-install-remote-script = "ableton_live_mcp.install_remote_script:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ableton_object_mcp"]
+packages = ["src/ableton_live_mcp"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"remote_scripts/Ableton_Object_MCP" = "ableton_object_mcp/remote_scripts/Ableton_Object_MCP"
-"remote_scripts/AbletonMCP" = "ableton_object_mcp/remote_scripts/AbletonMCP"
+"remote_scripts/Ableton_Live_MCP" = "ableton_live_mcp/remote_scripts/Ableton_Live_MCP"
 
 [tool.hatch.build.targets.sdist]
 include = [

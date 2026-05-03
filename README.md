@@ -1,22 +1,16 @@
-# Ableton Object MCP
+# Ableton Live MCP
 
 This repo implements a general-purpose Model Context Protocol server for Ableton Live 12. It is intentionally not a catalog of narrow tools like `create_clip()`. Instead it exposes Live's object model through path resolution, object ids, property access, method calls, child traversal, listeners, and raw expression evaluation inside Live's Python control-surface environment.
 
 ## Architecture
 
-- `ableton-object-mcp` is a stdio MCP server used by coding agents.
-- `remote_scripts/Ableton_Object_MCP` is an Ableton Control Surface script that opens a localhost JSON RPC bridge.
+- `ableton-live-mcp` is a stdio MCP server used by coding agents.
+- `remote_scripts/Ableton_Live_MCP` is an Ableton Control Surface script that opens a localhost JSON RPC bridge.
 - The MCP tools map to generic Live object-model operations, so an agent can compose arbitrary workflows supported by Live's APIs.
 
 ## Install
 
-1. Install the Python package in the agent environment:
-
-   ```sh
-   python -m pip install ableton-object-mcp
-   ```
-
-   For local development from a source checkout, use:
+1. From this repository checkout, install the package in the agent environment:
 
    ```sh
    python -m pip install -e ".[dev]"
@@ -25,17 +19,20 @@ This repo implements a general-purpose Model Context Protocol server for Ableton
 2. Install the Ableton Remote Script:
 
    ```sh
-   ableton-object-mcp-install-remote-script
+   ableton-live-mcp-install-remote-script
    ```
 
-   This installs `Ableton_Object_MCP` into `~/Music/Ableton/User Library/Remote Scripts`. The package also ships an `AbletonMCP` alias for compatibility with earlier local installs; select only one Control Surface in Live, because both aliases bind the same local port.
+   This installs `Ableton_Live_MCP` into the default Ableton User Library Remote Scripts folder:
 
-3. Start Ableton Live 12, open Settings, and select `Ableton_Object_MCP` as a Control Surface.
+   - macOS: `~/Music/Ableton/User Library/Remote Scripts`
+   - Windows: `%USERPROFILE%\Documents\Ableton\User Library\Remote Scripts`
+
+3. Start Ableton Live 12, open Settings, and select `Ableton_Live_MCP` as a Control Surface.
 
 4. Register the MCP server with your MCP client. The command is:
 
    ```sh
-   ableton-object-mcp
+   ableton-live-mcp
    ```
 
    Example MCP client configuration:
@@ -44,7 +41,7 @@ This repo implements a general-purpose Model Context Protocol server for Ableton
    {
      "mcpServers": {
        "ableton": {
-         "command": "ableton-object-mcp"
+         "command": "ableton-live-mcp"
        }
      }
    }
@@ -53,33 +50,33 @@ This repo implements a general-purpose Model Context Protocol server for Ableton
 5. Validate the bridge:
 
    ```sh
-   ableton-object-mcp-validate
+   ableton-live-mcp-validate
    ```
 
-6. Run the broader non-destructive smoke suite before publishing or debugging customer reports:
+6. For source checkouts and debug builds, run the broader non-destructive smoke suite before publishing or debugging customer reports:
 
    ```sh
-   ableton-object-mcp-smoke
+   ABLETON_LIVE_MCP_DEBUG=1 python -m ableton_live_mcp.smoke
    ```
 
 7. Benchmark common non-destructive workflows when optimizing latency or token use:
 
    ```sh
-   ableton-object-mcp-benchmark
+   ABLETON_LIVE_MCP_DEBUG=1 python -m ableton_live_mcp.benchmark
    ```
 
 8. Run destructive real-prompt audits only against disposable sets:
 
    ```sh
-   ableton-object-mcp-prompt-audit --yes
+   ABLETON_LIVE_MCP_DEBUG=1 python -m ableton_live_mcp.prompt_audit --yes
    ```
 
-Publish releases from a clean git archive or build artifact, not by zipping a working directory. Local generated audio and cache folders are ignored but may still exist in development workspaces.
+For now this repo is intended to be self-contained: an agent can install it from the checkout, install the bundled Remote Script, and register the local MCP command. If you publish a release later, build it from a clean git archive or build artifact, not by zipping a working directory.
 
 ## MCP Tools
 
 - `live_get`: resolve a Live API path or object id and return selected properties, children, and compact object ids; use `detail: true` for `canonical_path`/`repr`.
-- `live_set_summary`: return a compact non-destructive summary of the open project, including tracks, devices, Session clips, optional Arrangement clips, return tracks, and master devices.
+- `live_set_summary`: return a compact non-destructive summary of the open project, including tracks, devices, Session clips, optional Arrangement clips, return tracks, master devices, and a `set_signature` collaboration guard token.
 - `live_set`: set a writable property.
 - `live_call`: call an object method with positional and keyword arguments.
 - `live_children`: list children from an object.
@@ -87,9 +84,13 @@ Publish releases from a clean git archive or build artifact, not by zipping a wo
 - `live_parameter_set`: set one device parameter value with min/max and quantized validation, returning before/after display metadata.
 - `live_clip_notes`: list MIDI notes from a clip with note ids, pitch, time, duration, and velocity.
 - `live_clip_update_notes`: update existing MIDI notes by `note_id`.
+- `live_clip_add_notes`: add MIDI notes from JSON note specs without hand-constructing Live note objects.
+- `live_clip_duplicate_to_arrangement`: duplicate a Session clip object into Arrangement on a target track.
 - `live_clip_envelope`: inspect or edit one clip automation envelope for a parameter.
 - `live_clip_velocity_envelope`: write parameter automation from MIDI note velocities in a clip.
 - `live_clip_warp_markers`: inspect or edit audio clip warp state and markers.
+- `live_track_create_audio_clip`: create an Arrangement audio clip from a local audio file.
+- `live_track_insert_device`: insert a named built-in Live device on a track.
 - `live_batch`: run several generic bridge operations in one Live main-thread request.
 - `live_browser_roots`: list available `app.browser` root categories.
 - `live_browser_capabilities`: list available browser roots, filter types, and whether the installed Live build exposes semantic/similarity search through the Python object model.
@@ -105,7 +106,7 @@ Publish releases from a clean git archive or build artifact, not by zipping a wo
 
 ## Validation
 
-Use `ableton-object-mcp-validate` for a quick connection/version check. Use `ableton-object-mcp-smoke` for broader object-model coverage against a running Live instance: bounded `get`/`children`, `eval`, `batch`, browser roots/search, plugin root discovery, listeners, and event draining. Use `ableton-object-mcp-benchmark` to record latency and payload sizes for common non-destructive workflows, including compact existing-set summaries and optional project-content probes. The smoke and benchmark suites are intentionally non-destructive; they do not create tracks, clips, devices, or modify the open set. Use `ableton-object-mcp-prompt-audit --yes` for destructive end-to-end prompt workflows such as creating an EDM arrangement, loading an installed sample, editing existing MIDI notes, editing automation/warp state, and discovering plugins.
+Use `ableton-live-mcp-validate` for a quick connection/version check. The broader smoke, benchmark, and destructive prompt-audit modules are development/debug surfaces, not published end-user MCP commands. From a source checkout or debug build, set `ABLETON_LIVE_MCP_DEBUG=1` and run them with `python -m ableton_live_mcp.smoke`, `python -m ableton_live_mcp.benchmark`, or `python -m ableton_live_mcp.prompt_audit --yes`. The smoke and benchmark suites are intentionally non-destructive; they do not create tracks, clips, devices, or modify the open set. The prompt audit is destructive and is only for disposable sets.
 
 ## Agent Usage Guide
 
@@ -117,6 +118,7 @@ Common workflows that work well:
 
 - Batch multi-step edits with `live_exec`, setting `result` to a compact summary instead of returning large object dumps.
 - For existing-project prompts, start with `live_set_summary` to understand the current set before editing in place.
+- In collaborative sessions, treat the user as active in Live while the agent is working. Before destructive edits, keep the latest `set_signature` from `live_set_summary` and pass it as `expected_set_signature` to mutating tools such as `live_exec`, `live_call`, `live_set`, `live_browser_load`, `live_clip_add_notes`, and `live_track_create_audio_clip`. If the guard fails, re-read the set and merge with the user's changes instead of retrying blindly.
 - If the prompt names a track, pass `track_query` to `live_set_summary` to avoid returning unrelated tracks.
 - For Arrangement-editing prompts, request `arrangement_clip_limit` in `live_set_summary` so clip names, ids, and positions are available without a custom object walk.
 - Batch independent generic operations with `live_batch` when the work does not need custom Python code.
@@ -128,20 +130,25 @@ Common workflows that work well:
 - Load individual samples the same way: create/select a MIDI track, load the sample `BrowserItem`, then create MIDI notes for the generated sample device. This is the reliable path for “put this sample in Simpler” style prompts.
 - Inspect device parameters with `live_device_parameters` before setting them. Prefer `live_parameter_set` for value changes because it validates min/max and quantized parameters and returns before/after `display` metadata. Many Live parameters expose normalized internal values even when the UI shows dB, Hz, ms, or percent.
 - For existing MIDI clip edits, inspect with `live_clip_notes` and update with `live_clip_update_notes`. When using raw `live_exec`, mutate the `MidiNote` objects returned by `clip.get_all_notes_extended()` and pass that same vector to `clip.apply_note_modifications`; do not construct `MidiNoteSpecification` for existing notes.
+- For new MIDI notes, prefer `live_clip_add_notes` once the target clip exists. If using raw `live_exec`, construct `Live.Clip.MidiNoteSpecification(...)`; plain tuples and dicts are not accepted by Live's C++ note API.
 - For existing clip automation edits, get the target parameter id from `live_device_parameters` or `live_get`, then use `live_clip_envelope` to inspect, create, clear a range, and insert step automation.
 - For prompts like “modulate this effect from keyboard velocity,” first try loading Live’s Expression Control MIDI effect and inspect/configure its parameters. In Live 12.3.8 the Control Surface object model exposes Expression Control parameters but not the UI mapping target, so fully programmatic real-time target mapping may not be possible. For clips, use `live_clip_velocity_envelope` to convert note velocities into parameter automation on the target effect.
 - For existing audio clip warp edits, use `live_clip_warp_markers`. Raw object-model calls require `Live.Clip.WarpMarker(sample_time, beat_time)` for new markers and `clip.move_warp_marker(marker_beat_time, beat_time_delta)` for moving existing markers.
-- Create Session MIDI clips with `clip_slot.create_clip(length)` and add notes with `Live.Clip.MidiNoteSpecification(pitch, start_time, duration, velocity, mute)`.
-- Place existing Session clips into the timeline with `track.duplicate_clip_to_arrangement(slot.clip, destination_time)`.
-- Create Arrangement audio clips from local files with `track.create_audio_clip(path, destination_time)`.
+- Create Session MIDI clips with `clip_slot.create_clip(length)`, then add notes with `live_clip_add_notes`.
+- Place existing Session clips into the timeline with `live_clip_duplicate_to_arrangement`, or in raw `live_exec` call `track.duplicate_clip_to_arrangement(slot.clip, destination_time)`.
+- Create Arrangement audio clips from local files with `live_track_create_audio_clip`, or in raw `live_exec` call `track.create_audio_clip(path, destination_time)`.
 - For generated WAV hooks that are not indexed in Live's browser, create Arrangement audio clips from the file path. Use browser loading for indexed library/user samples.
 - Search browser categories with bounded traversal and name filters before assuming a sample or preset exists.
 - Return only stable summaries after large edits, for example track names, device names, clip counts, and selected clip names.
+- Prefer additive, scoped edits in shared sets: create clearly named new tracks/clips/devices, edit objects by fresh bridge ids or exact names you created, and avoid deleting or renaming existing user material unless the user explicitly asked for that operation.
 
 Common errors to avoid:
 
 - `live_eval` uses Python `eval`; use `live_exec` for assignment statements or multi-line imperative code.
 - `ClipSlot.create_clip` and other numeric Live API arguments require numbers, not stringified numbers.
+- `Track.duplicate_clip_slot(source_index)` duplicates to the next slot; it does not accept a destination index in current Live 12 builds. For Arrangement placement, use `live_clip_duplicate_to_arrangement`.
+- `Track.duplicate_clip_to_arrangement` requires a `Clip` object, not a slot index.
+- `Track.insert_device` takes a device name string and optional index, not a `BrowserItem`; use `live_track_insert_device` for named built-in devices or `live_browser_load` for browser items.
 - `Simpler.sample` is readable through the Live API but not directly settable; load samples through browser workflows when possible, or use audio clips as a fallback.
 - Device parameter `value` is not always in the same units shown in the UI. Avoid writing dB/Hz/ms values blindly; inspect min/max/display metadata and verify the display string after setting.
 - Browser roots differ in shape: some expose `iter_children`, while vectors such as `user_folders` may need normal iteration.
@@ -155,6 +162,7 @@ Common errors to avoid:
 - Do not reuse raw `_live_ptr` values returned manually from `live_exec` as bridge ids. Use ids returned by bridge summaries such as `live_get`, `live_set_summary`, `live_device_parameters`, or `live_browser_search`.
 - Tracebacks are omitted by default to keep common Live API errors readable. Set `include_traceback: true` on the bridge request or `ABLETON_MCP_TRACEBACK=1` in the Python client environment when debugging.
 - `timeout` bounds how long the bridge waits for Live's main thread. If a long mutation has already started inside Live, it may still run to completion after a timeout; keep large edits chunked and return compact progress summaries.
+- `expected_set_signature` is an optimistic collaboration guard, not a lock. It catches structural changes between inspection and mutation, but agents still need to re-read and reconcile after failures, timeouts, or user interruptions.
 
 Token and latency tips:
 

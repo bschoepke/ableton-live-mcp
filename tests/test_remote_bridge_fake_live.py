@@ -154,13 +154,26 @@ class FakeWarpMarker:
         self.beat_time = beat_time
 
 
+class FakeMidiNoteSpecification:
+    def __init__(self, pitch, start_time, duration, velocity, mute=False):
+        self.pitch = pitch
+        self.start_time = start_time
+        self.duration = duration
+        self.velocity = velocity
+        self.mute = mute
+
+
 class FakeClip:
-    def __init__(self, name):
+    _next_note_id = 100
+
+    def __init__(self, name, *, midi=True, start_time=0.0, end_time=4.0):
         self.name = name
-        self.is_midi_clip = True
-        self.is_audio_clip = False
+        self.is_midi_clip = midi
+        self.is_audio_clip = not midi
         self.is_session_clip = True
         self.is_arrangement_clip = False
+        self.start_time = start_time
+        self.end_time = end_time
         self.length = 4.0
         self.loop_start = 0.0
         self.loop_end = 4.0
@@ -187,6 +200,29 @@ class FakeClip:
 
     def get_all_notes_extended(self):
         return self._notes
+
+    def add_new_notes(self, specs):
+        for spec in specs:
+            self._notes.append(types.SimpleNamespace(
+                note_id=FakeClip._next_note_id,
+                pitch=spec.pitch,
+                start_time=spec.start_time,
+                duration=spec.duration,
+                velocity=spec.velocity,
+                mute=spec.mute,
+                probability=1.0,
+                velocity_deviation=0.0,
+                release_velocity=64.0,
+            ))
+            FakeClip._next_note_id += 1
+
+    def remove_notes_extended(self, from_pitch, pitch_span, from_time, time_span):
+        pitch_end = from_pitch + pitch_span
+        time_end = from_time + time_span
+        self._notes = [
+            note for note in self._notes
+            if not (from_pitch <= note.pitch < pitch_end and from_time <= note.start_time < time_end)
+        ]
 
     def apply_note_modifications(self, notes):
         updates = {note.note_id: note for note in notes}
@@ -229,6 +265,36 @@ class FakeClipSlot:
         self.has_clip = clip is not None
 
 
+class FakeTrack:
+    def __init__(self, name, devices=None, clip_slots=None, arrangement_clips=None):
+        self.name = name
+        self.devices = FakeVector(devices or [])
+        self.clip_slots = FakeVector(clip_slots or [])
+        self.arrangement_clips = FakeVector(arrangement_clips or [])
+
+    def duplicate_clip_to_arrangement(self, clip, destination_time):
+        copied = FakeClip(clip.name, midi=clip.is_midi_clip, start_time=destination_time, end_time=destination_time + clip.length)
+        copied.is_session_clip = False
+        copied.is_arrangement_clip = True
+        copied._notes = [types.SimpleNamespace(**note.__dict__) for note in clip.get_all_notes_extended()]
+        self.arrangement_clips.append(copied)
+        return copied
+
+    def create_audio_clip(self, file_path, destination_time):
+        clip = FakeClip(Path(file_path).name, midi=False, start_time=destination_time, end_time=destination_time + 4.0)
+        self.arrangement_clips.append(clip)
+        return clip
+
+    def insert_device(self, device_name, device_index=-1):
+        device = FakeDevice()
+        device.name = device_name
+        if device_index is None or device_index < 0 or device_index >= len(self.devices):
+            self.devices.append(device)
+        else:
+            self.devices.insert(device_index, device)
+        return None
+
+
 class FakeSong:
     def __init__(self):
         self.tempo = 120.0
@@ -236,13 +302,8 @@ class FakeSong:
         self.signature_numerator = 4
         self.signature_denominator = 4
         self.tracks = FakeVector([
-            types.SimpleNamespace(
-                name="Track 1",
-                devices=FakeVector([FakeDevice()]),
-                clip_slots=FakeVector([FakeClipSlot(FakeClip("Clip 1")), FakeClipSlot()]),
-                arrangement_clips=FakeVector([FakeClip("Arr Clip 1")]),
-            ),
-            types.SimpleNamespace(name="Track 2", devices=FakeVector([]), clip_slots=FakeVector([FakeClipSlot()]), arrangement_clips=FakeVector([])),
+            FakeTrack("Track 1", devices=[FakeDevice()], clip_slots=[FakeClipSlot(FakeClip("Clip 1")), FakeClipSlot()], arrangement_clips=[FakeClip("Arr Clip 1")]),
+            FakeTrack("Track 2", devices=[], clip_slots=[FakeClipSlot()], arrangement_clips=[]),
         ])
         self.scenes = FakeVector([types.SimpleNamespace(name="Scene 1")])
         self.return_tracks = FakeVector([
@@ -259,7 +320,7 @@ def load_bridge_module(monkeypatch):
     app = FakeApplication()
     live = types.ModuleType("Live")
     live.Application = types.SimpleNamespace(get_application=lambda: app)
-    live.Clip = types.SimpleNamespace(WarpMarker=FakeWarpMarker)
+    live.Clip = types.SimpleNamespace(WarpMarker=FakeWarpMarker, MidiNoteSpecification=FakeMidiNoteSpecification)
     framework = types.ModuleType("_Framework")
     control_surface = types.ModuleType("_Framework.ControlSurface")
     control_surface.ControlSurface = FakeControlSurface
@@ -267,7 +328,7 @@ def load_bridge_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "_Framework", framework)
     monkeypatch.setitem(sys.modules, "_Framework.ControlSurface", control_surface)
 
-    path = Path(__file__).resolve().parents[1] / "remote_scripts" / "Ableton_Object_MCP" / "bridge.py"
+    path = Path(__file__).resolve().parents[1] / "remote_scripts" / "Ableton_Live_MCP" / "bridge.py"
     spec = importlib.util.spec_from_file_location("fake_ableton_bridge", path)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
@@ -277,7 +338,7 @@ def load_bridge_module(monkeypatch):
 
 def make_bridge(monkeypatch):
     module, app = load_bridge_module(monkeypatch)
-    bridge = object.__new__(module.AbletonObjectMCP)
+    bridge = object.__new__(module.AbletonLiveMCP)
     song = FakeSong()
     bridge._objects = {}
     bridge._listeners = {}
@@ -312,6 +373,7 @@ def test_set_summary_compacts_existing_project_state(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     result = bridge._rpc_set_summary({"track_limit": 1, "clip_slot_limit": 1, "device_limit": 1, "arrangement_clip_limit": 1})
     assert result["tempo"] == 120.0
+    assert len(result["set_signature"]) == 16
     assert result["scene_count"] == 1
     assert result["tracks"][0]["name"] == "Track 1"
     assert result["tracks"][0]["devices"][0]["name"] == "Compressor"
@@ -330,6 +392,21 @@ def test_set_summary_compacts_existing_project_state(monkeypatch):
     assert filtered["return_tracks"] == []
 
 
+def test_expected_set_signature_blocks_stale_mutation(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    signature = bridge._rpc_set_summary({})["set_signature"]
+
+    assert bridge._run_on_main("exec", {"code": "result = {'ok': True}", "expected_set_signature": signature}) == {"ok": True}
+
+    song.tracks[0].name = "User Changed Track"
+    try:
+        bridge._run_on_main("exec", {"code": "result = {'ok': True}", "expected_set_signature": signature})
+    except RuntimeError as exc:
+        assert "Set changed since last inspection" in str(exc)
+    else:
+        raise AssertionError("expected stale set signature error")
+
+
 def test_clip_notes_can_be_listed_and_updated(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
@@ -344,6 +421,69 @@ def test_clip_notes_can_be_listed_and_updated(monkeypatch):
     assert updated["notes"][0]["velocity"] == 88.0
     notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
     assert notes["notes"][0]["velocity"] == 88.0
+
+
+def test_clip_add_notes_accepts_json_note_specs(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    result = bridge._rpc_clip_add_notes({
+        "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
+        "clear": True,
+        "notes": [
+            {"pitch": 64, "start_time": 0.0, "duration": 0.5, "velocity": 72},
+            {"pitch": 67, "start_time": 0.5, "duration": 0.5, "velocity": 80, "mute": True},
+        ],
+    })
+
+    assert result["added"] == 2
+    assert result["note_count"] == 2
+    notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
+    assert [note["pitch"] for note in notes["notes"]] == [64, 67]
+    assert notes["notes"][1]["mute"] is True
+
+
+def test_clip_duplicate_to_arrangement_uses_clip_object(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    before = len(song.tracks[0].arrangement_clips)
+
+    result = bridge._rpc_clip_duplicate_to_arrangement({
+        "track": {"path": "live_set tracks 0"},
+        "clip": {"path": "live_set tracks 0 clip_slots 0 clip"},
+        "destination_time": 16.0,
+    })
+
+    assert result["destination_time"] == 16.0
+    assert len(song.tracks[0].arrangement_clips) == before + 1
+    assert song.tracks[0].arrangement_clips[-1].start_time == 16.0
+
+
+def test_track_create_audio_clip_imports_local_file_path(monkeypatch, tmp_path):
+    bridge, song, _app = make_bridge(monkeypatch)
+    audio = tmp_path / "voice.wav"
+    audio.write_bytes(b"fake")
+
+    result = bridge._rpc_track_create_audio_clip({
+        "ref": {"path": "live_set tracks 1"},
+        "file_path": str(audio),
+        "destination_time": 32.0,
+        "name": "Audio Vocal Hook",
+    })
+
+    clip = song.tracks[1].arrangement_clips[-1]
+    assert result["clip"]["name"] == "Audio Vocal Hook"
+    assert clip.is_audio_clip is True
+    assert clip.start_time == 32.0
+
+
+def test_track_insert_device_uses_device_name_signature(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    result = bridge._rpc_track_insert_device({
+        "ref": {"path": "live_set tracks 1"},
+        "device_name": "EQ Eight",
+        "device_index": -1,
+    })
+
+    assert result["inserted"] is True
+    assert song.tracks[1].devices[-1].name == "EQ Eight"
 
 
 def test_clip_envelope_can_be_inspected_inserted_and_cleared(monkeypatch):

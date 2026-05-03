@@ -9,13 +9,14 @@ from .mcp import StdioMcpServer, Tool
 
 ABLETON_AGENT_GUIDE = "General Live object-model bridge; examples are heuristics, not limits."
 ABLETON_MCP_INSTRUCTIONS = (
-    "Use this as a general-purpose bridge to Ableton Live's object model, not a limited recipe API. "
-    "Prefer installed Ableton browser content, Packs, user-library assets, samples, presets, devices, and indexed third-party audio plugins before synthesizing or generating assets, unless the user asks otherwise. "
-    "Discover runtime availability with live_browser_capabilities/live_browser_roots/live_browser_search, including roots:['plugins'] for AU/VST/plugin content; Live version, SKU, Packs, user folders, and plugin indexing vary, so fall back gracefully. "
-    "For existing projects, start with live_set_summary before custom inspection. "
-    "For speed and low token use, prefer one compact live_exec summary for coherent edits, live_batch for independent generic get/set/call/children/eval/exec operations, specific property lists, child limits, max_items, and max_depth. "
+    "General Live object-model bridge, not a limited recipe API. "
+    "Prefer installed browser content, Packs, user assets, samples, presets, devices, and indexed third-party audio plugins before generated assets unless asked. "
+    "Discover runtime availability with live_browser_capabilities/live_browser_roots/live_browser_search, including roots:['plugins']; Live SKU, Packs, user folders, and plugin indexing vary. "
+    "For existing projects, start with live_set_summary; for collaborative sessions, pass expected_set_signature to destructive edits and re-read if it changed. "
+    "For speed, prefer compact live_exec summaries, live_batch for independent operations, specific property lists, child limits, max_items, and max_depth. "
+    "For common clip work, prefer JSON-safe helpers like live_clip_add_notes, live_clip_duplicate_to_arrangement, and live_track_create_audio_clip before hand-coding C++ signatures. "
     "Avoid broad browser/device dumps. Common gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via the browser or create audio clips; use ids from bridge summaries, not raw _live_ptr values; object summaries are compact unless detail:true is requested. "
-    "These are workflow hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
+    "These are hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
 
 
@@ -25,7 +26,7 @@ def schema(properties: dict[str, Any], required: list[str] | None = None) -> dic
 
 def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     bridge = client or AbletonBridgeClient(BridgeConfig.from_env())
-    server = StdioMcpServer("ableton-object-mcp", __version__, ABLETON_MCP_INSTRUCTIONS)
+    server = StdioMcpServer("ableton-live-mcp", __version__, ABLETON_MCP_INSTRUCTIONS)
 
     def forward(method: str):
         return lambda args: bridge.request(method, args)
@@ -45,8 +46,14 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "max_items": {"type": "integer"},
         "max_depth": {"type": "integer"},
         "max_string_length": {"type": "integer"},
-        "timeout": {"type": "number"},
+        "timeout": {"type": "number", "description": "Seconds to wait for Live's main thread."},
     }
+    mutation_controls = {
+        "timeout": response_controls["timeout"],
+        "expected_set_signature": {"type": "string"},
+    }
+    guarded_response_controls = dict(response_controls)
+    guarded_response_controls["expected_set_signature"] = {"type": "string"}
     server.add_tool(Tool("live_get", "Resolve object; read selected properties/children.", schema({
         "ref": ref,
         "properties": {"type": "array", "items": {"type": "string"}},
@@ -71,14 +78,14 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "ref": ref,
         "property": {"type": "string"},
         "value": {},
-        **response_controls,
+        **mutation_controls,
     }, ["ref", "property", "value"]), forward("set")))
     server.add_tool(Tool("live_call", "Call one Live object method.", schema({
         "ref": ref,
         "method": {"type": "string"},
         "args": {"type": "array"},
         "kwargs": {"type": "object"},
-        **response_controls,
+        **mutation_controls,
     }, ["ref", "method"]), forward("call")))
     server.add_tool(Tool("live_children", "List child objects from a collection.", schema({
         "ref": ref,
@@ -96,7 +103,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "ref": ref,
         "value": {"type": "number"},
         "coerce": {"type": "boolean", "description": "Clamp to min/max and round quantized values instead of rejecting."},
-        **response_controls,
+        **mutation_controls,
     }, ["ref", "value"]), forward("parameter_set")))
     server.add_tool(Tool("live_clip_notes", "List MIDI notes from a clip compactly.", schema({
         "ref": ref,
@@ -118,8 +125,33 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
             "velocity_deviation": {"type": "number"},
             "release_velocity": {"type": "number"},
         }, "required": ["note_id"], "additionalProperties": False}},
-        **response_controls,
+        **mutation_controls,
     }, ["ref", "updates"]), forward("clip_update_notes")))
+    note_spec = {"type": "object", "properties": {
+        "pitch": {"type": "integer"},
+        "start_time": {"type": "number"},
+        "duration": {"type": "number"},
+        "velocity": {"type": "number"},
+        "mute": {"type": "boolean"},
+    }, "required": ["pitch", "start_time", "duration", "velocity"], "additionalProperties": False}
+    server.add_tool(Tool("live_clip_add_notes", "Add MIDI notes to a clip from JSON note specs.", schema({
+        "ref": ref,
+        "notes": {"type": "array", "items": note_spec},
+        "clear": {"type": "boolean"},
+        "clear_range": {"type": "object", "properties": {
+            "from_pitch": {"type": "integer"},
+            "pitch_span": {"type": "integer"},
+            "from_time": {"type": "number"},
+            "time_span": {"type": "number"},
+        }, "required": ["from_pitch", "pitch_span", "from_time", "time_span"], "additionalProperties": False},
+        **mutation_controls,
+    }, ["ref", "notes"]), forward("clip_add_notes")))
+    server.add_tool(Tool("live_clip_duplicate_to_arrangement", "Duplicate a Session clip to Arrangement on a target track.", schema({
+        "track": ref,
+        "clip": ref,
+        "destination_time": {"type": "number"},
+        **mutation_controls,
+    }, ["track", "clip", "destination_time"]), forward("clip_duplicate_to_arrangement")))
     server.add_tool(Tool("live_clip_envelope", "Inspect or edit a clip automation envelope for one parameter.", schema({
         "ref": ref,
         "parameter": ref,
@@ -137,6 +169,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "start_time": {"type": "number"},
         "end_time": {"type": "number"},
         "limit": {"type": "integer", "minimum": 0},
+        "expected_set_signature": {"type": "string"},
     }, ["ref", "parameter"]), forward("clip_envelope")))
     server.add_tool(Tool("live_clip_velocity_envelope", "Create parameter automation from MIDI note velocities in a clip.", schema({
         "ref": ref,
@@ -149,6 +182,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "start_time": {"type": "number"},
         "end_time": {"type": "number"},
         "limit": {"type": "integer", "minimum": 0},
+        "expected_set_signature": {"type": "string"},
     }, ["ref", "parameter"]), forward("clip_velocity_envelope")))
     server.add_tool(Tool("live_clip_warp_markers", "Inspect or edit audio clip warp state and markers.", schema({
         "ref": ref,
@@ -164,7 +198,21 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         }, "required": ["beat_time", "beat_time_delta"], "additionalProperties": False}},
         "remove_beat_times": {"type": "array", "items": {"type": "number"}},
         "limit": {"type": "integer", "minimum": 0},
+        "expected_set_signature": {"type": "string"},
     }, ["ref"]), forward("clip_warp_markers")))
+    server.add_tool(Tool("live_track_create_audio_clip", "Create an Arrangement audio clip on a track from a local audio file.", schema({
+        "ref": ref,
+        "file_path": {"type": "string"},
+        "destination_time": {"type": "number"},
+        "name": {"type": "string"},
+        **mutation_controls,
+    }, ["ref", "file_path", "destination_time"]), forward("track_create_audio_clip")))
+    server.add_tool(Tool("live_track_insert_device", "Insert a named built-in Live device on a track.", schema({
+        "ref": ref,
+        "device_name": {"type": "string"},
+        "device_index": {"type": "integer"},
+        **mutation_controls,
+    }, ["ref", "device_name"]), forward("track_insert_device")))
     server.add_tool(Tool("live_batch", "Run multiple generic bridge operations in one Live main-thread request; preserves full object-model flexibility.", schema({
         "operations": {"type": "array", "items": {"type": "object", "properties": {
             "method": {"type": "string", "description": "Bridge method name such as get, set, call, children, or eval."},
@@ -172,6 +220,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         }, "required": ["method"], "additionalProperties": False}},
         "continue_on_error": {"type": "boolean"},
         "include_traceback": {"type": "boolean"},
+        "expected_set_signature": {"type": "string"},
         **response_controls,
     }, ["operations"]), forward("batch")))
     browser_item_ref = {
@@ -200,6 +249,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     server.add_tool(Tool("live_browser_load", "Load BrowserItem from search by id, uri, or path.", schema({
         "item": browser_item_ref,
         "target_track": ref,
+        **mutation_controls,
     }, ["item"]), forward("browser_load")))
     server.add_tool(Tool("live_browser_preview", "Preview or stop previewing a BrowserItem.", schema({
         "item": browser_item_ref,
@@ -221,7 +271,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     ), schema({
         "code": {"type": "string"},
         "ref": ref,
-        **response_controls,
+        **guarded_response_controls,
     }, ["code"]), forward("exec")))
     server.add_tool(Tool("live_observe", "Add or remove a listener for an object's property.", schema({
         "ref": ref,

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .bridge import AbletonBridgeClient, AbletonBridgeError
+from .debug import require_debug_cli
 
 
 Scenario = Callable[[AbletonBridgeClient], dict[str, Any]]
@@ -166,6 +167,23 @@ def _scenario_audio_warp_edit(client: AbletonBridgeClient) -> dict[str, Any]:
     return _scenario_result("audio_warp_edit", "Edit warp markers in an existing audio clip", calls)
 
 
+def _scenario_audio_vocal_import(client: AbletonBridgeClient) -> dict[str, Any]:
+    wav_path = _write_probe_wav()
+    calls = [
+        _call(client, "exec", {"code": _AUDIO_VOCAL_TRACK_CODE, "timeout": 5}, "create_audio_vocal_track"),
+    ]
+    track_path = calls[0]["result"].get("track_path") if isinstance(calls[0]["result"], dict) else None
+    if not track_path:
+        raise RuntimeError("Prompt audit audio vocal track was not created")
+    calls.append(_call(client, "track_create_audio_clip", {
+        "ref": {"path": track_path},
+        "file_path": str(wav_path),
+        "destination_time": 32.0,
+        "name": "MCP Prompt Audit Audio Vocal",
+    }, "import_audio_vocal_phrase"))
+    return _scenario_result("audio_vocal_import", "I want audio vocals", calls)
+
+
 def _scenario_plugin_discovery(client: AbletonBridgeClient) -> dict[str, Any]:
     calls = [_call(client, "browser_search", {
         "query": "",
@@ -221,6 +239,7 @@ def run_prompt_audit(client: AbletonBridgeClient | None = None, *, include_optio
         (_scenario_existing_project_edit, False),
         (_scenario_clip_automation_edit, False),
         (_scenario_audio_warp_edit, False),
+        (_scenario_audio_vocal_import, False),
         (_scenario_plugin_discovery, True),
     ]
     checks = []
@@ -251,7 +270,9 @@ def run_prompt_audit(client: AbletonBridgeClient | None = None, *, include_optio
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run destructive real-prompt Ableton Object MCP workflow audits.")
+    if not require_debug_cli("ableton-live-mcp prompt-audit"):
+        return 2
+    parser = argparse.ArgumentParser(description="Run destructive real-prompt Ableton Live MCP workflow audits.")
     parser.add_argument("--yes", action="store_true", help="Required: acknowledge that this modifies the open Live set.")
     parser.add_argument("--no-optional", action="store_true", help="Skip library/plugin-dependent optional scenarios.")
     args = parser.parse_args()
@@ -261,7 +282,7 @@ def main() -> int:
     try:
         code, output = run_prompt_audit(include_optional=not args.no_optional)
     except AbletonBridgeError as exc:
-        print(f"Ableton Object MCP prompt audit failed: {exc}", file=sys.stderr)
+        print(f"Ableton Live MCP prompt audit failed: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(output, indent=2, sort_keys=True))
     return code
@@ -350,6 +371,14 @@ track.name = "Audit Existing Audio"
 clip = track.create_audio_clip(r"%s", 48.0)
 clip.name = "MCP Prompt Audit Warp"
 result = {"track": track.name, "clip": clip.name, "warping": getattr(clip, "warping", None)}
+'''
+
+_AUDIO_VOCAL_TRACK_CODE = r'''
+song.create_audio_track(len(song.tracks))
+track = song.tracks[-1]
+track.name = "Audit Audio Vocal"
+song.view.selected_track = track
+result = {"track_path": "live_set tracks %s" % (len(song.tracks) - 1), "track": track.name}
 '''
 
 

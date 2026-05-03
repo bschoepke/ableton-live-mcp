@@ -38,11 +38,12 @@ class AbletonBridgeClient:
         self._lock = threading.Lock()
 
     def request(self, method: str, params: dict[str, Any] | None = None) -> Any:
+        params = params or {}
         payload = {
             "jsonrpc": "2.0",
             "id": next(self._ids),
             "method": method,
-            "params": params or {},
+            "params": params,
         }
         with self._lock:
             try:
@@ -72,6 +73,11 @@ class AbletonBridgeClient:
 
     def _send(self, payload: dict[str, Any]) -> bytes:
         sock = self._socket()
+        request_timeout = self.config.timeout
+        params = payload.get("params") or {}
+        if isinstance(params, dict) and params.get("timeout") is not None:
+            request_timeout = max(request_timeout, float(params["timeout"]) + 1.0)
+        sock.settimeout(request_timeout)
         line = (json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8")
         sock.sendall(line)
         return self._read_line(sock, self.config.max_response_bytes)

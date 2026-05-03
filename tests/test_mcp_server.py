@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from ableton_object_mcp.bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig
-from ableton_object_mcp.install_remote_script import install_remote_script, remote_script_root
-from ableton_object_mcp.server import make_server
-from ableton_object_mcp.benchmark import run_benchmark
-from ableton_object_mcp.prompt_audit import run_prompt_audit
-from ableton_object_mcp.smoke import run_smoke
+from ableton_live_mcp.bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig
+from ableton_live_mcp.install_remote_script import install_remote_script, remote_script_root
+from ableton_live_mcp.server import make_server
+from ableton_live_mcp.benchmark import run_benchmark
+from ableton_live_mcp.prompt_audit import run_prompt_audit
+from ableton_live_mcp.smoke import run_smoke
 
 
 class FakeBridge:
@@ -37,9 +37,13 @@ def test_lists_general_purpose_tools():
         "live_parameter_set",
         "live_clip_notes",
         "live_clip_update_notes",
+        "live_clip_add_notes",
+        "live_clip_duplicate_to_arrangement",
         "live_clip_envelope",
         "live_clip_velocity_envelope",
         "live_clip_warp_markers",
+        "live_track_create_audio_clip",
+        "live_track_insert_device",
         "live_eval",
         "live_exec",
         "live_batch",
@@ -124,6 +128,25 @@ def test_set_summary_tool_forwards_limits_to_bridge():
     assert response["result"]["structuredContent"]["method"] == "set_summary"
 
 
+def test_mutating_tools_accept_expected_set_signature_guard():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {
+        "code": "song.tempo = 90",
+        "expected_set_signature": "abc123",
+        "timeout": 30,
+    }
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 22,
+        "method": "tools/call",
+        "params": {"name": "live_exec", "arguments": args},
+    })
+
+    assert bridge.calls == [("exec", args)]
+    assert response["result"]["structuredContent"]["method"] == "exec"
+
+
 def test_batch_tool_forwards_operations_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)
@@ -194,6 +217,42 @@ def test_clip_note_tools_forward_to_bridge():
     assert response["result"]["structuredContent"]["method"] == "clip_update_notes"
 
 
+def test_clip_add_notes_tool_forwards_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {
+        "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
+        "clear": True,
+        "notes": [{"pitch": 60, "start_time": 0.0, "duration": 1.0, "velocity": 80}],
+    }
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 38,
+        "method": "tools/call",
+        "params": {"name": "live_clip_add_notes", "arguments": args},
+    })
+    assert bridge.calls == [("clip_add_notes", args)]
+    assert response["result"]["structuredContent"]["method"] == "clip_add_notes"
+
+
+def test_clip_duplicate_to_arrangement_tool_forwards_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {
+        "track": {"path": "live_set tracks 0"},
+        "clip": {"path": "live_set tracks 0 clip_slots 0 clip"},
+        "destination_time": 16.0,
+    }
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 39,
+        "method": "tools/call",
+        "params": {"name": "live_clip_duplicate_to_arrangement", "arguments": args},
+    })
+    assert bridge.calls == [("clip_duplicate_to_arrangement", args)]
+    assert response["result"]["structuredContent"]["method"] == "clip_duplicate_to_arrangement"
+
+
 def test_clip_envelope_tool_forwards_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)
@@ -249,6 +308,34 @@ def test_clip_warp_markers_tool_forwards_to_bridge():
     assert response["result"]["structuredContent"]["method"] == "clip_warp_markers"
 
 
+def test_track_audio_and_device_tools_forward_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    audio_args = {
+        "ref": {"path": "live_set tracks 0"},
+        "file_path": "/tmp/hook.wav",
+        "destination_time": 32.0,
+        "name": "Hook",
+    }
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 42,
+        "method": "tools/call",
+        "params": {"name": "live_track_create_audio_clip", "arguments": audio_args},
+    })
+    assert response["result"]["structuredContent"]["method"] == "track_create_audio_clip"
+
+    device_args = {"ref": {"path": "live_set tracks 0"}, "device_name": "EQ Eight", "device_index": -1}
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 43,
+        "method": "tools/call",
+        "params": {"name": "live_track_insert_device", "arguments": device_args},
+    })
+    assert bridge.calls == [("track_create_audio_clip", audio_args), ("track_insert_device", device_args)]
+    assert response["result"]["structuredContent"]["method"] == "track_insert_device"
+
+
 def test_browser_search_tool_forwards_query_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)
@@ -300,7 +387,7 @@ def test_browser_search_schema_mentions_plugins_root():
 
 def test_remote_bridge_default_browser_roots_include_plugins():
     root = Path(__file__).resolve().parents[1]
-    bridge_source = (root / "remote_scripts" / "Ableton_Object_MCP" / "bridge.py").read_text()
+    bridge_source = (root / "remote_scripts" / "Ableton_Live_MCP" / "bridge.py").read_text()
     assert '"plugins"' in bridge_source
     assert "def _rpc_browser_search" in bridge_source
     assert "def _rpc_browser_load" in bridge_source
@@ -347,7 +434,7 @@ def test_tool_list_stays_compact():
     server = make_server(FakeBridge())
     response = server.handle({"jsonrpc": "2.0", "id": 7, "method": "tools/list"})
     payload = json.dumps(response, separators=(",", ":"))
-    assert len(payload) < 14000
+    assert len(payload) < 17000
     live_eval = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_eval")
     assert "live_exec" in live_eval["description"]
     assert "duplicate session clips" not in live_eval["description"].lower()
@@ -435,6 +522,38 @@ def test_bridge_client_reuses_socket(monkeypatch):
     assert len(created[0].sent) == 2
 
 
+def test_bridge_client_expands_socket_timeout_for_long_live_request(monkeypatch):
+    created = []
+
+    class FakeSocket:
+        def __init__(self):
+            self.timeouts = []
+            self.responses = [b'{"jsonrpc":"2.0","id":1,"result":{"ok":true}}\n']
+
+        def settimeout(self, timeout):
+            self.timeouts.append(timeout)
+
+        def sendall(self, _line):
+            pass
+
+        def recv(self, _size):
+            return self.responses.pop(0)
+
+        def close(self):
+            pass
+
+    def connect(*_args, **_kwargs):
+        sock = FakeSocket()
+        created.append(sock)
+        return sock
+
+    monkeypatch.setattr("socket.create_connection", connect)
+    client = AbletonBridgeClient(BridgeConfig(timeout=10.0))
+
+    assert client.request("exec", {"code": "result = True", "timeout": 45.0}) == {"ok": True}
+    assert created[0].timeouts[-1] == 46.0
+
+
 def test_bridge_client_rejects_oversized_response():
     class FakeSocket:
         def __init__(self):
@@ -448,30 +567,38 @@ def test_bridge_client_rejects_oversized_response():
     assert "response exceeds" in str(exc.value)
 
 
-def test_remote_script_bridge_alias_stays_identical():
+def test_remote_script_default_bridge_exists():
     root = Path(__file__).resolve().parents[1]
-    canonical = root / "remote_scripts" / "Ableton_Object_MCP" / "bridge.py"
-    alias = root / "remote_scripts" / "AbletonMCP" / "bridge.py"
-    assert alias.read_text() == canonical.read_text()
+    canonical = root / "remote_scripts" / "Ableton_Live_MCP" / "bridge.py"
+    assert canonical.exists()
+    assert "class AbletonLiveMCP" in canonical.read_text()
 
 
-def test_remote_script_installer_copies_selected_alias(tmp_path):
-    target = install_remote_script("Ableton_Object_MCP", tmp_path)
-    assert target == tmp_path / "Ableton_Object_MCP"
+def test_remote_script_installer_copies_default_script(tmp_path):
+    target = install_remote_script("Ableton_Live_MCP", tmp_path)
+    assert target == tmp_path / "Ableton_Live_MCP"
     assert (target / "__init__.py").exists()
     assert (target / "bridge.py").exists()
-    assert not (tmp_path / "AbletonMCP").exists()
 
 
-def test_remote_script_installer_rejects_unknown_alias(tmp_path):
+def test_remote_script_installer_rejects_unknown_script(tmp_path):
     with pytest.raises(ValueError):
         install_remote_script("Unknown", tmp_path)
 
 
 def test_remote_script_resources_available_from_source_checkout():
     root = remote_script_root()
-    assert (root / "Ableton_Object_MCP" / "bridge.py").exists()
-    assert (root / "AbletonMCP" / "bridge.py").exists()
+    assert (root / "Ableton_Live_MCP" / "bridge.py").exists()
+
+
+def test_debug_commands_are_not_published_console_scripts():
+    pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+    assert 'ableton-live-mcp = "ableton_live_mcp.server:main"' in pyproject
+    assert 'ableton-live-mcp-validate = "ableton_live_mcp.validate:main"' in pyproject
+    assert 'ableton-live-mcp-install-remote-script = "ableton_live_mcp.install_remote_script:main"' in pyproject
+    assert "ableton-live-mcp-smoke =" not in pyproject
+    assert "ableton-live-mcp-benchmark =" not in pyproject
+    assert "ableton-live-mcp-prompt-audit =" not in pyproject
 
 
 def test_smoke_suite_runs_expected_bridge_methods():
@@ -561,7 +688,7 @@ def test_prompt_audit_runs_expected_bridge_methods():
                 return {"id": 601, "properties": {"name": "Track Volume", "value": 0.85}}
             if method == "clip_notes":
                 return {"notes": [{"note_id": 1, "velocity": 64.0}]}
-            if method in {"clip_update_notes", "clip_warp_markers", "clip_envelope", "browser_load"}:
+            if method in {"clip_update_notes", "clip_warp_markers", "clip_envelope", "browser_load", "track_create_audio_clip"}:
                 return {"ok": True}
             raise AssertionError(method)
 
@@ -571,4 +698,4 @@ def test_prompt_audit_runs_expected_bridge_methods():
     assert code == 0
     assert output["ok"] is True
     assert output["destructive"] is True
-    assert {"batch", "exec", "set_summary", "get", "clip_notes", "clip_update_notes", "clip_envelope", "clip_warp_markers", "browser_search", "browser_load"} <= set(methods)
+    assert {"batch", "exec", "set_summary", "get", "clip_notes", "clip_update_notes", "clip_envelope", "clip_warp_markers", "track_create_audio_clip", "browser_search", "browser_load"} <= set(methods)
