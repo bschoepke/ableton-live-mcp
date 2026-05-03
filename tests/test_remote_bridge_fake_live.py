@@ -122,15 +122,41 @@ class FakeDevice:
         ])
 
 
+class FakeClip:
+    def __init__(self, name):
+        self.name = name
+        self.is_midi_clip = True
+        self.is_audio_clip = False
+        self.is_session_clip = True
+        self.is_arrangement_clip = False
+        self.length = 4.0
+        self.loop_start = 0.0
+        self.loop_end = 4.0
+        self.muted = False
+        self.has_envelopes = False
+
+
+class FakeClipSlot:
+    def __init__(self, clip=None):
+        self.clip = clip
+        self.has_clip = clip is not None
+
+
 class FakeSong:
     def __init__(self):
         self.tempo = 120.0
         self.current_song_time = 0.0
+        self.signature_numerator = 4
+        self.signature_denominator = 4
         self.tracks = FakeVector([
-            types.SimpleNamespace(name="Track 1", devices=FakeVector([FakeDevice()])),
-            types.SimpleNamespace(name="Track 2", devices=FakeVector([])),
+            types.SimpleNamespace(name="Track 1", devices=FakeVector([FakeDevice()]), clip_slots=FakeVector([FakeClipSlot(FakeClip("Clip 1")), FakeClipSlot()])),
+            types.SimpleNamespace(name="Track 2", devices=FakeVector([]), clip_slots=FakeVector([FakeClipSlot()])),
         ])
         self.scenes = FakeVector([types.SimpleNamespace(name="Scene 1")])
+        self.return_tracks = FakeVector([
+            types.SimpleNamespace(name="A-Reverb", devices=FakeVector([]), clip_slots=FakeVector([])),
+        ])
+        self.master_track = types.SimpleNamespace(name="Main", devices=FakeVector([]), clip_slots=FakeVector([]))
         self.view = types.SimpleNamespace(selected_track=None)
 
     def get_beats_loop_start(self):
@@ -187,6 +213,21 @@ def test_resolve_get_children_and_call(monkeypatch):
     assert len([item for item in children if not item.get("truncated")]) == 1
     assert children[-1] == {"truncated": True}
     assert bridge._rpc_call({"ref": {"path": "live_set"}, "method": "get_beats_loop_start"}) == "1.1.1"
+
+
+def test_set_summary_compacts_existing_project_state(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    result = bridge._rpc_set_summary({"track_limit": 1, "clip_slot_limit": 1, "device_limit": 1})
+    assert result["tempo"] == 120.0
+    assert result["scene_count"] == 1
+    assert result["tracks"][0]["name"] == "Track 1"
+    assert result["tracks"][0]["devices"][0]["name"] == "Compressor"
+    assert result["tracks"][0]["clips"][0]["name"] == "Clip 1"
+    assert result["tracks"][0]["clip_slots_scanned"] == 1
+    assert result["tracks"][0]["clip_slots_truncated"] is True
+    assert result["tracks"][-1] == {"truncated": True}
+    assert result["return_tracks"][0]["name"] == "A-Reverb"
+    assert result["master_track"]["name"] == "Main"
 
 
 def test_device_parameters_are_compact_and_addressable(monkeypatch):

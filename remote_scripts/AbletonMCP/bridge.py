@@ -162,6 +162,40 @@ class AbletonObjectMCP(ControlSurface):
         version = app.get_version_string() if hasattr(app, "get_version_string") else "unknown"
         return {"ok": True, "version": version, "major": self._major_version(version)}
 
+    def _rpc_set_summary(self, params):
+        song = self.song()
+        track_limit = int(params.get("track_limit") if params.get("track_limit") is not None else 64)
+        clip_slot_limit = int(params.get("clip_slot_limit") if params.get("clip_slot_limit") is not None else 16)
+        device_limit = int(params.get("device_limit") if params.get("device_limit") is not None else 16)
+        include_returns = params.get("include_return_tracks")
+        if include_returns is None:
+            include_returns = True
+        include_master = params.get("include_master_track")
+        if include_master is None:
+            include_master = True
+        tracks = []
+        for index, track in enumerate(song.tracks):
+            if track_limit >= 0 and index >= track_limit:
+                tracks.append({"truncated": True})
+                break
+            tracks.append(self._track_summary(track, index, clip_slot_limit, device_limit))
+        returns = []
+        if include_returns:
+            for index, track in enumerate(song.return_tracks):
+                returns.append(self._track_summary(track, index, clip_slot_limit, device_limit))
+        result = {
+            "tempo": song.tempo,
+            "signature_numerator": song.signature_numerator,
+            "signature_denominator": song.signature_denominator,
+            "current_song_time": song.current_song_time,
+            "tracks": tracks,
+            "return_tracks": returns,
+            "scene_count": len(song.scenes),
+        }
+        if include_master:
+            result["master_track"] = self._track_summary(song.master_track, None, 0, device_limit)
+        return result
+
     def _rpc_get(self, params):
         obj = self._resolve(params.get("ref"))
         props = {}
@@ -539,6 +573,70 @@ class AbletonObjectMCP(ControlSurface):
         except Exception:
             pass
         return result
+
+    def _track_summary(self, track, index, clip_slot_limit, device_limit):
+        summary = self._object_summary(track, False)
+        if index is not None:
+            summary["index"] = index
+        summary["name"] = getattr(track, "name", "")
+        for attr in ("is_foldable", "mute", "solo", "arm", "implicit_arm", "can_be_armed"):
+            try:
+                summary[attr] = getattr(track, attr)
+            except Exception:
+                pass
+        devices = []
+        try:
+            device_values, device_truncated = self._take(track.devices, device_limit)
+            devices = [self._device_summary(device) for device in device_values]
+            if device_truncated:
+                devices.append({"truncated": True})
+        except Exception:
+            pass
+        summary["devices"] = devices
+        clips = []
+        try:
+            clip_slots, slots_truncated = self._take(track.clip_slots, clip_slot_limit)
+            summary["clip_slots_scanned"] = len(clip_slots)
+            for slot_index, slot in enumerate(clip_slots):
+                try:
+                    if slot.has_clip:
+                        clips.append(self._clip_summary(slot.clip, slot_index))
+                except Exception:
+                    pass
+            if slots_truncated:
+                summary["clip_slots_truncated"] = True
+        except Exception:
+            pass
+        summary["clips"] = clips
+        try:
+            summary["arrangement_clip_count"] = len(track.arrangement_clips)
+        except Exception:
+            pass
+        return summary
+
+    def _device_summary(self, device):
+        summary = self._object_summary(device, False)
+        summary["name"] = getattr(device, "name", "")
+        try:
+            summary["class_name"] = device.class_name
+        except Exception:
+            pass
+        try:
+            summary["can_have_chains"] = device.can_have_chains
+        except Exception:
+            pass
+        return summary
+
+    def _clip_summary(self, clip, slot_index):
+        summary = self._object_summary(clip, False)
+        summary["slot"] = slot_index
+        summary["name"] = getattr(clip, "name", "")
+        for attr in ("is_midi_clip", "is_audio_clip", "is_session_clip", "is_arrangement_clip", "length", "loop_start", "loop_end", "muted", "has_envelopes"):
+            try:
+                summary[attr] = getattr(clip, attr)
+            except Exception:
+                pass
+        return summary
 
     def _object_id(self, obj):
         live_id = getattr(obj, "_live_ptr", None)

@@ -12,9 +12,10 @@ ABLETON_AGENT_GUIDE = "General Live object-model bridge; examples are heuristics
 ABLETON_MCP_INSTRUCTIONS = (
     "Use this as a general-purpose bridge to Ableton Live's object model, not a limited recipe API. "
     "Prefer installed Ableton browser content, Packs, user-library assets, samples, presets, devices, and indexed third-party audio plugins before synthesizing or generating assets, unless the user asks otherwise. "
-        "Discover runtime availability with live_browser_capabilities/live_browser_roots/live_browser_search, including roots:['plugins'] for AU/VST/plugin content; Live version, SKU, Packs, user folders, and plugin indexing vary, so fall back gracefully. "
-        "For speed and low token use, prefer one compact live_exec summary for coherent edits, live_batch for independent generic get/set/call/children/eval/exec operations, specific property lists, child limits, max_items, and max_depth. "
-        "Avoid broad browser/device dumps. Common gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via the browser or create audio clips; object summaries are compact unless detail:true is requested. "
+    "Discover runtime availability with live_browser_capabilities/live_browser_roots/live_browser_search, including roots:['plugins'] for AU/VST/plugin content; Live version, SKU, Packs, user folders, and plugin indexing vary, so fall back gracefully. "
+    "For existing projects, start with live_set_summary before custom inspection. "
+    "For speed and low token use, prefer one compact live_exec summary for coherent edits, live_batch for independent generic get/set/call/children/eval/exec operations, specific property lists, child limits, max_items, and max_depth. "
+    "Avoid broad browser/device dumps. Common gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via the browser or create audio clips; object summaries are compact unless detail:true is requested. "
     "These are workflow hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
 
@@ -45,13 +46,13 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
 
     server.add_tool(Tool("live_ping", "Check Ableton bridge health and Live version.", schema({}), forward("ping")))
     response_controls = {
-        "detail": {"type": "boolean", "description": "Include repr/canonical_path in Live object summaries. Default false for compact output."},
-        "max_items": {"type": "integer", "description": "Maximum encoded list items. Use -1 for unbounded. Default 200."},
-        "max_depth": {"type": "integer", "description": "Maximum encoded nesting depth. Default 8."},
-        "max_string_length": {"type": "integer", "description": "Maximum encoded string length. Use -1 for unbounded. Default 4096."},
-        "timeout": {"type": "number", "description": "Main-thread timeout in seconds for long Live operations. Default 10."},
+        "detail": {"type": "boolean", "description": "Include repr/canonical_path."},
+        "max_items": {"type": "integer", "description": "Max encoded items; -1 unbounded."},
+        "max_depth": {"type": "integer", "description": "Max encoded depth."},
+        "max_string_length": {"type": "integer", "description": "Max string chars; -1 unbounded."},
+        "timeout": {"type": "number", "description": "Main-thread timeout seconds."},
     }
-    server.add_tool(Tool("live_get", "Resolve an object and read selected properties/children. Use child_limit/detail/max_items to control output size.", schema({
+    server.add_tool(Tool("live_get", "Resolve object; read selected properties/children.", schema({
         "ref": ref,
         "properties": {"type": "array", "items": {"type": "string"}},
         "children": {"oneOf": [
@@ -61,28 +62,36 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "child_limit": {"type": "integer", "minimum": 0},
         **response_controls,
     }, ["ref"]), forward("get")))
+    server.add_tool(Tool("live_set_summary", "Compact non-destructive set summary.", schema({
+        "track_limit": {"type": "integer", "description": "Max tracks; -1 unbounded."},
+        "clip_slot_limit": {"type": "integer", "description": "Max clip slots per track."},
+        "device_limit": {"type": "integer", "description": "Max devices per track."},
+        "include_return_tracks": {"type": "boolean"},
+        "include_master_track": {"type": "boolean"},
+        **response_controls,
+    }), forward("set_summary")))
     server.add_tool(Tool("live_set", "Set a writable Live object property.", schema({
         "ref": ref,
         "property": {"type": "string"},
         "value": {},
         **response_controls,
     }, ["ref", "property", "value"]), forward("set")))
-    server.add_tool(Tool("live_call", "Call one Live object method. Numeric args must be JSON numbers, not strings; batch repeated edits with live_eval/live_batch.", schema({
+    server.add_tool(Tool("live_call", "Call one Live object method.", schema({
         "ref": ref,
         "method": {"type": "string"},
         "args": {"type": "array"},
         "kwargs": {"type": "object"},
         **response_controls,
     }, ["ref", "method"]), forward("call")))
-    server.add_tool(Tool("live_children", "List child objects from a Live object child collection. Use limit/detail to avoid large browser/library dumps.", schema({
+    server.add_tool(Tool("live_children", "List child objects from a collection.", schema({
         "ref": ref,
         "child": {"type": "string"},
         "limit": {"type": "integer", "minimum": 0},
         **response_controls,
     }, ["ref", "child"]), forward("children")))
-    server.add_tool(Tool("live_device_parameters", "Return compact parameter metadata for a Device. Use returned parameter ids with live_set on property 'value', then verify display values.", schema({
+    server.add_tool(Tool("live_device_parameters", "Compact Device parameter metadata.", schema({
         "ref": ref,
-        "query": {"type": "string", "description": "Optional space-separated terms matched against parameter names."},
+        "query": {"type": "string", "description": "Terms matched against parameter names."},
         "limit": {"type": "integer", "minimum": 0},
         **response_controls,
     }, ["ref"]), forward("device_parameters")))

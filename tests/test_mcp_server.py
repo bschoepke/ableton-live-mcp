@@ -27,6 +27,7 @@ def test_lists_general_purpose_tools():
     names = {tool["name"] for tool in response["result"]["tools"]}
     assert {
         "live_ping",
+        "live_set_summary",
         "live_get",
         "live_set",
         "live_call",
@@ -71,6 +72,20 @@ def test_tool_call_forwards_arguments_to_bridge():
     assert json.loads(content)["method"] == "call"
     assert response["result"]["structuredContent"]["method"] == "call"
     assert "\n" not in content
+
+
+def test_set_summary_tool_forwards_limits_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {"track_limit": 8, "clip_slot_limit": 4, "device_limit": 4}
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 21,
+        "method": "tools/call",
+        "params": {"name": "live_set_summary", "arguments": args},
+    })
+    assert bridge.calls == [("set_summary", args)]
+    assert response["result"]["structuredContent"]["method"] == "set_summary"
 
 
 def test_batch_tool_forwards_operations_to_bridge():
