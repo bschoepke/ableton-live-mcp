@@ -81,7 +81,7 @@ def test_tool_call_forwards_arguments_to_bridge():
 def test_set_summary_tool_forwards_limits_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)
-    args = {"track_limit": 8, "clip_slot_limit": 4, "device_limit": 4}
+    args = {"track_limit": 8, "clip_slot_limit": 4, "device_limit": 4, "arrangement_clip_limit": 2}
     response = server.handle({
         "jsonrpc": "2.0",
         "id": 21,

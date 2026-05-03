@@ -73,7 +73,7 @@ Publish releases from a clean git archive or build artifact, not by zipping a wo
 ## MCP Tools
 
 - `live_get`: resolve a Live API path or object id and return selected properties, children, and compact object ids; use `detail: true` for `canonical_path`/`repr`.
-- `live_set_summary`: return a compact non-destructive summary of the open project, including tracks, devices, Session clips, return tracks, and master devices.
+- `live_set_summary`: return a compact non-destructive summary of the open project, including tracks, devices, Session clips, optional Arrangement clips, return tracks, and master devices.
 - `live_set`: set a writable property.
 - `live_call`: call an object method with positional and keyword arguments.
 - `live_children`: list children from an object.
@@ -108,6 +108,7 @@ Common workflows that work well:
 
 - Batch multi-step edits with `live_exec`, setting `result` to a compact summary instead of returning large object dumps.
 - For existing-project prompts, start with `live_set_summary` to understand the current set before editing in place.
+- For Arrangement-editing prompts, request `arrangement_clip_limit` in `live_set_summary` so clip names, ids, and positions are available without a custom object walk.
 - Batch independent generic operations with `live_batch` when the work does not need custom Python code.
 - Discover library content with `live_browser_search` using bounded roots, depth, and result limits. Search results include reusable BrowserItem ids.
 - Preview candidate samples or presets with `live_browser_preview` before loading them, then call it with `stop: true` when done.

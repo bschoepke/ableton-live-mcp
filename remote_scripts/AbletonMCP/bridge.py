@@ -167,6 +167,7 @@ class AbletonObjectMCP(ControlSurface):
         track_limit = int(params.get("track_limit") if params.get("track_limit") is not None else 64)
         clip_slot_limit = int(params.get("clip_slot_limit") if params.get("clip_slot_limit") is not None else 16)
         device_limit = int(params.get("device_limit") if params.get("device_limit") is not None else 16)
+        arrangement_clip_limit = int(params.get("arrangement_clip_limit") if params.get("arrangement_clip_limit") is not None else 0)
         include_returns = params.get("include_return_tracks")
         if include_returns is None:
             include_returns = True
@@ -178,11 +179,11 @@ class AbletonObjectMCP(ControlSurface):
             if track_limit >= 0 and index >= track_limit:
                 tracks.append({"truncated": True})
                 break
-            tracks.append(self._track_summary(track, index, clip_slot_limit, device_limit))
+            tracks.append(self._track_summary(track, index, clip_slot_limit, device_limit, arrangement_clip_limit))
         returns = []
         if include_returns:
             for index, track in enumerate(song.return_tracks):
-                returns.append(self._track_summary(track, index, clip_slot_limit, device_limit))
+                returns.append(self._track_summary(track, index, clip_slot_limit, device_limit, 0))
         result = {
             "tempo": song.tempo,
             "signature_numerator": song.signature_numerator,
@@ -193,7 +194,7 @@ class AbletonObjectMCP(ControlSurface):
             "scene_count": len(song.scenes),
         }
         if include_master:
-            result["master_track"] = self._track_summary(song.master_track, None, 0, device_limit)
+            result["master_track"] = self._track_summary(song.master_track, None, 0, device_limit, 0)
         return result
 
     def _rpc_get(self, params):
@@ -668,7 +669,7 @@ class AbletonObjectMCP(ControlSurface):
             pass
         return result
 
-    def _track_summary(self, track, index, clip_slot_limit, device_limit):
+    def _track_summary(self, track, index, clip_slot_limit, device_limit, arrangement_clip_limit=0):
         summary = self._object_summary(track, False)
         if index is not None:
             summary["index"] = index
@@ -704,6 +705,11 @@ class AbletonObjectMCP(ControlSurface):
         summary["clips"] = clips
         try:
             summary["arrangement_clip_count"] = len(track.arrangement_clips)
+            if arrangement_clip_limit:
+                arrangement_clips, arrangement_truncated = self._take(track.arrangement_clips, arrangement_clip_limit)
+                summary["arrangement_clips"] = [self._clip_summary(clip, None) for clip in arrangement_clips]
+                if arrangement_truncated:
+                    summary["arrangement_clips"].append({"truncated": True})
         except Exception:
             pass
         return summary

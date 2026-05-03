@@ -209,14 +209,19 @@ class FakeSong:
         self.signature_numerator = 4
         self.signature_denominator = 4
         self.tracks = FakeVector([
-            types.SimpleNamespace(name="Track 1", devices=FakeVector([FakeDevice()]), clip_slots=FakeVector([FakeClipSlot(FakeClip("Clip 1")), FakeClipSlot()])),
-            types.SimpleNamespace(name="Track 2", devices=FakeVector([]), clip_slots=FakeVector([FakeClipSlot()])),
+            types.SimpleNamespace(
+                name="Track 1",
+                devices=FakeVector([FakeDevice()]),
+                clip_slots=FakeVector([FakeClipSlot(FakeClip("Clip 1")), FakeClipSlot()]),
+                arrangement_clips=FakeVector([FakeClip("Arr Clip 1")]),
+            ),
+            types.SimpleNamespace(name="Track 2", devices=FakeVector([]), clip_slots=FakeVector([FakeClipSlot()]), arrangement_clips=FakeVector([])),
         ])
         self.scenes = FakeVector([types.SimpleNamespace(name="Scene 1")])
         self.return_tracks = FakeVector([
-            types.SimpleNamespace(name="A-Reverb", devices=FakeVector([]), clip_slots=FakeVector([])),
+            types.SimpleNamespace(name="A-Reverb", devices=FakeVector([]), clip_slots=FakeVector([]), arrangement_clips=FakeVector([])),
         ])
-        self.master_track = types.SimpleNamespace(name="Main", devices=FakeVector([]), clip_slots=FakeVector([]))
+        self.master_track = types.SimpleNamespace(name="Main", devices=FakeVector([]), clip_slots=FakeVector([]), arrangement_clips=FakeVector([]))
         self.view = types.SimpleNamespace(selected_track=None)
 
     def get_beats_loop_start(self):
@@ -277,12 +282,14 @@ def test_resolve_get_children_and_call(monkeypatch):
 
 def test_set_summary_compacts_existing_project_state(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
-    result = bridge._rpc_set_summary({"track_limit": 1, "clip_slot_limit": 1, "device_limit": 1})
+    result = bridge._rpc_set_summary({"track_limit": 1, "clip_slot_limit": 1, "device_limit": 1, "arrangement_clip_limit": 1})
     assert result["tempo"] == 120.0
     assert result["scene_count"] == 1
     assert result["tracks"][0]["name"] == "Track 1"
     assert result["tracks"][0]["devices"][0]["name"] == "Compressor"
     assert result["tracks"][0]["clips"][0]["name"] == "Clip 1"
+    assert result["tracks"][0]["arrangement_clip_count"] == 1
+    assert result["tracks"][0]["arrangement_clips"][0]["name"] == "Arr Clip 1"
     assert result["tracks"][0]["clip_slots_scanned"] == 1
     assert result["tracks"][0]["clip_slots_truncated"] is True
     assert result["tracks"][-1] == {"truncated": True}
