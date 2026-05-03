@@ -10,29 +10,29 @@ Back up your Live Set before using this. The MCP can edit your set directly and 
 
 ## Demo
 
-[![Ableton Live MCP demo](https://img.youtube.com/vi/8dRRrIY7NI0/maxresdefault.jpg)](https://youtu.be/8dRRrIY7NI0)
+<iframe width="560" height="315" src="https://www.youtube.com/embed/8dRRrIY7NI0?si=TTfChRICUV-qOWq-" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 The chat messages I sent to Codex to make this:
 
-in ableton, make a self reflective song, with audio vocals (via macos say) and chip tunes and 80's drum machines. should be a real edm banger
+_in ableton, make a self reflective song, with audio vocals (via macos say) and chip tunes and 80's drum machines. should be a real edm banger_
 
-i want midi for everything but vocals please, with ableton devices. not prerendered audio for instruments
+_i want midi for everything but vocals please, with ableton devices. not prerendered audio for instruments_
 
-needs some fills
+_needs some fills_
 
-and should hit way harder after "3-2-1 i become the sound"
+_and should hit way harder after "3-2-1 i become the sound"_
 
-the vocals are squished too much (read too quickly), give them a little more length
+_the vocals are squished too much (read too quickly), give them a little more length_
 
-add some dynamics, the song is basically one volume. and some pumping side chain
+_add some dynamics, the song is basically one volume. and some pumping side chain_
 
-improve dynamics of the clap, seems a bit flat and indistinguished, want it harder after the 3-2-1 drop
+_improve dynamics of the clap, seems a bit flat and indistinguished, want it harder after the 3-2-1 drop_
 
-introduce a new element on a new track after the 3-2-1 drop, that comes in but then recedes before the final exit
+_introduce a new element on a new track after the 3-2-1 drop, that comes in but then recedes before the final exit_
 
-doesn't seem like the new thing has any notes
+_doesn't seem like the new thing has any notes_
 
-the element is a bit muddy/indistinct. perhaps it needs simplification and more space, different instrument choice, i dunno
+_the element is a bit muddy/indistinct. perhaps it needs simplification and more space, different instrument choice, i dunno_
 
 ## Ideas
 
