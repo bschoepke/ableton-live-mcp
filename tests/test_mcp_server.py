@@ -224,6 +224,19 @@ def test_bridge_client_reuses_socket(monkeypatch):
     assert len(created[0].sent) == 2
 
 
+def test_bridge_client_rejects_oversized_response():
+    class FakeSocket:
+        def __init__(self):
+            self.chunks = [b"x" * 5, b"x" * 5]
+
+        def recv(self, _size):
+            return self.chunks.pop(0) if self.chunks else b""
+
+    with pytest.raises(OSError) as exc:
+        AbletonBridgeClient._read_line(FakeSocket(), max_bytes=8)
+    assert "response exceeds" in str(exc.value)
+
+
 def test_remote_script_bridge_alias_stays_identical():
     root = Path(__file__).resolve().parents[1]
     canonical = root / "remote_scripts" / "Ableton_Object_MCP" / "bridge.py"
