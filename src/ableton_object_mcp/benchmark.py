@@ -71,7 +71,7 @@ def _benchmarks(include_browser: bool) -> list[tuple[str, RequestFactory, bool]]
         }), False),
         ("set_summary_targeted_track", lambda: ("set_summary", {
             "track_query": "Audit Existing MIDI",
-            "track_limit": 4,
+            "track_limit": 1,
             "clip_slot_limit": 2,
             "device_limit": 2,
             "arrangement_clip_limit": 4,

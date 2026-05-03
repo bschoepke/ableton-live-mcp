@@ -493,7 +493,9 @@ def test_prompt_audit_runs_expected_bridge_methods():
             if method == "browser_search":
                 return {"results": [{"id": 202, "name": "Plugin"}]}
             if method == "batch":
-                return [{"ok": True, "result": {"results": []}}]
+                return [{"ok": True, "result": {"results": [{"id": 501}]}}, {"ok": True, "result": {"results": []}}, {"ok": True, "result": {"results": []}}]
+            if method == "exec" and "track_paths" in params.get("code", ""):
+                return {"track_paths": {"Audit Drums": "live_set tracks 2"}}
             if method == "exec" and "track_path" in params.get("code", ""):
                 return {"track_path": "live_set tracks 1", "track": "Audit Library Sample"}
             if method == "exec":

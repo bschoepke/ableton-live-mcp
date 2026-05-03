@@ -49,6 +49,22 @@ def _scenario_make_edm_song(client: AbletonBridgeClient) -> dict[str, Any]:
         }, "discover_library_candidates"),
         _call(client, "exec", {"code": _EDM_CREATION_CODE, "timeout": 10}, "create_four_track_edm_arrangement"),
     ]
+    track_paths = calls[1]["result"].get("track_paths", {}) if isinstance(calls[1]["result"], dict) else {}
+    discovered = calls[0]["result"] if isinstance(calls[0]["result"], list) else []
+    load_targets = [
+        (0, "Audit Drums", "load_drum_instrument"),
+        (1, "Audit Bass", "load_bass_instrument_or_preset"),
+        (2, "Audit Lead", "load_lead_instrument_or_preset"),
+    ]
+    for result_index, track_name, call_name in load_targets:
+        try:
+            results = discovered[result_index]["result"].get("results", [])
+            item_id = results[0]["id"] if results else None
+            track_path = track_paths.get(track_name)
+            if item_id and track_path:
+                calls.append(_call(client, "browser_load", {"item": {"id": item_id}, "target_track": {"path": track_path}}, call_name))
+        except Exception:
+            pass
     return _scenario_result("make_edm_song", "Make me an EDM song", calls)
 
 
@@ -77,7 +93,7 @@ def _scenario_library_sample_track(client: AbletonBridgeClient) -> dict[str, Any
 def _scenario_existing_project_edit(client: AbletonBridgeClient) -> dict[str, Any]:
     calls = [
         _call(client, "exec", {"code": _EXISTING_EDIT_SETUP_CODE, "timeout": 5}, "seed_existing_midi_arrangement_clip"),
-        _call(client, "set_summary", {"track_query": "Audit Existing MIDI", "track_limit": 4, "clip_slot_limit": 2, "device_limit": 2, "arrangement_clip_limit": 8}, "summarize_existing_project"),
+        _call(client, "set_summary", {"track_query": "Audit Existing MIDI", "track_limit": 1, "clip_slot_limit": 2, "device_limit": 2, "arrangement_clip_limit": 8}, "summarize_existing_project"),
     ]
     clip_id = None
     for track in calls[1]["result"].get("tracks", []):
@@ -97,7 +113,7 @@ def _scenario_audio_warp_edit(client: AbletonBridgeClient) -> dict[str, Any]:
     setup_code = _AUDIO_WARP_SETUP_CODE % str(wav_path)
     calls = [
         _call(client, "exec", {"code": setup_code, "timeout": 5}, "seed_existing_audio_clip"),
-        _call(client, "set_summary", {"track_query": "Audit Existing Audio", "track_limit": 4, "clip_slot_limit": 0, "device_limit": 0, "arrangement_clip_limit": 8}, "summarize_audio_arrangement_clip"),
+        _call(client, "set_summary", {"track_query": "Audit Existing Audio", "track_limit": 1, "clip_slot_limit": 0, "device_limit": 0, "arrangement_clip_limit": 8}, "summarize_audio_arrangement_clip"),
     ]
     clip_id = None
     for track in calls[1]["result"].get("tracks", []):
@@ -238,8 +254,8 @@ for name in names:
     clip.add_new_notes(tuple(specs))
     for bar in range(4):
         track.duplicate_clip_to_arrangement(clip, bar * 4.0)
-    created.append({"track": track.name, "notes": len(specs), "arrangement_clips": len(track.arrangement_clips)})
-result = {"tempo": song.tempo, "created": created, "track_count": len(song.tracks)}
+    created.append({"track": track.name, "path": "live_set tracks %s" % (len(song.tracks) - 1), "notes": len(specs), "arrangement_clips": len(track.arrangement_clips)})
+result = {"tempo": song.tempo, "created": created, "track_paths": dict((item["track"], item["path"]) for item in created), "track_count": len(song.tracks)}
 '''
 
 _CREATE_SAMPLE_TRACK_CODE = r'''
