@@ -35,6 +35,7 @@ def test_lists_general_purpose_tools():
         "live_device_parameters",
         "live_clip_notes",
         "live_clip_update_notes",
+        "live_clip_envelope",
         "live_eval",
         "live_exec",
         "live_batch",
@@ -145,6 +146,25 @@ def test_clip_note_tools_forward_to_bridge():
     })
     assert bridge.calls == [("clip_notes", read_args), ("clip_update_notes", update_args)]
     assert response["result"]["structuredContent"]["method"] == "clip_update_notes"
+
+
+def test_clip_envelope_tool_forwards_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {
+        "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
+        "parameter": {"id": 42},
+        "create": True,
+        "insert_steps": [{"time": 0.0, "duration": 1.0, "value": 0.5}],
+    }
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 34,
+        "method": "tools/call",
+        "params": {"name": "live_clip_envelope", "arguments": args},
+    })
+    assert bridge.calls == [("clip_envelope", args)]
+    assert response["result"]["structuredContent"]["method"] == "clip_envelope"
 
 
 def test_browser_search_tool_forwards_query_to_bridge():

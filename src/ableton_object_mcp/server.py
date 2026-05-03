@@ -38,19 +38,19 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     ref = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Live API path."},
-            "id": {"type": "integer", "description": "Bridge object id."},
+            "path": {"type": "string"},
+            "id": {"type": "integer"},
         },
         "additionalProperties": False,
     }
 
     server.add_tool(Tool("live_ping", "Check bridge health/version.", schema({}), forward("ping")))
     response_controls = {
-        "detail": {"type": "boolean", "description": "Include repr/canonical_path."},
-        "max_items": {"type": "integer", "description": "Max encoded items; -1 unbounded."},
-        "max_depth": {"type": "integer", "description": "Max encoded depth."},
-        "max_string_length": {"type": "integer", "description": "Max string chars; -1 unbounded."},
-        "timeout": {"type": "number", "description": "Main-thread timeout seconds."},
+        "detail": {"type": "boolean"},
+        "max_items": {"type": "integer"},
+        "max_depth": {"type": "integer"},
+        "max_string_length": {"type": "integer"},
+        "timeout": {"type": "number"},
     }
     server.add_tool(Tool("live_get", "Resolve object; read selected properties/children.", schema({
         "ref": ref,
@@ -63,9 +63,9 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         **response_controls,
     }, ["ref"]), forward("get")))
     server.add_tool(Tool("live_set_summary", "Compact set summary.", schema({
-        "track_limit": {"type": "integer", "description": "Max tracks; -1 unbounded."},
-        "clip_slot_limit": {"type": "integer", "description": "Max clip slots per track."},
-        "device_limit": {"type": "integer", "description": "Max devices per track."},
+        "track_limit": {"type": "integer"},
+        "clip_slot_limit": {"type": "integer"},
+        "device_limit": {"type": "integer"},
         "include_return_tracks": {"type": "boolean"},
         "include_master_track": {"type": "boolean"},
         **response_controls,
@@ -117,6 +117,24 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         }, "required": ["note_id"], "additionalProperties": False}},
         **response_controls,
     }, ["ref", "updates"]), forward("clip_update_notes")))
+    server.add_tool(Tool("live_clip_envelope", "Inspect or edit a clip automation envelope for one parameter.", schema({
+        "ref": ref,
+        "parameter": ref,
+        "create": {"type": "boolean"},
+        "clear": {"type": "boolean"},
+        "delete_range": {"type": "object", "properties": {
+            "start_time": {"type": "number"},
+            "end_time": {"type": "number"},
+        }, "required": ["start_time", "end_time"], "additionalProperties": False},
+        "insert_steps": {"type": "array", "items": {"type": "object", "properties": {
+            "time": {"type": "number"},
+            "duration": {"type": "number"},
+            "value": {"type": "number"},
+        }, "required": ["time", "duration", "value"], "additionalProperties": False}},
+        "start_time": {"type": "number"},
+        "end_time": {"type": "number"},
+        "limit": {"type": "integer", "minimum": 0},
+    }, ["ref", "parameter"]), forward("clip_envelope")))
     server.add_tool(Tool("live_batch", "Run multiple generic bridge operations in one Live main-thread request; preserves full object-model flexibility.", schema({
         "operations": {"type": "array", "items": {"type": "object", "properties": {
             "method": {"type": "string", "description": "Bridge method name such as get, set, call, children, or eval."},

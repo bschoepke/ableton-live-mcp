@@ -130,6 +130,24 @@ class FakeDevice:
         ])
 
 
+class FakeEnvelope:
+    def __init__(self):
+        self._events = []
+
+    def events_in_range(self, start_time, end_time):
+        return [event for event in self._events if start_time <= event.time < end_time]
+
+    def delete_events_in_range(self, start_time, end_time):
+        self._events = [event for event in self._events if not (start_time <= event.time < end_time)]
+
+    def insert_step(self, time, duration, value):
+        self._events.append(types.SimpleNamespace(time=time, value=value))
+        self._events.append(types.SimpleNamespace(time=time + duration, value=value))
+
+    def value_at_time(self, _time):
+        return self._events[0].value if self._events else 0.0
+
+
 class FakeClip:
     def __init__(self, name):
         self.name = name
@@ -155,6 +173,7 @@ class FakeClip:
                 release_velocity=64.0,
             )
         ]
+        self._envelopes = {}
 
     def get_all_notes_extended(self):
         return self._notes
@@ -162,6 +181,19 @@ class FakeClip:
     def apply_note_modifications(self, notes):
         updates = {note.note_id: note for note in notes}
         self._notes = [updates.get(note.note_id, note) for note in self._notes]
+
+    def automation_envelope(self, parameter):
+        return self._envelopes.get(parameter)
+
+    def create_automation_envelope(self, parameter):
+        envelope = FakeEnvelope()
+        self._envelopes[parameter] = envelope
+        self.has_envelopes = True
+        return envelope
+
+    def clear_envelope(self, parameter):
+        self._envelopes.pop(parameter, None)
+        self.has_envelopes = bool(self._envelopes)
 
 
 class FakeClipSlot:
@@ -272,6 +304,32 @@ def test_clip_notes_can_be_listed_and_updated(monkeypatch):
     assert updated["notes"][0]["velocity"] == 88.0
     notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
     assert notes["notes"][0]["velocity"] == 88.0
+
+
+def test_clip_envelope_can_be_inspected_inserted_and_cleared(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    parameter = song.tracks[0].devices[0].parameters[1]
+    parameter_ref = {"id": bridge._parameter_summary(parameter)["id"]}
+    clip_ref = {"path": "live_set tracks 0 clip_slots 0 clip"}
+
+    missing = bridge._rpc_clip_envelope({"ref": clip_ref, "parameter": parameter_ref})
+    assert missing["has_envelope"] is False
+    assert missing["events"] == []
+
+    updated = bridge._rpc_clip_envelope({
+        "ref": clip_ref,
+        "parameter": parameter_ref,
+        "create": True,
+        "delete_range": {"start_time": 0.0, "end_time": 4.0},
+        "insert_steps": [{"time": 0.0, "duration": 1.0, "value": 0.5}],
+    })
+    assert updated["has_envelope"] is True
+    assert updated["event_count"] == 2
+    assert updated["events"][0] == {"time": 0.0, "value": 0.5}
+    assert updated["parameter"]["name"] == "Threshold"
+
+    cleared = bridge._rpc_clip_envelope({"ref": clip_ref, "parameter": parameter_ref, "clear": True})
+    assert cleared["has_envelope"] is False
 
 
 def test_device_parameters_are_compact_and_addressable(monkeypatch):

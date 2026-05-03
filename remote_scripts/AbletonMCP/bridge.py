@@ -303,6 +303,47 @@ class AbletonObjectMCP(ControlSurface):
             "notes": [self._note_summary(note) for note in changed],
         }
 
+    def _rpc_clip_envelope(self, params):
+        clip = self._resolve(params.get("ref"))
+        parameter = self._resolve(params.get("parameter"))
+        envelope = clip.automation_envelope(parameter)
+        steps = params.get("insert_steps") or []
+        if envelope is None and (params.get("create") or steps):
+            envelope = clip.create_automation_envelope(parameter)
+        if params.get("clear"):
+            clip.clear_envelope(parameter)
+            envelope = None
+        if envelope is not None:
+            delete_range = params.get("delete_range")
+            if delete_range:
+                envelope.delete_events_in_range(float(delete_range["start_time"]), float(delete_range["end_time"]))
+            for step in steps:
+                envelope.insert_step(float(step["time"]), float(step["duration"]), float(step["value"]))
+        start = float(params.get("start_time") if params.get("start_time") is not None else 0.0)
+        end = params.get("end_time")
+        if end is None:
+            end = getattr(clip, "length", start + 16.0)
+        end = float(end)
+        limit = int(params.get("limit") if params.get("limit") is not None else 128)
+        events = []
+        truncated = False
+        total = 0
+        if envelope is not None:
+            all_events = list(envelope.events_in_range(start, end))
+            total = len(all_events)
+            if limit >= 0 and len(all_events) > limit:
+                all_events = all_events[:limit]
+                truncated = True
+            events = [self._automation_event_summary(event) for event in all_events]
+        return {
+            "clip": self._clip_summary(clip, None),
+            "parameter": self._parameter_summary(parameter),
+            "has_envelope": envelope is not None,
+            "event_count": total,
+            "truncated": truncated,
+            "events": events,
+        }
+
     def _rpc_batch(self, params):
         results = []
         continue_on_error = bool(params.get("continue_on_error"))
@@ -703,6 +744,12 @@ class AbletonObjectMCP(ControlSurface):
             "probability": note.probability,
             "velocity_deviation": note.velocity_deviation,
             "release_velocity": note.release_velocity,
+        }
+
+    def _automation_event_summary(self, event):
+        return {
+            "time": getattr(event, "time", None),
+            "value": getattr(event, "value", None),
         }
 
     def _object_id(self, obj):
