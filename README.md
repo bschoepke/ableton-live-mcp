@@ -10,7 +10,7 @@ Back up your Live Set before using this. The MCP can edit your set directly and 
 
 ## Demo
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/8dRRrIY7NI0?si=TTfChRICUV-qOWq-" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+[![Ableton Live MCP demo](https://img.youtube.com/vi/8dRRrIY7NI0/maxresdefault.jpg)](https://youtu.be/8dRRrIY7NI0)
 
 The chat messages I sent to Codex to make this:
 
