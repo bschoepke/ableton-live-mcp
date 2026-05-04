@@ -182,8 +182,8 @@ class AbletonLiveMCP(ControlSurface):
         if command not in ("open", "start", "stop", "status"):
             raise ValueError("command must be open, start, stop, or status")
         path = params.get("path")
-        if command in ("open", "start") and not path:
-            raise ValueError("path is required for open/start")
+        if command == "open" and not path:
+            raise ValueError("path is required for open")
         args = [command]
         if path:
             args.append(path)
@@ -199,6 +199,70 @@ class AbletonLiveMCP(ControlSurface):
             sock.close()
         return {"sent": True, "command": command, "path": path, "bytes": len(payload), "command_file": command_file}
 
+    def _rpc_agent_audio_tap_setup(self, params):
+        song = self.song()
+        placement = params.get("placement") or "master"
+        if placement == "master":
+            target_track = song.master_track
+        elif params.get("target_track"):
+            target_track = self._resolve(params.get("target_track"))
+        else:
+            raise ValueError("target_track is required unless placement is master")
+
+        if params.get("remove_existing"):
+            self._delete_named_devices("AgentAudioTap")
+
+        loaded = False
+        if not self._track_has_device(target_track, "AgentAudioTap"):
+            item = self._find_browser_item_named("AgentAudioTap")
+            if item is None:
+                raise KeyError("Could not find AgentAudioTap in the Live browser; install/build the M4L device first")
+            song.view.selected_track = target_track
+            Live.Application.get_application().browser.load_item(item)
+            loaded = True
+
+        solo_ref = params.get("solo_track")
+        if solo_ref:
+            solo_track = self._resolve(solo_ref)
+            if params.get("exclusive_solo", True):
+                for track in song.tracks:
+                    try:
+                        track.solo = track is solo_track
+                    except Exception:
+                        pass
+            else:
+                solo_track.solo = True
+
+        if params.get("stop", True):
+            self._stop_transport(song)
+        if params.get("reset_time") is not None:
+            self._seek_song(song, float(params.get("reset_time")))
+
+        return {
+            "target_track": getattr(target_track, "name", ""),
+            "loaded": loaded,
+            "devices": [getattr(device, "name", "") for device in getattr(target_track, "devices", [])],
+            "time": getattr(song, "current_song_time", None),
+            "playing": bool(getattr(song, "is_playing", False)),
+        }
+
+    def _rpc_transport(self, params):
+        song = self.song()
+        if params.get("time") is not None:
+            self._seek_song(song, float(params["time"]))
+        action = params.get("action")
+        if action == "play":
+            self._start_transport(song)
+        elif action == "continue":
+            song.continue_playing()
+            if not getattr(song, "is_playing", False):
+                self._start_transport(song)
+        elif action == "stop":
+            self._stop_transport(song)
+        elif action not in (None, "status"):
+            raise ValueError("action must be play, continue, stop, or status")
+        return {"playing": bool(getattr(song, "is_playing", False)), "time": getattr(song, "current_song_time", None)}
+
     def _osc_message(self, address, args):
         def pad(value):
             data = value.encode("utf-8") + b"\x00"
@@ -209,6 +273,73 @@ class AbletonLiveMCP(ControlSurface):
         for arg in args:
             payload += pad(str(arg))
         return payload
+
+    def _seek_song(self, song, time_value):
+        current = float(getattr(song, "current_song_time", 0.0))
+        song.jump_by(time_value - current)
+
+    def _start_transport(self, song):
+        song.start_playing()
+        if not getattr(song, "is_playing", False):
+            try:
+                song.continue_playing()
+            except Exception:
+                pass
+        if not getattr(song, "is_playing", False):
+            song.start_playing()
+
+    def _stop_transport(self, song):
+        song.stop_playing()
+        if getattr(song, "is_playing", False):
+            song.stop_playing()
+
+    def _track_has_device(self, track, name):
+        for device in getattr(track, "devices", []):
+            if getattr(device, "name", "") == name:
+                return True
+        return False
+
+    def _delete_named_devices(self, name):
+        song = self.song()
+        tracks = list(song.tracks) + list(song.return_tracks) + [song.master_track]
+        for track in tracks:
+            devices = getattr(track, "devices", [])
+            for index in range(len(devices) - 1, -1, -1):
+                if getattr(devices[index], "name", "") != name:
+                    continue
+                if hasattr(track, "delete_device"):
+                    track.delete_device(index)
+                else:
+                    del devices[index]
+
+    def _find_browser_item_named(self, name):
+        browser = Live.Application.get_application().browser
+
+        def children_of(item):
+            try:
+                return item.iter_children
+            except Exception:
+                return ()
+
+        def walk(item, depth):
+            if getattr(item, "name", "") == name and bool(getattr(item, "is_loadable", False)):
+                return item
+            if depth >= DEFAULT_MAX_DEPTH:
+                return None
+            for child in children_of(item):
+                found = walk(child, depth + 1)
+                if found is not None:
+                    return found
+            return None
+
+        for root_name in ("user_library", "audio_effects", "max_for_live"):
+            if not hasattr(browser, root_name):
+                continue
+            root = getattr(browser, root_name)
+            found = walk(root, 0)
+            if found is not None:
+                return found
+        return None
 
     def _rpc_set_summary(self, params):
         song = self.song()

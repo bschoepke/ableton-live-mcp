@@ -45,6 +45,8 @@ def test_lists_general_purpose_tools():
         "live_track_create_audio_clip",
         "live_track_insert_device",
         "live_agent_audio_tap",
+        "live_agent_audio_tap_setup",
+        "live_transport",
         "live_eval",
         "live_exec",
         "live_batch",
@@ -193,6 +195,34 @@ def test_agent_audio_tap_tool_forwards_to_bridge():
     })
     assert bridge.calls == [("agent_audio_tap", args)]
     assert response["result"]["structuredContent"]["method"] == "agent_audio_tap"
+
+
+def test_agent_audio_tap_setup_and_transport_tools_forward_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    setup_args = {
+        "placement": "master",
+        "solo_track": {"path": "live_set tracks 0"},
+        "remove_existing": True,
+        "reset_time": 0,
+    }
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 33,
+        "method": "tools/call",
+        "params": {"name": "live_agent_audio_tap_setup", "arguments": setup_args},
+    })
+    assert response["result"]["structuredContent"]["method"] == "agent_audio_tap_setup"
+
+    transport_args = {"action": "play", "time": 0}
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 34,
+        "method": "tools/call",
+        "params": {"name": "live_transport", "arguments": transport_args},
+    })
+    assert bridge.calls == [("agent_audio_tap_setup", setup_args), ("transport", transport_args)]
+    assert response["result"]["structuredContent"]["method"] == "transport"
 
 
 def test_parameter_set_tool_forwards_to_bridge():

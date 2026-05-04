@@ -67,6 +67,15 @@ class FakeBrowser:
                 ]),
             ]),
         ])
+        self.user_library = FakeBrowserItem("User Library", folder=True, children=[
+            FakeBrowserItem("Presets", folder=True, children=[
+                FakeBrowserItem("Audio Effects", folder=True, children=[
+                    FakeBrowserItem("Max Audio Effect", folder=True, children=[
+                        FakeBrowserItem("AgentAudioTap", loadable=True, device=True),
+                    ]),
+                ]),
+            ]),
+        ])
         self.loaded = []
         self.previewed = []
         self.stopped_preview = False
@@ -269,6 +278,12 @@ class FakeClipSlot:
 class FakeTrack:
     def __init__(self, name, devices=None, clip_slots=None, arrangement_clips=None):
         self.name = name
+        self.mute = False
+        self.solo = False
+        self.arm = False
+        self.implicit_arm = False
+        self.can_be_armed = True
+        self.is_foldable = False
         self.devices = FakeVector(devices or [])
         self.clip_slots = FakeVector(clip_slots or [])
         self.arrangement_clips = FakeVector(arrangement_clips or [])
@@ -295,6 +310,9 @@ class FakeTrack:
             self.devices.insert(device_index, device)
         return None
 
+    def delete_device(self, index):
+        del self.devices[index]
+
 
 class FakeSong:
     def __init__(self):
@@ -308,13 +326,26 @@ class FakeSong:
         ])
         self.scenes = FakeVector([types.SimpleNamespace(name="Scene 1")])
         self.return_tracks = FakeVector([
-            types.SimpleNamespace(name="A-Reverb", devices=FakeVector([]), clip_slots=FakeVector([]), arrangement_clips=FakeVector([])),
+            FakeTrack("A-Reverb"),
         ])
-        self.master_track = types.SimpleNamespace(name="Main", devices=FakeVector([]), clip_slots=FakeVector([]), arrangement_clips=FakeVector([]))
+        self.master_track = FakeTrack("Main")
         self.view = types.SimpleNamespace(selected_track=None)
+        self.is_playing = False
 
     def get_beats_loop_start(self):
         return "1.1.1"
+
+    def jump_by(self, offset):
+        self.current_song_time = max(0.0, self.current_song_time + float(offset))
+
+    def start_playing(self):
+        self.is_playing = True
+
+    def continue_playing(self):
+        self.is_playing = True
+
+    def stop_playing(self):
+        self.is_playing = False
 
 
 def load_bridge_module(monkeypatch):
@@ -416,6 +447,66 @@ def test_agent_audio_tap_sends_udp_command(monkeypatch):
         b"/agent_audio_tap\x00\x00\x00\x00,ss\x00start\x00\x00\x00/tmp/tap.wav\x00\x00\x00\x00",
         ("127.0.0.1", 17654),
     )]
+
+
+def test_agent_audio_tap_start_can_use_preopened_path(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    sent = []
+
+    class FakeSocket:
+        def __init__(self, *_args):
+            pass
+
+        def sendto(self, payload, address):
+            sent.append((payload, address))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(socket, "socket", FakeSocket)
+    result = bridge._rpc_agent_audio_tap({"command": "start", "id": "abc"})
+    assert result["path"] is None
+    assert sent == [(b"/agent_audio_tap\x00\x00\x00\x00,s\x00\x00start\x00\x00\x00", ("127.0.0.1", 17654))]
+
+
+def test_agent_audio_tap_setup_loads_on_master_and_solos_target(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    song.tracks[1].devices.append(FakeDevice())
+    song.tracks[1].devices[-1].name = "AgentAudioTap"
+
+    result = bridge._rpc_agent_audio_tap_setup({
+        "placement": "master",
+        "remove_existing": True,
+        "solo_track": {"path": "live_set tracks 0"},
+        "reset_time": 0,
+    })
+
+    assert result["target_track"] == "Main"
+    assert result["loaded"] is True
+    assert app.browser.loaded == ["AgentAudioTap"]
+    assert [track.solo for track in song.tracks] == [True, False]
+    assert [device.name for device in song.tracks[1].devices] == []
+    assert song.current_song_time == 0.0
+    assert song.is_playing is False
+
+
+def test_transport_tool_seeks_and_retries_play(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    calls = []
+
+    def start_once_then_later():
+        calls.append("start")
+        if len(calls) > 1:
+            song.is_playing = True
+
+    song.current_song_time = 12.0
+    song.start_playing = start_once_then_later
+    song.continue_playing = lambda: calls.append("continue")
+
+    result = bridge._rpc_transport({"action": "play", "time": 2.0})
+
+    assert result == {"playing": True, "time": 2.0}
+    assert calls == ["start", "continue", "start"]
 
 
 def test_set_summary_compacts_existing_project_state(monkeypatch):
