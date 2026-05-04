@@ -14,7 +14,8 @@ It should work on Mac and Windows with recent Ableton versions, but I have only 
 
 Back up your Live Set before using this. The MCP can edit your set directly and could corrupt it.
 
-## Demo
+## Demos
+Here are a couple examples of live sets made from scratch with Codex in just a few minutes, along with their prompts. After it makes something, you can ask for follow up changes.
 
 [![Ableton Live MCP demo](https://img.youtube.com/vi/8dRRrIY7NI0/maxresdefault.jpg)](https://youtu.be/8dRRrIY7NI0)
 
@@ -23,6 +24,8 @@ https://www.youtube.com/watch?v=8dRRrIY7NI0
 The chat messages I sent to Codex to make this:
 
 _in ableton, make a self reflective song, with audio vocals (via macos say) and chip tunes and 80's drum machines. should be a real edm banger_
+
+Follow up prompts:
 
 _i want midi for everything but vocals please, with ableton devices. not prerendered audio for instruments_
 
@@ -42,10 +45,19 @@ _doesn't seem like the new thing has any notes_
 
 _the element is a bit muddy/indistinct. perhaps it needs simplification and more space, different instrument choice, i dunno_
 
+[![Ableton Live MCP piano demo](https://img.youtube.com/vi/cLCHEV1jWQo/maxresdefault.jpg)](https://youtu.be/cLCHEV1jWQo)
+https://youtu.be/cLCHEV1jWQo
+
+Prompt used to make this:
+
+_In Ableton, make a piano duet that tells the story of people debating the positive and negative merits of AI. The composition should be both beautiful and dynamic but surprising and fresh. Use Keyscape devices._
+
 ## Ideas
 
-- Control your external synthesizers and hardware with the MCP
-- You can tell it use third party plugins (VSTs, audio units) like Serum and Keyscape.
+- Control your external synthesizers and other hardware with the MCP
+- Ask it questions like "why does my mix sound muddy?" or "how do I sidechain my bass track?"
+- Ask it to do things like "add a chord track that fits with my melody" or "give me a basic backing track for me to noodle on my guitar with"
+- You can tell it use third party plugins (VSTs, audio units) like Serum and Keyscape
 - Tell your agent to incorporate your existing vocal samples, including asking it to trim silence and transcribe your audio samples before creatively incorporating them into your live set
 - Ask your agent to set up crazy user controlled DJ effects
 - Experiment with VJ plugins like Videosync to make music videos driven by your live set
