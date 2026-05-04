@@ -4,6 +4,7 @@ from typing import Any
 
 from bridge import AbletonBridgeClient, BridgeConfig
 from mcp import StdioMcpServer, Tool
+from similar_sounds import find_similar_sounds
 
 
 __version__ = "0.1.0"
@@ -261,6 +262,13 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "item": browser_item_ref,
         "stop": {"type": "boolean"},
     }), forward("browser_preview")))
+    server.add_tool(Tool("find_similar_sounds", "Find similar sounds from Live 12's local sound-analysis DB.", schema({
+        "base": {"type": "string"},
+        "query": {"type": "string"},
+        "limit": {"type": "integer", "minimum": 1},
+        "include_self": {"type": "boolean"},
+        "db_path": {"type": "string"},
+    }), find_similar_sounds))
     server.add_tool(Tool("live_eval", (
         "Evaluate a Python expression inside Live with song, app, obj, and Live bindings. "
         + ABLETON_AGENT_GUIDE

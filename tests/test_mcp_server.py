@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig
 from install_remote_script import install_remote_script, remote_script_root
 from prompt_audit import run_prompt_audit
 from server import make_server
+from similar_sounds import encode_feature
 from smoke import run_smoke
 
 
@@ -55,6 +57,7 @@ def test_lists_general_purpose_tools():
         "live_browser_search",
         "live_browser_load",
         "live_browser_preview",
+        "find_similar_sounds",
         "live_observe",
         "live_events",
     } <= names
@@ -408,6 +411,80 @@ def test_browser_capabilities_tool_forwards_to_bridge():
     assert response["result"]["structuredContent"]["method"] == "browser_capabilities"
 
 
+def test_find_similar_sounds_reads_live_database_without_bridge(tmp_path):
+    db_path = make_similarity_db(tmp_path)
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 46,
+        "method": "tools/call",
+        "params": {
+            "name": "find_similar_sounds",
+            "arguments": {"base": "Base Kick", "limit": 2, "db_path": str(db_path)},
+        },
+    })
+
+    result = response["result"]["structuredContent"]
+    assert bridge.calls == []
+    assert result["base"]["name"] == "Base Kick.wav"
+    assert [item["name"] for item in result["results"]] == ["Near Kick.wav", "Far Kick.wav"]
+    assert result["results"][0]["distance"] < result["results"][1]["distance"]
+    assert result["results"][0]["path"] == "Pack / Samples / Near Kick.wav"
+
+
+def make_similarity_db(tmp_path):
+    db_path = tmp_path / "Live-files-test.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript("""
+        CREATE TABLE files (
+            file_id INTEGER PRIMARY KEY,
+            parent_id INTEGER,
+            file_type INTEGER,
+            subtype INTEGER DEFAULT 0,
+            file_kind INTEGER DEFAULT 0,
+            mod_date INTEGER,
+            file_size INTEGER,
+            aggr_id INTEGER,
+            name TEXT,
+            colors INTEGER DEFAULT 1,
+            md_version INTEGER DEFAULT 0,
+            scanner_version INTEGER DEFAULT 0,
+            use_count INTEGER DEFAULT 0,
+            place_id INTEGER NOT NULL DEFAULT 0,
+            flags INTEGER DEFAULT 3,
+            device_type INTEGER DEFAULT 0,
+            device_arch INTEGER DEFAULT 0,
+            device_id TEXT,
+            edit_source TEXT,
+            edit_date INTEGER,
+            fe_version INTEGER DEFAULT 0
+        );
+        CREATE TABLE places (file_id INTEGER, folder_kind INTEGER, level INTEGER NOT NULL DEFAULT 0, name TEXT);
+        CREATE TABLE fe_values (file_id INTEGER, data BLOB, hash INTEGER);
+    """)
+    rows = [
+        (1, 0, 0, 0, 0, 0, 0, 0, "Pack", 1, 0, 0, 0, 1, 3, 0, 0, "", "", 0, 0),
+        (2, 1, 0, 0, 0, 0, 0, 0, "Samples", 1, 0, 0, 0, 1, 3, 0, 0, "", "", 0, 0),
+        (10, 2, 2002875949, 0, 4, 0, 0, 0, "Base Kick.wav", 1, 0, 0, 0, 1, 3, 0, 0, "", "", 0, 18),
+        (11, 2, 2002875949, 0, 4, 0, 0, 0, "Near Kick.wav", 1, 0, 0, 0, 1, 3, 0, 0, "", "", 0, 18),
+        (12, 2, 2002875949, 0, 4, 0, 0, 0, "Far Kick.wav", 1, 0, 0, 0, 1, 3, 0, 0, "", "", 0, 18),
+    ]
+    conn.executemany("INSERT INTO files VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    conn.execute("INSERT INTO places VALUES (1, 0, 0, 'Pack')")
+    conn.executemany(
+        "INSERT INTO fe_values VALUES (?, ?, ?)",
+        [
+            (10, encode_feature([0.0, 0.0, 0.0]), 10),
+            (11, encode_feature([0.2, 0.0, 0.0]), 11),
+            (12, encode_feature([1.0, 0.0, 0.0]), 12),
+        ],
+    )
+    conn.commit()
+    conn.close()
+    return db_path
+
+
 def test_exec_tool_forwards_code_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)
@@ -479,7 +556,7 @@ def test_tool_list_stays_compact():
     server = make_server(FakeBridge())
     response = server.handle({"jsonrpc": "2.0", "id": 7, "method": "tools/list"})
     payload = json.dumps(response, separators=(",", ":"))
-    assert len(payload) < 17000
+    assert len(payload) < 17500
     live_eval = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_eval")
     assert "live_exec" in live_eval["description"]
     assert "duplicate session clips" not in live_eval["description"].lower()
