@@ -33,3 +33,10 @@
    ```
 
 The Remote Script binds only to `127.0.0.1`. If Ableton was already open when the script was installed, restart Ableton or reload the Control Surface.
+
+## Max for Live devices
+This repo includes `m4l/AgentAudioTap.amxd`, a Max for Live audio effect that lets an agent record the audio signal at the device's insertion point for analysis. Build/install it with:
+
+```sh
+.venv/bin/python scripts/build_agent_audio_tap.py --install
+```
