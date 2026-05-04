@@ -18,6 +18,7 @@ ABLETON_MCP_INSTRUCTIONS = (
     "For existing projects, start with live_set_summary; for collaborative sessions, pass expected_set_signature to destructive edits and re-read if it changed. "
     "For speed, prefer compact live_exec summaries, live_batch, property lists, child limits, max_items, and max_depth. "
     "For common clip work, prefer JSON-safe helpers like live_clip_add_notes, live_clip_duplicate_to_arrangement, and live_track_create_audio_clip before hand-coding C++ signatures. "
+    "find_similar_sounds requires Live 12.0+ analysis data; Live 12.1+ added 32-bit integer WAV support. "
     "For AgentAudioTap, prefer master tap + solo target; use track insertion only for pre/post points. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via browser or create audio clips; use ids from bridge summaries, not raw _live_ptr values. "
     "These are hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
@@ -262,7 +263,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "item": browser_item_ref,
         "stop": {"type": "boolean"},
     }), forward("browser_preview")))
-    server.add_tool(Tool("find_similar_sounds", "Find similar sounds from Live 12's local sound-analysis DB.", schema({
+    server.add_tool(Tool("find_similar_sounds", "Find similar sounds from Live 12.0+ local sound-analysis DB.", schema({
         "base": {"type": "string"},
         "query": {"type": "string"},
         "limit": {"type": "integer", "minimum": 1},

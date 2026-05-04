@@ -69,8 +69,9 @@ def test_initialize_includes_general_model_instructions():
     instructions = response["result"]["instructions"]
     assert "third-party audio plugins" in instructions
     assert "roots:['plugins']" in instructions
+    assert "find_similar_sounds requires Live 12.0+" in instructions
     assert "full Live object model remains available" in instructions
-    assert len(instructions) < 1400
+    assert len(instructions) < 1500
 
 
 def test_tool_call_forwards_arguments_to_bridge():
@@ -560,6 +561,8 @@ def test_tool_list_stays_compact():
     live_eval = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_eval")
     assert "live_exec" in live_eval["description"]
     assert "duplicate session clips" not in live_eval["description"].lower()
+    similar = next(tool for tool in response["result"]["tools"] if tool["name"] == "find_similar_sounds")
+    assert "Live 12.0+" in similar["description"]
 
 
 def test_bridge_error_omits_traceback_by_default(monkeypatch):
