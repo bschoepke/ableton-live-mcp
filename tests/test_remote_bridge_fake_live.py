@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import socket
 import sys
 import threading
 import types
@@ -367,6 +368,54 @@ def test_resolve_get_children_and_call(monkeypatch):
     assert len([item for item in children if not item.get("truncated")]) == 1
     assert children[-1] == {"truncated": True}
     assert bridge._rpc_call({"ref": {"path": "live_set"}, "method": "get_beats_loop_start"}) == "1.1.1"
+
+
+def test_agent_audio_tap_sends_udp_command(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    sent = []
+
+    class FakeSocket:
+        def __init__(self, *_args):
+            pass
+
+        def sendto(self, payload, address):
+            sent.append((payload, address))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(socket, "socket", FakeSocket)
+    written = {}
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            written["path"] = path
+            written["mode"] = mode
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def write(self, value):
+            written["value"] = written.get("value", "") + value
+            return len(value)
+
+    monkeypatch.setattr(module := load_bridge_module(monkeypatch)[0], "open", lambda path, mode: FakeFile(path, mode), raising=False)
+    bridge.__class__ = module.AbletonLiveMCP
+    result = bridge._rpc_agent_audio_tap({"command": "start", "path": "/tmp/tap.wav", "id": "abc"})
+
+    assert result["sent"] is True
+    assert written == {
+        "path": "/tmp/agent_audio_tap_command.json",
+        "mode": "w",
+        "value": '{"id":"abc","command":"start","path":"/tmp/tap.wav"}',
+    }
+    assert sent == [(
+        b"/agent_audio_tap\x00\x00\x00\x00,ss\x00start\x00\x00\x00/tmp/tap.wav\x00\x00\x00\x00",
+        ("127.0.0.1", 17654),
+    )]
 
 
 def test_set_summary_compacts_existing_project_state(monkeypatch):

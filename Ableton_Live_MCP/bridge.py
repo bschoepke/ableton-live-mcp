@@ -22,6 +22,8 @@ DEFAULT_MAX_STRING_LENGTH = 4096
 DEFAULT_CHILD_LIMIT = 200
 DEFAULT_MAIN_THREAD_TIMEOUT = 10
 DEFAULT_BROWSER_ROOTS = ("instruments", "audio_effects", "midi_effects", "drums", "samples", "sounds", "packs", "plugins", "user_library", "user_folders", "current_project")
+AGENT_AUDIO_TAP_HOST = "127.0.0.1"
+AGENT_AUDIO_TAP_PORT = 17654
 
 
 class AbletonLiveMCP(ControlSurface):
@@ -174,6 +176,39 @@ class AbletonLiveMCP(ControlSurface):
         app = Live.Application.get_application()
         version = app.get_version_string() if hasattr(app, "get_version_string") else "unknown"
         return {"ok": True, "version": version, "major": self._major_version(version)}
+
+    def _rpc_agent_audio_tap(self, params):
+        command = params.get("command")
+        if command not in ("open", "start", "stop", "status"):
+            raise ValueError("command must be open, start, stop, or status")
+        path = params.get("path")
+        if command in ("open", "start") and not path:
+            raise ValueError("path is required for open/start")
+        args = [command]
+        if path:
+            args.append(path)
+        command_id = params.get("id") or hashlib.sha1(json.dumps({"command": command, "path": path}, sort_keys=True).encode("utf-8")).hexdigest()
+        command_file = params.get("command_file") or "/tmp/agent_audio_tap_command.json"
+        with open(command_file, "w") as handle:
+            json.dump({"id": command_id, "command": command, "path": path}, handle, separators=(",", ":"))
+        payload = self._osc_message("/agent_audio_tap", args)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.sendto(payload, (AGENT_AUDIO_TAP_HOST, int(params.get("port") or AGENT_AUDIO_TAP_PORT)))
+        finally:
+            sock.close()
+        return {"sent": True, "command": command, "path": path, "bytes": len(payload), "command_file": command_file}
+
+    def _osc_message(self, address, args):
+        def pad(value):
+            data = value.encode("utf-8") + b"\x00"
+            return data + (b"\x00" * ((4 - (len(data) % 4)) % 4))
+
+        tags = "," + ("s" * len(args))
+        payload = pad(address) + pad(tags)
+        for arg in args:
+            payload += pad(str(arg))
+        return payload
 
     def _rpc_set_summary(self, params):
         song = self.song()

@@ -26,7 +26,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.hatch.build.targets.wheel]
-only-include = ["src"]
+only-include = ["src", "m4l", "scripts"]
 sources = ["src"]
 
 [tool.hatch.build.targets.wheel.force-include]
@@ -36,6 +36,8 @@ sources = ["src"]
 include = [
     "/src",
     "/Ableton_Live_MCP",
+    "/m4l",
+    "/scripts",
     "/tests",
     "/README.md",
     "/LICENSE",

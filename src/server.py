@@ -15,9 +15,10 @@ ABLETON_MCP_INSTRUCTIONS = (
     "Prefer installed browser content, Packs, user assets, samples, presets, devices, and indexed third-party audio plugins before generated assets unless asked. "
     "Discover runtime availability with live_browser_capabilities/live_browser_roots/live_browser_search, including roots:['plugins']; Live SKU, Packs, user folders, and plugin indexing vary. "
     "For existing projects, start with live_set_summary; for collaborative sessions, pass expected_set_signature to destructive edits and re-read if it changed. "
-    "For speed, prefer compact live_exec summaries, live_batch for independent operations, specific property lists, child limits, max_items, and max_depth. "
+    "For speed, prefer compact live_exec summaries, live_batch, property lists, child limits, max_items, and max_depth. "
     "For common clip work, prefer JSON-safe helpers like live_clip_add_notes, live_clip_duplicate_to_arrangement, and live_track_create_audio_clip before hand-coding C++ signatures. "
-    "Avoid broad browser/device dumps. Common gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via the browser or create audio clips; use ids from bridge summaries, not raw _live_ptr values; object summaries are compact unless detail:true is requested. "
+    "For AgentAudioTap, prefer master tap + solo target; use track insertion only for pre/post effect points. "
+    "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via browser or create audio clips; use ids from bridge summaries, not raw _live_ptr values. "
     "These are hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
 
@@ -215,6 +216,13 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "device_index": {"type": "integer"},
         **mutation_controls,
     }, ["ref", "device_name"]), forward("track_insert_device")))
+    server.add_tool(Tool("live_agent_audio_tap", "", {
+        "type": "object",
+        "properties": {
+            "command": {"type": "string"},
+            "path": {"type": "string"},
+        },
+    }, forward("agent_audio_tap")))
     server.add_tool(Tool("live_batch", "Run multiple generic bridge operations in one Live main-thread request; preserves full object-model flexibility.", schema({
         "operations": {"type": "array", "items": {"type": "object", "properties": {
             "method": {"type": "string", "description": "Bridge method name such as get, set, call, children, or eval."},

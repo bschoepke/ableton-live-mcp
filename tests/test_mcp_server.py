@@ -44,6 +44,7 @@ def test_lists_general_purpose_tools():
         "live_clip_warp_markers",
         "live_track_create_audio_clip",
         "live_track_insert_device",
+        "live_agent_audio_tap",
         "live_eval",
         "live_exec",
         "live_batch",
@@ -178,6 +179,20 @@ def test_device_parameters_tool_forwards_to_bridge():
     })
     assert bridge.calls == [("device_parameters", args)]
     assert response["result"]["structuredContent"]["method"] == "device_parameters"
+
+
+def test_agent_audio_tap_tool_forwards_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {"command": "start", "path": "/tmp/agent-tap.wav"}
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 32,
+        "method": "tools/call",
+        "params": {"name": "live_agent_audio_tap", "arguments": args},
+    })
+    assert bridge.calls == [("agent_audio_tap", args)]
+    assert response["result"]["structuredContent"]["method"] == "agent_audio_tap"
 
 
 def test_parameter_set_tool_forwards_to_bridge():

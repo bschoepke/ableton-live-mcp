@@ -61,3 +61,13 @@ _In Ableton, make a piano duet that tells the story of people debating the posit
 - Tell your agent to incorporate your existing vocal samples, including asking it to trim silence and transcribe your audio samples before creatively incorporating them into your live set
 - Ask your agent to set up crazy user controlled DJ effects
 - Experiment with VJ plugins like Videosync to make music videos driven by your live set
+
+## Agent Audio Tap
+
+This repo includes `m4l/AgentAudioTap.amxd`, a Max for Live audio effect that lets an agent record the audio signal at the device's insertion point for analysis. Build/install it with:
+
+```sh
+.venv/bin/python scripts/build_agent_audio_tap.py --install
+```
+
+The MCP can control it with `live_agent_audio_tap`; MIDI note 60 starts recording and note 61 stops after the output path has been opened. For most analysis tasks, put one AgentAudioTap on the master track and solo the track or group being analyzed. Insert it on an individual track only when the agent needs a specific point inside that track's device chain.
