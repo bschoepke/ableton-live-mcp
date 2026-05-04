@@ -6,7 +6,9 @@ Things you can use it for: create MIDI clips, insert audio files, general Ableto
 
 ## How to setup
 
-Just tell your AI agent (Codex, Claude Code, Cursor, Copilot, Gemini, etc.) to `Set up the https://github.com/bschoepke/ableton-live-mcp MCP server for me`.
+Just tell your AI agent (Codex, Claude Code, Cursor, Copilot, Gemini, etc.) to:
+
+`Set up the https://github.com/bschoepke/ableton-live-mcp MCP server for me`
 
 It should work on Mac and Windows with recent Ableton versions, but I have only tested it on Ableton Live Suite 12.3.8 on macOS Tahoe.
 
