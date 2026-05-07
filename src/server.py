@@ -218,9 +218,9 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "device_index": {"type": "integer"},
         **mutation_controls,
     }, ["ref", "device_name"]), forward("track_insert_device")))
-    server.add_tool(Tool("live_agent_audio_tap", "", {}, forward("agent_audio_tap")))
-    server.add_tool(Tool("live_agent_audio_tap_setup", "", {}, forward("agent_audio_tap_setup")))
-    server.add_tool(Tool("live_transport", "", {}, forward("transport")))
+    server.add_tool(Tool("live_agent_audio_tap", "", schema({}), forward("agent_audio_tap")))
+    server.add_tool(Tool("live_agent_audio_tap_setup", "", schema({}), forward("agent_audio_tap_setup")))
+    server.add_tool(Tool("live_transport", "", schema({}), forward("transport")))
     server.add_tool(Tool("live_batch", "Batch bridge operations.", schema({
         "operations": {"type": "array", "items": {"type": "object", "properties": {
             "method": {"type": "string", "description": "Bridge method name such as get, set, call, children, or eval."},
