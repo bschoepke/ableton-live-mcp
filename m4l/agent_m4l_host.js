@@ -49,6 +49,10 @@ function startStaticPolling() {
         metro.message(1);
     } catch (errStart) {
     }
+    try {
+        metro.message("start");
+    } catch (errStartMessage) {
+    }
 }
 
 function start_polling() {
@@ -545,6 +549,10 @@ function createDynamicPoller() {
     try {
         poller.message(1);
     } catch (errStart) {
+    }
+    try {
+        poller.message("start");
+    } catch (errStartMessage) {
     }
 }
 

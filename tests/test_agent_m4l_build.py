@@ -200,6 +200,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "startStaticPolling" in source
     assert 'getNamed("poll-metro")' in source
     assert 'metro.message("active", 1)' in source
+    assert 'metro.message("start")' in source
+    assert 'poller.message("start")' in source
     assert 'pollCommandFile();' in source
     assert "if (pendingWebUiReads.length)" in source
     assert "shouldSendToggleValue" in source
