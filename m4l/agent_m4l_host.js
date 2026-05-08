@@ -268,6 +268,7 @@ function anything() {
 }
 
 function handleCommandTrigger() {
+    markCommandWake("command_trigger");
     pollCommandFile();
     if (pendingWebUiReads.length) {
         readPendingWebUis();
@@ -277,6 +278,7 @@ function handleCommandTrigger() {
 function handleFilewatchWake(atoms) {
     state.filewatch_bangs = (state.filewatch_bangs || 0) + 1;
     state.filewatch_last = shortStatusText((atoms && atoms.length ? atoms : ["bang"]).join(" "));
+    markCommandWake("filewatch");
     var before = lastCommandId;
     pollCommandFile();
     if (pendingWebUiReads.length) {
@@ -384,6 +386,7 @@ function msg_string(value) {
 }
 
 function msg_int(value) {
+    markCommandWake("int");
     scheduleLiveParameterObserverRefresh(0);
     pollCommandFile();
     if (pendingWebUiReads.length) {
@@ -392,16 +395,35 @@ function msg_int(value) {
 }
 
 function msg_float(value) {
-    msg_int(value);
+    markCommandWake("float");
+    scheduleLiveParameterObserverRefresh(0);
+    pollCommandFile();
+    if (pendingWebUiReads.length) {
+        readPendingWebUis();
+    }
+}
+
+function list() {
+    markCommandWake("list");
+    pollCommandFile();
+    if (pendingWebUiReads.length) {
+        readPendingWebUis();
+    }
 }
 
 function bang() {
+    markCommandWake("bang");
     startLiveParameterObservers();
     scheduleLiveParameterObserverRefresh(250);
     pollCommandFile();
     if (pendingWebUiReads.length) {
         readPendingWebUis();
     }
+}
+
+function markCommandWake(source) {
+    state.command_wake_source = source;
+    state.command_wake_count = (state.command_wake_count || 0) + 1;
 }
 
 function applyRaw(raw) {
