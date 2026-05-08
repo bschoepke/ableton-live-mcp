@@ -68,8 +68,10 @@ var pendingWebStatePush = 0;
 var MAX_DEFERRED_RAW_COMMANDS = 8;
 var COMMAND_ACK_PROTECT_MS = 10000;
 var UI_BINDING_REPORT_MIN_INTERVAL = 250;
-var WEB_STATE_PUSH_MIN_INTERVAL = 250;
-var HOST_RUNTIME_VERSION = "web-reload-1";
+var WEB_STATE_PUSH_MIN_INTERVAL = 500;
+var WEB_STATE_KEY_LIMIT = 48;
+var WEB_STATE_MAX_BYTES = 8192;
+var HOST_RUNTIME_VERSION = "web-state-slim-1";
 
 function loadbang() {
     startStaticPolling();
@@ -2027,10 +2029,60 @@ function shouldOutputStoredValue(spec) {
 function pushWebState() {
     pendingWebStatePush = 0;
     lastWebStatePushAt = currentTimeMs();
-    var raw = JSON.stringify(state);
+    var snapshot = webStateSnapshot();
+    var raw = JSON.stringify(snapshot);
+    if (raw.length > WEB_STATE_MAX_BYTES) {
+        snapshot = webStateSnapshot(WEB_STATE_KEY_LIMIT / 2);
+        snapshot._web_state_truncated_bytes = raw.length;
+        raw = JSON.stringify(snapshot);
+    }
+    state.web_state_last_bytes = raw.length;
+    state.web_state_pushes = (state.web_state_pushes || 0) + 1;
     for (var i = 0; i < webObjects.length; i++) {
         sendWebState(webObjects[i], raw);
     }
+}
+
+function webStateSnapshot(limit) {
+    var result = {};
+    var keys = [];
+    for (var key in state) {
+        if (state.hasOwnProperty(key) && shouldSendWebStateKey(key)) {
+            keys.push(String(key));
+        }
+    }
+    keys.sort();
+    limit = Math.max(1, Math.min(keys.length, Number(limit || WEB_STATE_KEY_LIMIT)));
+    for (var i = 0; i < limit; i++) {
+        result[keys[i]] = compactStatusValue(state[keys[i]], 0);
+    }
+    if (keys.length > limit) {
+        result._web_state_truncated_keys = keys.length - limit;
+    }
+    return result;
+}
+
+function shouldSendWebStateKey(key) {
+    key = String(key || "");
+    if (!key) {
+        return false;
+    }
+    if (key.indexOf("command_wake_") === 0 ||
+            key.indexOf("filewatch_") === 0 ||
+            key.indexOf("live_parameter_") === 0 ||
+            key.indexOf("ui_binding_") === 0 ||
+            key.indexOf("deferred_") === 0 ||
+            key.indexOf("web_state_") === 0) {
+        return false;
+    }
+    if (key.indexOf("web_read_") === 0 ||
+            key.indexOf("_read_") >= 0 ||
+            key.indexOf("_last_read_") >= 0 ||
+            key.indexOf("_read_exhausted") >= 0 ||
+            key.indexOf("_url") >= 0) {
+        return false;
+    }
+    return true;
 }
 
 function scheduleWebStatePush() {

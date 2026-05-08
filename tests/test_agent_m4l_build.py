@@ -291,6 +291,15 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "shouldThrottleUiBindingStatusReport" in source
     assert "scheduleWebStatePush" in source
     assert "web_state_push_throttled" in source
+    assert "WEB_STATE_PUSH_MIN_INTERVAL = 500" in source
+    assert "WEB_STATE_KEY_LIMIT" in source
+    assert "WEB_STATE_MAX_BYTES" in source
+    assert "webStateSnapshot" in source
+    assert "shouldSendWebStateKey" in source
+    assert 'key.indexOf("web_read_") === 0' in source
+    assert 'key.indexOf("web_state_") === 0' in source
+    assert "_web_state_truncated_keys" in source
+    assert "_web_state_truncated_bytes" in source
     assert "ui_binding_reports_suppressed" in source
     assert "ui_binding_reports_throttled" in source
     assert "handleLiveParameterObserverMessage" in source
