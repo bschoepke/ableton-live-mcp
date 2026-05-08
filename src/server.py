@@ -11,6 +11,7 @@ from bridge import AbletonBridgeClient, BridgeConfig
 from agent_m4l import build_device, command_file as agent_m4l_command_file, device_name as agent_m4l_device_name, infer_device_bounds, normalize_role, slugify, status_file as agent_m4l_status_file, udp_port as agent_m4l_udp_port, write_webui, write_webui_asset_files, write_webui_assets
 from mcp import StdioMcpServer, Tool
 from similar_sounds import find_similar_sounds
+from visual_capture import capture_ableton_window
 
 
 __version__ = "0.1.0"
@@ -39,6 +40,7 @@ ABLETON_MCP_INSTRUCTIONS = (
     "find_similar_sounds requires Live 12+ analysis data. "
     "AgentAudioTap: prefer master tap + solo target; start with path. "
     "Idle sockets auto-retry; sent-call timeouts fail closed; live_bridge_status diagnoses socket-vs-main hangs; check status before retry; AMXD loads retry. "
+    "Agent must visually verify M4L device UI with live_visual_capture after UI changes; Ableton-window-only, never capture arbitrary apps/windows. "
     "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status/compact_result and require matching command_id. Supports preflight, files, UDP hints, set/status skip build, midiin+midiparse, rect sizing, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batches/list values, audio buses, jweb/jbrowser aliases. In stressed sets, no web ack means reload/simplify or validate a fresh host. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args are JSON numbers; Simpler.sample is not generally settable; use ids from summaries, not raw _live_ptr values. "
     "Hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
@@ -49,6 +51,7 @@ AGENT_M4L_TOOL_DESCRIPTION = (
 )
 AGENT_AUDIO_TAP_DESCRIPTION = "Command AgentAudioTap capture: use start with path, then stop/status; file command reliable, UDP optional."
 AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap on master or target; optionally solo target track and reset transport."
+VISUAL_CAPTURE_DESCRIPTION = "Ableton Live window-only PNG capture; refuses arbitrary apps/windows."
 
 
 def schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -189,7 +192,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         }, "required": ["from_pitch", "pitch_span", "from_time", "time_span"], "additionalProperties": False},
         **mutation_controls,
     }, ["ref", "notes"]), forward("clip_add_notes")))
-    server.add_tool(Tool("live_clip_duplicate_to_arrangement", "Duplicate a Session clip to Arrangement on a target track.", schema({
+    server.add_tool(Tool("live_clip_duplicate_to_arrangement", "Duplicate Session clip to Arrangement.", schema({
         "track": ref,
         "clip": ref,
         "destination_time": {"type": "number"},
@@ -214,7 +217,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "limit": {"type": "integer", "minimum": 0},
         "expected_set_signature": {"type": "string"},
     }, ["ref", "parameter"]), forward("clip_envelope")))
-    server.add_tool(Tool("live_clip_velocity_envelope", "Create parameter automation from MIDI note velocities in a clip.", schema({
+    server.add_tool(Tool("live_clip_velocity_envelope", "Map note velocities to automation.", schema({
         "ref": ref,
         "parameter": ref,
         "min_value": {"type": "number"},
@@ -243,7 +246,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "limit": {"type": "integer", "minimum": 0},
         "expected_set_signature": {"type": "string"},
     }, ["ref"]), forward("clip_warp_markers")))
-    server.add_tool(Tool("live_track_create_audio_clip", "Create Arrangement audio clip from local file.", schema({
+    server.add_tool(Tool("live_track_create_audio_clip", "Create Arrangement audio clip.", schema({
         "ref": ref,
         "file_path": {"type": "string"},
         "destination_time": {"type": "number"},
@@ -258,6 +261,12 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     }, ["ref", "device_name"]), forward("track_insert_device")))
     server.add_tool(Tool("live_agent_audio_tap", AGENT_AUDIO_TAP_DESCRIPTION, loose_schema(), forward("agent_audio_tap")))
     server.add_tool(Tool("live_agent_audio_tap_setup", AGENT_AUDIO_TAP_SETUP_DESCRIPTION, loose_schema(), forward("agent_audio_tap_setup")))
+    server.add_tool(Tool("live_visual_capture", VISUAL_CAPTURE_DESCRIPTION, loose_schema(), lambda args: capture_ableton_window(
+        output_path=args.get("output_path"),
+        title_contains=args.get("title_contains"),
+        list_only=bool(args.get("list_only", False)),
+        backend=str(args.get("backend") or "auto"),
+    )))
     def agent_m4l_device(args):
         built = None
         webui = None
@@ -398,7 +407,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     }
     server.add_tool(Tool("live_browser_roots", "List app.browser roots.", schema({}), forward("browser_roots")))
     server.add_tool(Tool("live_browser_capabilities", "Browser roots/filter types/semantic API exposure.", schema({}), forward("browser_capabilities")))
-    server.add_tool(Tool("live_browser_search", "Bounded app.browser search; returns BrowserItem ids.", schema({
+    server.add_tool(Tool("live_browser_search", "Bounded browser search.", schema({
         "query": {"type": "string", "description": "Search terms."},
         "roots": {"type": "array", "items": {"type": "string"}, "description": "Roots: instruments, drums, samples, plugins, etc."},
         "limit": {"type": "integer", "minimum": 1, "description": "Max matches."},
@@ -410,7 +419,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "stop_score": {"type": "integer", "description": "0 exact, 1 query in name, 3 path."},
         "match_all_terms": {"type": "boolean"},
     }), forward("browser_search")))
-    server.add_tool(Tool("live_browser_load", "Load BrowserItem from search by id, uri, or path.", schema({
+    server.add_tool(Tool("live_browser_load", "Load BrowserItem.", schema({
         "item": browser_item_ref,
         "target_track": ref,
         **mutation_controls,

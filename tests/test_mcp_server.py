@@ -53,6 +53,7 @@ def test_lists_general_purpose_tools():
         "live_track_insert_device",
         "live_agent_audio_tap",
         "live_agent_audio_tap_setup",
+        "live_visual_capture",
         "live_agent_m4l_device",
         "live_transport",
         "live_eval",
@@ -85,8 +86,11 @@ def test_initialize_includes_general_model_instructions():
     assert "web assets/source_path" in instructions
     assert "agent-settable UI" in instructions
     assert "webui_read diagnostics" in instructions
+    assert "Agent must visually verify M4L device UI" in instructions
+    assert "Ableton-window-only" in instructions
+    assert "never capture arbitrary apps/windows" in instructions
     assert "full Live object model remains available" in instructions
-    assert len(instructions) < 1500
+    assert len(instructions) < 1600
 
 
 def test_tool_call_forwards_arguments_to_bridge():
@@ -1735,6 +1739,9 @@ def test_tool_list_stays_compact():
     assert "UDP optional" in tap["description"]
     tap_setup = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_agent_audio_tap_setup")
     assert "solo target track" in tap_setup["description"]
+    visual = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_visual_capture")
+    assert "Ableton Live window-only" in visual["description"]
+    assert "arbitrary apps/windows" in visual["description"]
 
 
 def test_bridge_error_omits_traceback_by_default(monkeypatch):
@@ -2330,6 +2337,7 @@ def test_debug_commands_are_not_published_console_scripts():
     assert 'ableton-live-mcp-validate = "validate:main"' in pyproject
     assert 'ableton-live-mcp-install-remote-script = "install_remote_script:main"' in pyproject
     assert 'ableton-live-mcp-sync-m4l-host = "agent_m4l:sync_host_main"' in pyproject
+    assert 'ableton-live-mcp-capture-window = "visual_capture:main"' in pyproject
     assert "ableton-live-mcp-smoke =" not in pyproject
     assert "ableton-live-mcp-benchmark =" not in pyproject
     assert "ableton-live-mcp-prompt-audit =" not in pyproject

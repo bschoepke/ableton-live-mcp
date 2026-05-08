@@ -73,6 +73,14 @@ For validation captures, prefer one atomic `live_agent_audio_tap` `start` comman
 
 Before using AgentAudioTap WAVs as pass/fail evidence, sanity-check the measurement path by changing the target track volume or solo/mute state and confirming the capture or Live meters respond. If a capture ignores an obvious source change, rebuild/reload the tap and use Live's `output_meter_left/right` as the validation signal until the tap path is trustworthy again.
 
+## Visual validation captures
+
+For M4L UI visual validation, use `live_visual_capture` or `ableton-live-mcp-capture-window` to capture only Ableton Live windows. This tool is never a general screenshot API: do not add arguments or workflows that capture arbitrary apps, monitors, desktops, browser windows, terminals, or user-selected window handles. The implementation must enumerate candidate OS windows, filter them to verified Ableton Live processes first, and only then apply optional title filters.
+
+After creating, hot-reloading, or resizing generated M4L UI, the agent MUST visually verify the result with the Ableton-only capture tool before claiming the UI is aligned, visible, unclipped, or polished. Use host status and presentation geometry as supporting evidence, but do not treat them as a substitute for a Live-window visual capture when pixel validation is available. If the capture tool is unavailable because required OS permissions or optional backend packages are missing, record that blocker explicitly and continue with geometry/status checks only as a weaker fallback.
+
+On Windows, the optional backend may use `windows-capture` / Windows Graphics Capture so an Ableton Live window can be captured from the compositor even when it is occluded by the agent UI. On macOS, use the OS window-id capture path (`screencapture`/Quartz or a future ScreenCaptureKit backend) against verified Ableton Live window IDs. Both paths may require the user's OS screen-recording permission. If capture is unavailable, fall back to host status, generated presentation geometry, and web UI telemetry rather than broadening capture permissions.
+
 ## Dynamic Agent M4L devices
 
 For generated instruments, audio effects, MIDI effects, and web UI devices, use `live_agent_m4l_device` or:

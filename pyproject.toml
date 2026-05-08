@@ -15,6 +15,10 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 debug = ["pytest>=8.0"]
+visual = [
+    "pyobjc-framework-Quartz; platform_system == 'Darwin'",
+    "windows-capture; platform_system == 'Windows'",
+]
 
 [project.scripts]
 ableton-live-mcp = "server:main"
@@ -22,6 +26,7 @@ ableton-live-mcp-validate = "validate:main"
 ableton-live-mcp-install-remote-script = "install_remote_script:main"
 ableton-live-mcp-build-m4l-device = "agent_m4l:main"
 ableton-live-mcp-sync-m4l-host = "agent_m4l:sync_host_main"
+ableton-live-mcp-capture-window = "visual_capture:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
