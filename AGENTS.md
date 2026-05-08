@@ -203,7 +203,9 @@ When validating a generated M4L command, pass `wait_status: true` so the bridge 
 
 Use `status_detail: "summary"` or `compact_status: true` when you only need command acknowledgement, web-read diagnostics, dimensions, and binding source/target metadata. Use the default full status when validating exact generated state values.
 
-When validating a small number of audio/MIDI telemetry values, combine `compact_status: true` with `status_state_keys` such as `["level_meter"]` so the response includes only the requested state values plus standard web/wake diagnostics. Do not read or print the full status JSON just to prove one meter or probe changed.
+When validating a small number of audio/MIDI telemetry values, combine `compact_status: true` with `status_state_keys` such as `["level_meter"]` so the response includes requested state values plus standard web/wake diagnostics. Add `status_state_keys_only: true` for tight polling loops where only those requested values are needed. Do not read or print the full status JSON just to prove one meter or probe changed.
+
+After a generated device has loaded and you know its `command_file` and `status_file`, prefer direct `load: false` `status` calls without `target_track` for repeated telemetry polling. This avoids scheduling a Live main-thread track/device lookup and keeps payloads smaller; use `target_track` again only when you need the hidden poll parameter wake or track/device summary.
 
 Use `compact_result: true` or `result_detail: "summary"` for iterative generated-device work that only needs command proof, built file paths, load state, web UI materialization, preflight, status, and a short track/device preview. This is especially useful for creative web/native devices whose source specs, assets, or Live track summaries would otherwise dominate the MCP response.
 

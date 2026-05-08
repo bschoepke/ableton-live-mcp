@@ -102,7 +102,8 @@ def test_initialize_includes_general_model_instructions():
     assert "jweb/jbrowser aliases" in instructions
     assert "web assets/source_path" in instructions
     assert "agent-settable UI" in instructions
-    assert "webui/status_state_keys diag" in instructions
+    assert "status_state_keys/_only diag" in instructions
+    assert "direct status polls" in instructions
     assert "throttled fallback wakes" in instructions
     assert "load:false/set/status skip build" in instructions
     assert "host_not_woken=no ack" in instructions
@@ -1448,6 +1449,54 @@ def test_agent_m4l_device_compact_status_can_include_requested_state_keys(tmp_pa
     assert status["state"]["level_meter"] == 0.123
     assert status["state"]["web_panel_ready"] == 1
     assert "drive_amount" not in status.get("state", {})
+
+
+def test_agent_m4l_device_compact_status_can_return_requested_state_keys_only(tmp_path):
+    class StatusBridge(FakeBridge):
+        def request(self, method, params):
+            self.calls.append((method, params))
+            status_file = Path(params["status_file"])
+            status_file.write_text(json.dumps({
+                "event": "status",
+                "command_id": "cmd1",
+                "dynamic_objects": 4,
+                "state": {
+                    "level_meter": 0.25,
+                    "web_panel_ready": 1,
+                    "command_wake_count": 12,
+                },
+            }), encoding="utf-8")
+            return {"method": method, "command_id": "cmd1", "status_file": str(status_file), "params": params}
+
+    bridge = StatusBridge()
+    mcp = make_server(bridge)
+    args = {
+        "role": "audio_effect",
+        "instance_id": "CompactTelemetryOnly",
+        "build": False,
+        "command": "status",
+        "command_file": str(tmp_path / "command.json"),
+        "status_file": str(tmp_path / "status.json"),
+        "ref": {"path": "live_set tracks 0"},
+        "wait_status": True,
+        "compact_status": True,
+        "status_state_keys": "level_meter",
+        "status_state_keys_only": True,
+    }
+
+    response = mcp.handle({
+        "jsonrpc": "2.0",
+        "id": 482,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": args},
+    })
+
+    forwarded = bridge.calls[0][1]
+    status = response["result"]["structuredContent"]["status"]
+    assert "status_state_keys" not in forwarded
+    assert "status_state_keys_only" not in forwarded
+    assert status["state"] == {"level_meter": 0.25}
+    assert status["state_keys"] == ["command_wake_count", "level_meter", "web_panel_ready"]
 
 
 def test_agent_m4l_device_tool_can_return_compact_status_alias(tmp_path):
