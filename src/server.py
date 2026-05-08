@@ -252,6 +252,8 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         webui = None
         params = dict(args)
         wait_status = bool(params.pop("wait_status", False))
+        status_detail = str(params.pop("status_detail", "full") or "full").lower()
+        compact_status = bool(params.pop("compact_status", False))
         status_timeout_arg = params.pop("status_timeout", None)
         status_poll_interval = float(params.pop("status_poll_interval", 0.05))
         load_retry_timeout_arg = params.pop("load_retry_timeout", None)
@@ -315,7 +317,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
                 result = retry_agent_m4l_load(bridge, params, result, load_retry_timeout, load_retry_interval)
         if wait_status:
             status_timeout = agent_m4l_status_timeout(status_timeout_arg, webui is not None)
-            result["status"] = wait_agent_m4l_status(
+            status = wait_agent_m4l_status(
                 str(result.get("status_file") or params.get("status_file") or ""),
                 previous_status_mtime,
                 str(result.get("command_id") or ""),
@@ -323,6 +325,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
                 status_poll_interval,
                 expected_agent_m4l_status_event(str(result.get("command") or agent_m4l_command(params))),
             )
+            result["status"] = summarize_agent_m4l_status(status) if compact_status or status_detail in ("summary", "compact") else status
         if built is not None:
             result["built"] = built
         if webui is not None:
@@ -913,7 +916,7 @@ def _read_agent_m4l_status(path: str) -> tuple[dict[str, Any] | None, str | None
 
 def summarize_agent_m4l_status(status: dict[str, Any]) -> dict[str, Any]:
     summary: dict[str, Any] = {}
-    for key in ("event", "command_id", "last_reload_command_id", "dynamic_objects", "webuis", "device_width", "device_height", "id", "reason", "attempt", "attempts", "message", "reload_seen", "webui_status"):
+    for key in ("event", "command_id", "last_reload_command_id", "dynamic_objects", "webuis", "device_width", "device_height", "id", "reason", "attempt", "attempts", "message", "reload_seen", "webui_status", "changed", "source", "target"):
         if key in status:
             summary[key] = status.get(key)
     state = status.get("state")

@@ -117,6 +117,8 @@ Use `jbrowser~`/`jbrowser` as compatibility aliases for control-panel web UI. If
 
 When validating a generated M4L command, pass `wait_status: true` so the bridge returns the host's reload/set status in the same tool call instead of using separate sleeps and file reads. For web UI updates, omit `status_timeout` unless deliberately probing latency; the MCP server uses a longer default so the web-read retry series can finish or report terminal exhaustion. For value-only/non-web commands, a short explicit timeout is still appropriate. Treat the command file as the reliable delivery path for all M4L commands; UDP is only a low-latency hint because multiple loaded Max devices on one UDP port are not a sufficient reliability guarantee.
 
+Use `status_detail: "summary"` or `compact_status: true` when you only need command acknowledgement, web-read diagnostics, dimensions, and binding source/target metadata. Use the default full status when validating exact generated state values.
+
 Generated hosts should use deterministic per-instance `udpreceive` ports derived from the instance id, not one shared M4L port. Value-only UDP hints should stay slim and omit recovery patches; the command file must still contain the full patch/spec so JS reload and set reopen recovery keep working. Large generated update payloads may skip UDP entirely and rely on the host's command-file poll rather than failing the command with an OS datagram-size error.
 
 For generated `jweb`/`jbrowser~` panels, issue the first `read` immediately after object creation; use scheduled retries only after that first read. In stressed sets, Max JS `Task` scheduling can lag or stall, so the initial web UI load must not depend solely on a later task callback.
