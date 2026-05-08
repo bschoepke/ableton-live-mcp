@@ -321,6 +321,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "handleWebUiLoadMessage" in source
     assert "handleWebUiReadyMessage" in source
     assert "handleWebUiErrorMessage" in source
+    assert "clearPendingWebUiReadsForId" in source
+    assert "state.web_read_pending = pendingWebUiReads.length;" in source
     assert "web_ready" in source
     assert "web_error" in source
     assert "shortStatusText" in source

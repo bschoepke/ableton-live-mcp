@@ -119,6 +119,8 @@ Use the host's `web_read_scheduled`, `web_read_attempts`, `web_read_pending`, `w
 
 `webui_read` status events are diagnostic delivery checkpoints, not proof that the browser page ran. Treat `webui_read` as evidence that the host attempted a `readfile`/`read`; require `web_loaded`, panel-specific loaded/ready/title/url state, or custom readiness telemetry before considering a web UI validated.
 
+Once a panel reports URL/title/ready/error telemetry, the host should clear any remaining scheduled read retries for that panel so `web_read_pending` only reflects unresolved browser loads. If `web_loaded` is true but pending reads keep climbing for the same panel, treat that as stale retry bookkeeping to fix before using the status as a validation signal.
+
 When `wait_status` returns `reload_seen: true` with `webui_status: read_exhausted`, the generated patch did hot reload, but the embedded browser did not acknowledge after the read retry series. Treat that as a web UI validation failure, not as a general M4L command-delivery failure.
 
 For generated MIDI effects, validate the transformed MIDI itself, not only downstream audio. Put the MIDI effect before a known-good instrument, expose compact telemetry with `ui_bind` on message-rate objects such as input pitch, output pitch, gate, or velocity, and verify both the MIDI effect status and the downstream instrument status agree on the transformed note values while the track meters are nonzero.

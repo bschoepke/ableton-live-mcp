@@ -395,8 +395,21 @@ function markWebUiLoaded(id) {
         return;
     }
     loadedWebUis[String(id)] = 1;
+    clearPendingWebUiReadsForId(id);
     state["web_" + safeStateKey(id) + "_loaded"] = 1;
     state.web_loaded = countKeys(loadedWebUis);
+}
+
+function clearPendingWebUiReadsForId(id) {
+    var target = String(id);
+    var kept = [];
+    for (var i = 0; i < pendingWebUiReads.length; i++) {
+        if (String(pendingWebUiReads[i].id) !== target) {
+            kept.push(pendingWebUiReads[i]);
+        }
+    }
+    pendingWebUiReads = kept;
+    state.web_read_pending = pendingWebUiReads.length;
 }
 
 function handleOsc(args) {
