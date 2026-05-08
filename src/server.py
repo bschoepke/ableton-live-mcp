@@ -555,6 +555,8 @@ def preflight_agent_m4l(params: dict[str, Any]) -> dict[str, Any]:
     values = [item for item in (params.get("values") or params.get("parameters") or []) if isinstance(item, dict)]
     errors: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
+    if patch.get("live_api_observers") or patch.get("observe_live_parameters") or patch.get("observe_live_api_parameters"):
+        warnings.append({"code": "direct_live_api_observers_opt_in"})
     ids = set(AGENT_M4L_STATIC_OBJECTS_BY_ROLE.get(role, set()))
     seen: set[str] = set()
     for item in objects:

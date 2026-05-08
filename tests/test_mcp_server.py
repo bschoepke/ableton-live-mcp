@@ -592,6 +592,32 @@ def test_agent_m4l_device_tool_preflight_counts_top_level_webui(tmp_path):
     assert preflight["counts"]["webuis"] == 1
 
 
+def test_agent_m4l_preflight_warns_on_direct_live_api_observers(tmp_path):
+    html_path = tmp_path / "panel.html"
+    html_path.write_text("<html></html>")
+    server = make_server(FakeBridge())
+
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 809,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "instrument",
+            "name": "Observer Warning",
+            "preflight_only": True,
+            "patch": {
+                "live_api_observers": True,
+                "objects": [{"id": "osc", "text": "cycle~ 220"}],
+                "webui": {"id": "panel", "html_path": str(html_path)},
+            },
+        }},
+    })
+
+    preflight = response["result"]["structuredContent"]["preflight"]
+    assert preflight["ok"] is True
+    assert {"code": "direct_live_api_observers_opt_in"} in preflight["warnings"]
+
+
 def test_agent_m4l_device_tool_preflight_set_uses_recovery_patch(tmp_path):
     bridge = FakeBridge()
     command_file = tmp_path / "command.json"
