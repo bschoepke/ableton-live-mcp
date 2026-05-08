@@ -36,6 +36,8 @@ The Remote Script binds only to `127.0.0.1`. If Ableton was already open when th
 
 After changing files under `Ableton_Live_MCP/`, reinstall the Remote Script and reload the Control Surface before treating Live validation as current. The running Control Surface does not pick up repository edits automatically; stale installed scripts can make bridge behavior, timeout handling, or generated-device triggers look broken after the source has been fixed. `ableton-live-mcp-validate` checks both the installed Remote Script files and the running `live_ping` script hash; do not ignore a stale/missing hash unless deliberately validating old code.
 
+Reloading the Control Surface or restarting Live can interrupt playback and the user's current set. Ask for explicit user authorization before doing either, then rerun `ableton-live-mcp-validate` and require `runtime_current: true` before claiming current-runtime e2e validation.
+
 ## Repository operations
 
 Never push commits, branches, or tags to a remote without explicit user authorization.
