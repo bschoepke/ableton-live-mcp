@@ -1675,6 +1675,7 @@ def test_wait_agent_m4l_status_timeout_includes_compact_last_status(tmp_path):
         "reason": "webui_read_exhausted",
         "attempts": 6,
         "message": "readfile",
+        "connection_errors_truncated": 3,
         "connection_errors": [{"from": "a", "to": "b", "reason": "missing"} for _index in range(20)],
         "state": {
             "command_wake_source": "float",
@@ -1706,6 +1707,7 @@ def test_wait_agent_m4l_status_timeout_includes_compact_last_status(tmp_path):
     assert result["last_status"]["reason"] == "webui_read_exhausted"
     assert result["last_status"]["attempts"] == 6
     assert result["last_status"]["message"] == "readfile"
+    assert result["last_status"]["connection_errors_truncated"] == 3
     assert result["last_status"]["connection_errors"]["items"] == 20
     assert len(result["last_status"]["connection_errors"]["preview"]) == 12
     assert result["last_status"]["state"]["command_wake_source"] == "float"

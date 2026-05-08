@@ -375,8 +375,10 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "connectPatchlines" in source
     assert '"audio-in-l", "audio-in-r", "audio-out-l", "audio-out-r"' in source
     assert "connection_errors" in source
-    assert "lastConnectionErrors.push" in source
-    assert "lastConnectionErrors.concat(errors)" in source
+    assert "recordConnectionError" in source
+    assert "recordConnectionErrors(errors)" in source
+    assert "MAX_CONNECTION_ERRORS" in source
+    assert "connection_errors_truncated" in source
     assert "configureDeviceBounds" in source
     assert "inferDeviceWidth" in source
     assert "inferDeviceHeight" in source

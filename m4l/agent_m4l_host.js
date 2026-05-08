@@ -38,6 +38,7 @@ var nextGeneratedLiveParameterIndex = 2;
 var directLiveApiObserversEnabled = false;
 var statusPadSize = 65536;
 var lastConnectionErrors = [];
+var connectionErrorsTruncated = 0;
 var lastReloadCommandId = "";
 var pendingWebUiReads = [];
 var WEBUI_READ_DELAYS = [100, 250, 500, 1000, 2000, 4000];
@@ -53,6 +54,7 @@ var STATUS_STATE_KEY_LIMIT = 80;
 var STATUS_ARRAY_PREVIEW = 12;
 var STATUS_OBJECT_KEY_LIMIT = 12;
 var STATUS_VALUE_DEPTH_LIMIT = 2;
+var MAX_CONNECTION_ERRORS = 24;
 var currentDeviceWidth = DEFAULT_DEVICE_WIDTH;
 var currentDeviceHeight = DEFAULT_DEVICE_HEIGHT;
 var lastActivityWakeAt = 0;
@@ -779,7 +781,7 @@ function connectPatchlines(connections, byId) {
             errors.push({ from: srcId, to: dstId, outlet: Number(c.outlet || 0), inlet: Number(c.inlet || 0), reason: String(err) });
         }
     }
-    lastConnectionErrors = lastConnectionErrors.concat(errors);
+    recordConnectionErrors(errors);
     return { connected: connected, errors: errors };
 }
 
@@ -949,7 +951,7 @@ function createWebUi(webui, index, byId) {
                 this.patcher.connect(obj, webMessageOutlet(objectName), this.box, 0);
             }
         } catch (err) {
-            lastConnectionErrors.push({ from: id, to: "js", outlet: webMessageOutlet(objectName), inlet: 0, reason: String(err) });
+            recordConnectionError({ from: id, to: "js", outlet: webMessageOutlet(objectName), inlet: 0, reason: String(err) });
         }
     }
     if (webui.audio_out) {
@@ -1167,7 +1169,7 @@ function createDynamicPoller() {
     try {
         this.patcher.connect(poller, 0, this.box, 0);
     } catch (err) {
-        lastConnectionErrors.push({ from: id, to: "js", outlet: 0, inlet: 0, reason: String(err) });
+        recordConnectionError({ from: id, to: "js", outlet: 0, inlet: 0, reason: String(err) });
     }
     try {
         poller.message("active", 1);
@@ -1235,7 +1237,7 @@ function createLiveParameterObserverForSource(source) {
         msg.message("bang");
         state.live_parameter_box_observers = countKeys(liveParameterSourceByTag);
     } catch (err) {
-        lastConnectionErrors.push({ from: base, to: "js", outlet: 0, inlet: 0, reason: String(err) });
+        recordConnectionError({ from: base, to: "js", outlet: 0, inlet: 0, reason: String(err) });
     }
 }
 
@@ -1962,6 +1964,7 @@ function clearDynamic(preserveWebIds) {
     liveParameterSourceByTag = {};
     nextGeneratedLiveParameterIndex = 2;
     lastConnectionErrors = [];
+    connectionErrorsTruncated = 0;
     return true;
 }
 
@@ -2006,6 +2009,9 @@ function report(eventName, payload) {
     if (lastConnectionErrors.length) {
         payload.connection_errors = lastConnectionErrors;
     }
+    if (connectionErrorsTruncated) {
+        payload.connection_errors_truncated = connectionErrorsTruncated;
+    }
     writeStatus(payload);
     outlet(2, "status", eventName, currentCommandId || "", dynamicObjects.length, webObjects.length);
 }
@@ -2024,6 +2030,30 @@ function bindingSummaries() {
         });
     }
     return result;
+}
+
+function recordConnectionErrors(errors) {
+    for (var i = 0; i < errors.length; i++) {
+        recordConnectionError(errors[i]);
+    }
+}
+
+function recordConnectionError(error) {
+    if (lastConnectionErrors.length >= MAX_CONNECTION_ERRORS) {
+        connectionErrorsTruncated += 1;
+        return;
+    }
+    lastConnectionErrors.push(compactConnectionError(error || {}));
+}
+
+function compactConnectionError(error) {
+    return {
+        from: shortStatusText(error.from || ""),
+        to: shortStatusText(error.to || ""),
+        outlet: Number(error.outlet || 0),
+        inlet: Number(error.inlet || 0),
+        reason: shortStatusText(error.reason || error.detail || "")
+    };
 }
 
 function statusStateSnapshot() {

@@ -1320,7 +1320,7 @@ def _read_agent_m4l_status(path: str) -> tuple[dict[str, Any] | None, str | None
 
 def summarize_agent_m4l_status(status: dict[str, Any]) -> dict[str, Any]:
     summary: dict[str, Any] = {}
-    for key in ("event", "command_id", "last_reload_command_id", "host_runtime_version", "host_runtime_status", "dynamic_objects", "webuis", "device_width", "device_height", "id", "reason", "attempt", "attempts", "message", "reload_seen", "webui_status", "changed", "source", "target", "timed_out", "expected_command_id", "expected_event", "mismatch", "timeout_reason", "error", "path", "last_status_age_seconds", "status_file_updated_after_command", "state_keys"):
+    for key in ("event", "command_id", "last_reload_command_id", "host_runtime_version", "host_runtime_status", "dynamic_objects", "webuis", "device_width", "device_height", "id", "reason", "attempt", "attempts", "message", "reload_seen", "webui_status", "changed", "source", "target", "connection_errors_truncated", "timed_out", "expected_command_id", "expected_event", "mismatch", "timeout_reason", "error", "path", "last_status_age_seconds", "status_file_updated_after_command", "state_keys"):
         if key in status:
             summary[key] = status.get(key)
     last_status = status.get("last_status")
