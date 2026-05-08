@@ -1350,9 +1350,12 @@ def test_validate_rejects_running_stale_remote_script(tmp_path, monkeypatch, cap
 
     class FakeClient:
         def request(self, method, _params):
-            if method == "ping":
-                return {"ok": True, "remote_script": {"bridge_sha256": "0" * 64}}
-            return {"ok": True}
+            assert method == "batch"
+            return [
+                {"ok": True, "result": {"ok": True, "remote_script": {"bridge_sha256": "0" * 64}}},
+                {"ok": True, "result": {"ok": True}},
+                {"ok": True, "result": 12},
+            ]
 
     monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
 
@@ -1374,21 +1377,29 @@ def test_validate_live_checks_are_compact_and_timed(tmp_path, monkeypatch, capsy
     class FakeClient:
         def request(self, method, params):
             calls.append((method, params))
-            if method == "ping":
-                return {"ok": True, "remote_script": {"bridge_sha256": status["source_bridge_sha256"]}}
-            return {"ok": True}
+            assert method == "batch"
+            return [
+                {"ok": True, "result": {"ok": True, "remote_script": {"bridge_sha256": status["source_bridge_sha256"]}}},
+                {"ok": True, "result": {"ok": True}},
+                {"ok": True, "result": 12},
+            ]
 
     monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
 
     assert validate_main(["--target-dir", str(tmp_path)]) == 0
     capsys.readouterr()
-    assert calls[1] == ("get", {
+    assert len(calls) == 1
+    assert calls[0][0] == "batch"
+    assert calls[0][1]["timeout"] == 45
+    operations = calls[0][1]["operations"]
+    assert operations[0] == {"method": "ping", "params": {}}
+    assert operations[1] == {"method": "get", "params": {
         "ref": {"path": "live_set"},
         "properties": ["tempo", "signature_numerator", "signature_denominator"],
         "timeout": 45,
-    })
-    assert calls[2][0] == "eval"
-    assert calls[2][1]["timeout"] == 45
+    }}
+    assert operations[2]["method"] == "eval"
+    assert operations[2]["params"]["timeout"] == 45
 
 
 def test_remote_script_resources_available_from_source_checkout():

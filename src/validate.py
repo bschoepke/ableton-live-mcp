@@ -33,8 +33,14 @@ def main(argv: list[str] | None = None) -> int:
         ("application", "eval", {"expr": "app.get_major_version() if hasattr(app, 'get_major_version') else app.get_version_string().split('.')[0]", "timeout": 45}),
     ]
     try:
-        for name, method, params in checks:
-            results[name] = client.request(method, params)
+        batch = client.request("batch", {
+            "operations": [{"method": method, "params": params} for _name, method, params in checks],
+            "timeout": 45,
+        })
+        for (name, method, _params), item in zip(checks, batch):
+            if not item.get("ok"):
+                raise AbletonBridgeError("%s validation failed: %s" % (method, item.get("error", "unknown error")))
+            results[name] = item.get("result")
     except AbletonBridgeError as exc:
         print(f"Ableton Live MCP validation failed: {exc}", file=sys.stderr)
         return 1
