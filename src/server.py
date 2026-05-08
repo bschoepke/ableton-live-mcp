@@ -17,6 +17,7 @@ __version__ = "0.1.0"
 
 
 ABLETON_AGENT_GUIDE = "General Live object-model bridge; examples are heuristics, not limits."
+AGENT_M4L_MAX_UDP_BYTES = 60000
 ABLETON_MCP_INSTRUCTIONS = (
     "General Live object-model bridge, not a limited recipe API. "
     "Prefer installed content/Packs/user assets/samples/presets/devices and indexed third-party audio plugins before generated assets unless asked. "
@@ -695,10 +696,15 @@ def agent_m4l_udp_payload(payload: dict[str, Any]) -> dict[str, Any]:
 def send_agent_m4l_udp(instance_id: str, port: int, payload: dict[str, Any]) -> bool:
     raw = json.dumps(payload, separators=(",", ":"))
     message = osc_message("/agent_m4l", [instance_id, raw])
+    if len(message) > AGENT_M4L_MAX_UDP_BYTES:
+        return False
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        sock.sendto(message, ("127.0.0.1", port))
-        return True
+        try:
+            sock.sendto(message, ("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
     finally:
         sock.close()
 

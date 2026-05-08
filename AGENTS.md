@@ -101,7 +101,7 @@ Use `jbrowser~`/`jbrowser` as compatibility aliases for control-panel web UI. If
 
 When validating a generated M4L command, pass `wait_status: true` with a short `status_timeout` so the bridge returns the host's reload/set status in the same tool call instead of using separate sleeps and file reads. Treat the command file as the reliable delivery path for all M4L commands; UDP is only a low-latency hint because multiple loaded Max devices on one UDP port are not a sufficient reliability guarantee.
 
-Generated hosts should use deterministic per-instance `udpreceive` ports derived from the instance id, not one shared M4L port. Value-only UDP hints should stay slim and omit recovery patches; the command file must still contain the full patch/spec so JS reload and set reopen recovery keep working.
+Generated hosts should use deterministic per-instance `udpreceive` ports derived from the instance id, not one shared M4L port. Value-only UDP hints should stay slim and omit recovery patches; the command file must still contain the full patch/spec so JS reload and set reopen recovery keep working. Large generated update payloads may skip UDP entirely and rely on the host's command-file poll rather than failing the command with an OS datagram-size error.
 
 When `live_agent_m4l_device` does not need to build or resolve a Live track/device, the MCP server may write the command file directly and then wait for host status. This is the preferred fast path for value-only `set`, `status`, `clear`, and `build: false` hot-reload commands.
 

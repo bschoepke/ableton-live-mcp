@@ -533,6 +533,30 @@ def test_agent_m4l_device_tool_handles_value_updates_directly(tmp_path):
     assert "built" not in result
 
 
+def test_agent_m4l_device_tool_skips_oversized_direct_udp(tmp_path):
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    command_file = tmp_path / "command.json"
+    args = {
+        "role": "instrument",
+        "instance_id": "Huge UI",
+        "build": False,
+        "patch": {"objects": [{"id": "big", "text": "comment " + ("x" * 70000)}]},
+        "command_file": str(command_file),
+    }
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 145,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": args},
+    })
+
+    result = response["result"]["structuredContent"]
+    assert bridge.calls == []
+    assert result["sent"] is False
+    assert json.loads(command_file.read_text(encoding="utf-8"))["patch"]["objects"][0]["id"] == "big"
+
+
 def test_agent_m4l_device_tool_direct_update_preserves_recovery_patch(tmp_path):
     bridge = FakeBridge()
     server = make_server(bridge)

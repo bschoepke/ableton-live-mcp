@@ -29,6 +29,7 @@ AGENT_AUDIO_TAP_PORT = 17654
 AGENT_M4L_HOST = "127.0.0.1"
 AGENT_M4L_PORT = 17655
 AGENT_M4L_PORT_SPAN = 30000
+AGENT_M4L_MAX_UDP_BYTES = 60000
 
 
 def _temp_file(name):
@@ -320,16 +321,25 @@ class AbletonLiveMCP(ControlSurface):
                 json.dump(payload, handle, separators=(",", ":"))
 
         sent = False
+        udp_bytes = 0
+        udp_skipped = False
         if params.get("udp", True):
             port = int(params.get("port") or self._agent_m4l_port(instance_id))
             raw = json.dumps(self._agent_m4l_udp_payload(payload), separators=(",", ":"))
             message = self._osc_message("/agent_m4l", [instance_id, raw])
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            try:
-                sock.sendto(message, (AGENT_M4L_HOST, port))
-                sent = True
-            finally:
-                sock.close()
+            udp_bytes = len(message)
+            if udp_bytes <= AGENT_M4L_MAX_UDP_BYTES:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                try:
+                    try:
+                        sock.sendto(message, (AGENT_M4L_HOST, port))
+                        sent = True
+                    except OSError:
+                        sent = False
+                finally:
+                    sock.close()
+            else:
+                udp_skipped = True
         else:
             port = int(params.get("port") or self._agent_m4l_port(instance_id))
 
@@ -375,6 +385,8 @@ class AbletonLiveMCP(ControlSurface):
             "status_file": status_file,
             "port": port,
             "loaded": loaded,
+            "udp_bytes": udp_bytes,
+            "udp_skipped": udp_skipped,
         }
         if load_error:
             result["load_error"] = load_error

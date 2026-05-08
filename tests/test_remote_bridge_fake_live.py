@@ -587,6 +587,52 @@ def test_agent_m4l_device_writes_command_sends_udp_and_loads(monkeypatch):
     assert b"/agent_m4l" in sent[0][0]
 
 
+def test_agent_m4l_device_skips_udp_when_update_payload_is_too_large(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    written = {}
+
+    class FakeSocket:
+        def __init__(self, *_args):
+            raise AssertionError("large Agent M4L updates should not open UDP sockets")
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            written["path"] = path
+            written["mode"] = mode
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def write(self, value):
+            written["value"] = written.get("value", "") + value
+            return len(value)
+
+    monkeypatch.setattr(socket, "socket", FakeSocket)
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "instrument",
+        "instance_id": "Huge UI",
+        "load": False,
+        "patch": {"objects": [{"id": "big", "text": "comment " + ("x" * 70000)}]},
+        "id": "huge1",
+    })
+
+    assert result["sent"] is False
+    assert result["udp_skipped"] is True
+    assert result["udp_bytes"] > module.AGENT_M4L_MAX_UDP_BYTES
+    assert '"comment ' in written["value"]
+
+
 def test_agent_m4l_device_value_update_does_not_require_patch_or_load(monkeypatch):
     module, _app = load_bridge_module(monkeypatch)
     bridge = object.__new__(module.AbletonLiveMCP)
