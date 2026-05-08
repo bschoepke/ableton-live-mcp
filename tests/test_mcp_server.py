@@ -472,6 +472,104 @@ def test_agent_m4l_device_tool_builds_and_forwards(monkeypatch, tmp_path):
     assert response["result"]["structuredContent"]["webui"]["html_path"].endswith("index.html")
 
 
+def test_agent_m4l_device_tool_preflight_only_reports_compact_errors(tmp_path):
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 54,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "instance_id": "Bad Patch",
+            "preflight_only": True,
+            "patch": {
+                "objects": [
+                    {"id": "dial", "text": "flonum"},
+                    {"id": "dial", "text": "flonum"},
+                ],
+                "connections": [
+                    {"from": "missing", "to": "dial"},
+                    {"from": "dial"},
+                ],
+                "ui_bindings": [
+                    {"source": "ghost", "target": "amount"},
+                ],
+                "webui": {"id": "panel", "object": "jbrowser~"},
+            },
+            "command_file": str(tmp_path / "command.json"),
+            "status_file": str(tmp_path / "status.json"),
+        }},
+    })
+
+    payload = response["result"]["structuredContent"]
+    codes = {item["code"] for item in payload["preflight"]["errors"]}
+    assert bridge.calls == []
+    assert payload["preflight_only"] is True
+    assert payload["preflight"]["ok"] is False
+    assert {
+        "duplicate_object_id",
+        "connection_source_missing",
+        "connection_missing_from_or_to",
+        "binding_source_missing",
+    } <= codes
+    assert payload["preflight"]["counts"] == {"objects": 2, "connections": 2, "webuis": 1, "bindings": 1}
+
+
+def test_agent_m4l_device_tool_attaches_preflight_without_forwarding_flag(tmp_path):
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 55,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "instance_id": "Good Patch",
+            "preflight": True,
+            "build": False,
+            "load": False,
+            "target_track": {"path": "live_set tracks 0"},
+            "patch": {
+                "objects": [{"id": "gain", "text": "*~ 0.5"}],
+                "connections": [{"from": "plugin", "to": "gain"}, {"from": "gain", "to": "plugout"}],
+            },
+            "command_file": str(tmp_path / "command.json"),
+            "status_file": str(tmp_path / "status.json"),
+        }},
+    })
+
+    forwarded = bridge.calls[0][1]
+    payload = response["result"]["structuredContent"]
+    assert "preflight" not in forwarded
+    assert "preflight_only" not in forwarded
+    assert payload["preflight"]["ok"] is True
+    assert payload["preflight"]["counts"]["connections"] == 2
+
+
+def test_agent_m4l_device_tool_preflight_counts_top_level_webui(tmp_path):
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    html_path = tmp_path / "panel.html"
+    html_path.write_text("<html></html>", encoding="utf-8")
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 56,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "instance_id": "Panel Only",
+            "preflight_only": True,
+            "webui": {"id": "panel", "object": "jbrowser~", "html_path": str(html_path)},
+        }},
+    })
+
+    preflight = response["result"]["structuredContent"]["preflight"]
+    assert bridge.calls == []
+    assert preflight["ok"] is True
+    assert preflight["counts"]["webuis"] == 1
+
+
 def test_agent_m4l_device_tool_retries_fresh_build_load(monkeypatch, tmp_path):
     import agent_m4l
 

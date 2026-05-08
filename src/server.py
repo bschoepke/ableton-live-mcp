@@ -24,6 +24,12 @@ AGENT_M4L_RECOVERY_PATCH_KEYS = (
     "objects", "connections", "ui_bindings", "bindings", "webui", "webuis",
     "device_width", "devicewidth", "width", "device_height", "deviceheight", "height",
 )
+AGENT_M4L_STATIC_OBJECTS_BY_ROLE = {
+    "audio_effect": {"plugin", "plugout", "audio-in-l", "audio-in-r", "audio-out-l", "audio-out-r"},
+    "instrument": {"midiin", "midiout", "plugout", "audio-out-l", "audio-out-r"},
+    "midi_effect": {"midiin", "midiout"},
+}
+AGENT_M4L_RESERVED_IDS = {"js", "script", "status", "udp", "out", "poll-metro", "command-trigger"}
 ABLETON_MCP_INSTRUCTIONS = (
     "General Live bridge; not a limited recipe API. "
     "Prefer installed Packs/user assets/samples/presets/devices/plugins unless asked. "
@@ -33,7 +39,7 @@ ABLETON_MCP_INSTRUCTIONS = (
     "find_similar_sounds requires Live 12+ analysis data. "
     "AgentAudioTap: prefer master tap + solo target; start with path. "
     "Idle sockets auto-retry; sent-call timeouts fail closed; check status before retry; fresh AMXD loads retry. "
-    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status and require matching command_id/last_reload_command_id. Supports file-backed updates, UDP hints, set/status skip build, midiin+midiparse, rect-driven devicewidth/openrect sizing, ui_bindings, agent-settable UI, webui_read diagnostics, set_silent/batches/list values, audio buses, jweb/jbrowser aliases. In stressed sets, no web ack means reload/simplify or validate a fresh host. "
+    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status and require matching command_id/last_reload_command_id. Supports preflight, file updates, UDP hints, set/status skip build, midiin+midiparse, rect-driven sizing, ui_bindings, agent-settable UI, webui_read diagnostics, set_silent/batches/list values, audio buses, jweb/jbrowser aliases. In stressed sets, no web ack means reload/simplify or validate a fresh host. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args are JSON numbers; Simpler.sample is not generally settable; use ids from summaries, not raw _live_ptr values. "
     "Hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
@@ -250,6 +256,8 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         built = None
         webui = None
         params = dict(args)
+        preflight_only = bool(params.pop("preflight_only", False))
+        preflight_requested = bool(params.pop("preflight", False)) or preflight_only
         wait_status = bool(params.pop("wait_status", False))
         status_detail = str(params.pop("status_detail", "full") or "full").lower()
         compact_status = bool(params.pop("compact_status", False))
@@ -292,6 +300,22 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
                     params["patch"][webui_key] = rendered
         device_bounds = infer_agent_m4l_bounds(params)
         apply_agent_m4l_bounds(params, device_bounds)
+        preflight = preflight_agent_m4l(params) if preflight_requested else None
+        if preflight_only:
+            result = {
+                "method": "agent_m4l_device",
+                "preflight_only": True,
+                "role": normalize_role(str(params.get("role") or "audio_effect")),
+                "instance_id": slugify(instance_id),
+                "command": agent_m4l_command(params),
+                "device_width": device_bounds["width"],
+                "device_height": device_bounds["height"],
+                "preflight": preflight,
+            }
+            if webui is not None:
+                response_webui = webui["webui"] if set(webui) == {"webui"} else webui
+                result["webui"] = summarize_agent_m4l_webui(response_webui)
+            return result
         should_build = should_build_agent_m4l(params)
         if should_build:
             built = build_device(
@@ -330,6 +354,8 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
             result["status"] = summarize_agent_m4l_status(status) if compact_status or status_detail in ("summary", "compact") else status
         if built is not None:
             result["built"] = built
+        if preflight is not None:
+            result["preflight"] = preflight
         if webui is not None:
             response_webui = webui["webui"] if set(webui) == {"webui"} else webui
             result["webui"] = summarize_agent_m4l_webui(response_webui)
@@ -506,6 +532,101 @@ def apply_agent_m4l_bounds(params: dict[str, Any], device_bounds: dict[str, int]
 
 def apply_agent_m4l_width(params: dict[str, Any], device_width: int) -> None:
     apply_agent_m4l_bounds(params, {"width": device_width, "height": infer_agent_m4l_bounds(params)["height"]})
+
+
+def preflight_agent_m4l(params: dict[str, Any]) -> dict[str, Any]:
+    role = normalize_role(str(params.get("role") or "audio_effect"))
+    patch = params.get("patch") if isinstance(params.get("patch"), dict) else params.get("spec")
+    patch = patch if isinstance(patch, dict) else {}
+    objects = [item for item in patch.get("objects") or [] if isinstance(item, dict)]
+    webuis = agent_m4l_webui_items(patch.get("webuis") or patch.get("webui"))
+    if not webuis:
+        webuis = agent_m4l_webui_items(params.get("webuis") or params.get("webui"))
+    bindings = [item for item in (patch.get("ui_bindings") or patch.get("bindings") or []) if isinstance(item, dict)]
+    connections = [item for item in (patch.get("connections") or []) if isinstance(item, dict)]
+    errors: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    ids = set(AGENT_M4L_STATIC_OBJECTS_BY_ROLE.get(role, set()))
+    seen: set[str] = set()
+    for item in objects:
+        object_id = str(item.get("id") or "")
+        if not object_id:
+            warnings.append({"code": "object_without_id"})
+            continue
+        if object_id in seen:
+            errors.append({"code": "duplicate_object_id", "id": object_id})
+        if object_id in ids:
+            warnings.append({"code": "object_id_collides_with_static_host", "id": object_id})
+        if object_id in AGENT_M4L_RESERVED_IDS:
+            warnings.append({"code": "object_id_is_reserved_host_name", "id": object_id})
+        seen.add(object_id)
+        ids.add(object_id)
+    for index, webui in enumerate(webuis):
+        webui_id = str(webui.get("id") or ("webui_%s" % index if index else "webui"))
+        if webui_id in ids:
+            errors.append({"code": "duplicate_webui_id", "id": webui_id})
+        ids.add(webui_id)
+        if not (webui.get("html_path") or webui.get("path") or webui.get("url") or webui.get("html_url")):
+            errors.append({"code": "webui_missing_path_or_url", "id": webui_id})
+    for connection in connections:
+        source = str(connection.get("from") or "")
+        target = str(connection.get("to") or "")
+        if not source or not target:
+            errors.append({"code": "connection_missing_from_or_to", "from": source, "to": target})
+            continue
+        if source not in ids:
+            errors.append({"code": "connection_source_missing", "id": source})
+        if target not in ids:
+            errors.append({"code": "connection_target_missing", "id": target})
+    for binding in bindings:
+        source = str(binding.get("source") or binding.get("from") or "")
+        target = str(binding.get("target") or binding.get("to") or binding.get("id") or binding.get("param") or source)
+        if not source:
+            errors.append({"code": "binding_missing_source"})
+        elif source not in ids:
+            errors.append({"code": "binding_source_missing", "id": source})
+        if target and target not in ids:
+            warnings.append({"code": "binding_target_is_virtual_or_missing", "id": target})
+    for key in ("html", "js", "css", "controls"):
+        if _agent_m4l_webui_source_key_present(webuis, key):
+            warnings.append({"code": "raw_webui_source_in_payload", "key": key})
+    command_bytes = len(json.dumps(params, separators=(",", ":"), default=str).encode("utf-8"))
+    if command_bytes > AGENT_M4L_MAX_UDP_BYTES:
+        warnings.append({"code": "udp_hint_will_skip_large_payload", "bytes": command_bytes})
+    errors, warnings, truncated = compact_agent_m4l_preflight_issues(errors, warnings)
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "truncated": truncated,
+        "counts": {
+            "objects": len(objects),
+            "connections": len(connections),
+            "webuis": len(webuis),
+            "bindings": len(bindings),
+        },
+        "bounds": {
+            "width": int(params.get("device_width") or 0),
+            "height": int(params.get("device_height") or 0),
+        },
+        "command_bytes": command_bytes,
+    }
+
+
+def compact_agent_m4l_preflight_issues(
+    errors: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+    limit: int = 12,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool]:
+    truncated = len(errors) > limit or len(warnings) > limit
+    return errors[:limit], warnings[:limit], truncated
+
+
+def _agent_m4l_webui_source_key_present(webuis: list[dict[str, Any]], key: str) -> bool:
+    for webui in webuis:
+        if key in webui:
+            return True
+    return False
 
 
 def agent_m4l_webui_items(webui: Any) -> list[dict[str, Any]]:
