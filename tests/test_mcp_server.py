@@ -77,7 +77,7 @@ def test_initialize_includes_general_model_instructions():
     assert "Idle sockets auto-retry" in instructions
     assert "jweb/jbrowser aliases" in instructions
     assert "agent-settable UI" in instructions
-    assert "early web ack" in instructions
+    assert "webui_read diagnostics" in instructions
     assert "full Live object model remains available" in instructions
     assert len(instructions) < 1500
 
@@ -1077,6 +1077,7 @@ def test_tool_list_stays_compact():
     assert "arbitrary native UI" in m4l["description"]
     assert "jweb/jbrowser web UI" in m4l["description"]
     assert "wait_status" in m4l["description"]
+    assert "web diag" in m4l["description"]
     transport = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_transport")
     assert "continue" in transport["description"]
     assert {"action", "time", "timeout", "strict_timeout"} <= set(transport["inputSchema"]["properties"])

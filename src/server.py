@@ -31,14 +31,14 @@ ABLETON_MCP_INSTRUCTIONS = (
     "find_similar_sounds requires Live 12+ analysis data. "
     "AgentAudioTap: prefer master tap + solo target; start with path. "
     "Idle sockets auto-retry; fresh AMXD loads retry. "
-    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status and require matching command_id/last_reload_command_id. Supports file-backed updates, UDP hints, set/status skip build, midiin+midiparse, rect-driven devicewidth/openrect sizing, ui_bindings, agent-settable UI, retrying early web ack, set_silent/batches, audio buses, jweb/jbrowser aliases. In stressed sets, no ack means reload/simplify or validate a fresh host. "
+    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status and require matching command_id/last_reload_command_id. Supports file-backed updates, UDP hints, set/status skip build, midiin+midiparse, rect-driven devicewidth/openrect sizing, ui_bindings, agent-settable UI, webui_read diagnostics, set_silent/batches, audio buses, jweb/jbrowser aliases. In stressed sets, no web ack means reload/simplify or validate a fresh host. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args are JSON numbers; Simpler.sample is not generally settable; use ids from summaries, not raw _live_ptr values. "
     "Hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
 AGENT_M4L_TOOL_DESCRIPTION = (
     "Build/load/hot-reload fully custom Max for Live devices with arbitrary native UI, "
     "jweb/jbrowser web UI, or mixed UI; supports wait_status, file-backed command updates, "
-    "device bounds, ui_bindings, and set/status fast paths."
+    "device bounds, ui_bindings, web diag, and set/status fast paths."
 )
 AGENT_AUDIO_TAP_DESCRIPTION = "Command AgentAudioTap capture: use start with path, then stop/status; file command reliable, UDP optional."
 AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap on master or target; optionally solo target track and reset transport."
