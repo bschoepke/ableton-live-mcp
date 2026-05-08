@@ -34,6 +34,8 @@
 
 The Remote Script binds only to `127.0.0.1`. If Ableton was already open when the script was installed, restart Ableton or reload the Control Surface.
 
+After changing files under `Ableton_Live_MCP/`, reinstall the Remote Script and reload the Control Surface before treating Live validation as current. The running Control Surface does not pick up repository edits automatically; stale installed scripts can make bridge behavior, timeout handling, or generated-device triggers look broken after the source has been fixed.
+
 ## Repository operations
 
 Never push commits, branches, or tags to a remote without explicit user authorization.
