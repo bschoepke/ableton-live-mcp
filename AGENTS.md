@@ -60,7 +60,7 @@ Persistent localhost bridge sockets can be closed after an idle period. The clie
 
 Keep TCP connection failure bounded separately from Live work. `ABLETON_MCP_CONNECT_TIMEOUT` controls the short localhost connect attempt, while `ABLETON_MCP_TIMEOUT` and per-call `timeout` control how long to wait for operations that are already connected and running inside Live.
 
-After a request has been written to the bridge socket, response timeouts must fail closed rather than retrying automatically. Treat the mutation status as unknown until a later compact status/summary check proves whether Live applied it; blind retry can duplicate clips, devices, transport actions, or generated M4L commands.
+After a request has been written to the bridge socket, response timeouts must fail closed rather than retrying automatically. Treat the mutation status as unknown until a later compact status/summary check proves whether Live applied it; blind retry can duplicate clips, devices, transport actions, or generated M4L commands. The Python client may enter a short stall cooldown after a sent-call timeout or Live-main-thread timeout; ordinary Live API calls should fail fast during that window while `live_bridge_status` remains available for diagnosis.
 
 When using `strict_timeout: true` for a deliberate latency probe, the Python client response deadline should honor that shorter timeout too. Non-strict calls may keep the longer default because stressed Live sets often respond late but correctly.
 

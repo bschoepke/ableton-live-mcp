@@ -84,6 +84,7 @@ def test_initialize_includes_general_model_instructions():
     assert "start with path" in instructions
     assert "Idle sockets auto-retry" in instructions
     assert "sent-call timeouts fail closed" in instructions
+    assert "client/RS cooldown" in instructions
     assert "live_bridge_status" in instructions
     assert "compact_result" in instructions
     assert "jweb/jbrowser aliases" in instructions
