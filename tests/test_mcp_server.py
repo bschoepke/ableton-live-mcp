@@ -91,7 +91,8 @@ def test_initialize_includes_general_model_instructions():
     assert "Idle sockets auto-retry" in instructions
     assert "Validate runtime_current" in instructions
     assert "live_mutations_safe" in instructions
-    assert "no-arg known-tool schema=stale MCP" in instructions
+    assert "no-arg tool schema=stale MCP" in instructions
+    assert "No parallel Live API" in instructions
     assert "sent-call timeouts fail closed" in instructions
     assert "client/RS cooldown" in instructions
     assert "live_bridge_status" in instructions
