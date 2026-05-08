@@ -434,7 +434,11 @@ def test_agent_m4l_device_tool_builds_and_forwards(monkeypatch, tmp_path):
     assert "html" not in forwarded["patch"]["webui"]
     assert "js" not in forwarded["patch"]["webui"]
     assert "controls" not in forwarded["patch"]["webui"]
-    assert forwarded["patch"]["webui"]["assets"][0]["relative_path"] == "lib/scene.js"
+    assert forwarded["patch"]["webui"]["assets"] == {
+        "count": 1,
+        "bytes": 26,
+        "relative_paths": ["lib/scene.js"],
+    }
     assert forwarded["patch"]["device_width"] == 340
     assert forwarded["device_width"] == 340
     assert forwarded["webui"]["url"].startswith("file://")
@@ -638,9 +642,13 @@ def test_agent_m4l_device_tool_materializes_existing_webui_assets(monkeypatch, t
 
     forwarded = bridge.calls[0][1]
     assert forwarded["patch"]["webui"]["html_path"] == str(existing)
-    assert forwarded["patch"]["webui"]["assets"][0]["relative_path"] == "lib/scene.js"
-    assert Path(forwarded["patch"]["webui"]["assets"][0]["path"]).read_text(encoding="utf-8") == "window.sceneReady = true;"
-    assert response["result"]["structuredContent"]["webui"]["assets"][0]["bytes"] == 25
+    assert forwarded["patch"]["webui"]["assets"] == {
+        "count": 1,
+        "bytes": 25,
+        "relative_paths": ["lib/scene.js"],
+    }
+    assert (agent_m4l.WEBUI_DIR / "Asset_Existing" / "lib" / "scene.js").read_text(encoding="utf-8") == "window.sceneReady = true;"
+    assert response["result"]["structuredContent"]["webui"]["assets"]["bytes"] == 25
 
 
 def test_agent_m4l_device_tool_materializes_patch_webui(monkeypatch, tmp_path):

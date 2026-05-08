@@ -497,6 +497,7 @@ def materialized_agent_m4l_webui(source: dict[str, Any], rendered: dict[str, Any
     )
     result = {key: source[key] for key in keep if key in source}
     result.update(rendered)
+    result["assets"] = summarize_agent_m4l_assets(result.get("assets"))
     return result
 
 
@@ -509,7 +510,12 @@ def _should_write_agent_m4l_webui(webui: dict[str, Any]) -> bool:
 def _has_agent_m4l_webui_source_assets(webui: dict[str, Any]) -> bool:
     assets = webui.get("assets")
     if isinstance(assets, dict):
-        return True
+        for asset in assets.values():
+            if isinstance(asset, str):
+                return True
+            if isinstance(asset, dict) and any(key in asset for key in ("content", "text", "base64")):
+                return True
+        return False
     if isinstance(assets, list):
         for asset in assets:
             if not isinstance(asset, dict):
@@ -517,6 +523,28 @@ def _has_agent_m4l_webui_source_assets(webui: dict[str, Any]) -> bool:
             if any(key in asset for key in ("content", "text", "base64")):
                 return True
     return False
+
+
+def summarize_agent_m4l_assets(assets: Any) -> dict[str, Any]:
+    if isinstance(assets, dict) and "count" in assets:
+        return assets
+    items = [asset for asset in assets if isinstance(asset, dict)] if isinstance(assets, list) else []
+    relative_paths = [str(asset["relative_path"]) for asset in items if asset.get("relative_path")]
+    total_bytes = 0
+    for asset in items:
+        try:
+            total_bytes += int(asset.get("bytes") or 0)
+        except (TypeError, ValueError):
+            pass
+    summary: dict[str, Any] = {
+        "count": len(items),
+        "bytes": total_bytes,
+    }
+    if relative_paths:
+        summary["relative_paths"] = relative_paths[:8]
+        if len(relative_paths) > 8:
+            summary["truncated"] = True
+    return summary
 
 
 def summarize_agent_m4l_webui(webui: Any) -> Any:
@@ -537,9 +565,10 @@ def summarize_agent_m4l_webui(webui: Any) -> Any:
         "js_path",
         "url",
         "path",
-        "assets",
     )
     result = {key: webui[key] for key in keep if key in webui}
+    if "assets" in webui:
+        result["assets"] = summarize_agent_m4l_assets(webui["assets"])
     controls = webui.get("controls")
     if isinstance(controls, list):
         result["controls"] = len(controls)
