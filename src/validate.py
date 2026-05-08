@@ -51,6 +51,12 @@ def main(argv: list[str] | None = None) -> int:
                 raise AbletonBridgeError("%s validation failed: %s" % (method, item.get("error", "unknown error")))
             results[name] = item.get("result")
     except AbletonBridgeError as exc:
+        results["live_error"] = str(exc)
+        results["remote_script"]["runtime_current"] = False
+        results["remote_script"]["runtime_mismatch"] = "live_check_failed"
+        results["remote_script"]["runtime_reload_required"] = True
+        results["remote_script"]["runtime_next_action"] = "Start Ableton Live and select or reload the Ableton_Live_MCP Control Surface; if the bridge remains unresponsive, restart Ableton Live."
+        print(json.dumps(results, indent=2, sort_keys=True))
         print(f"Ableton Live MCP validation failed: {exc}", file=sys.stderr)
         return 1
     runtime_ok, runtime_reason = _check_running_remote_script(results)

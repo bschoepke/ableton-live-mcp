@@ -1785,6 +1785,25 @@ def test_validate_live_checks_can_use_strict_short_timeout(tmp_path, monkeypatch
         assert operation["params"]["strict_timeout"] is True
 
 
+def test_validate_live_failure_prints_structured_diagnostics(tmp_path, monkeypatch, capsys):
+    install_remote_script("Ableton_Live_MCP", tmp_path)
+
+    class FakeClient:
+        def request(self, _method, _params):
+            raise AbletonBridgeError("bridge timed out")
+
+    monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
+
+    assert validate_main(["--target-dir", str(tmp_path), "--timeout", "3", "--strict-timeout"]) == 1
+    output = capsys.readouterr()
+    assert "bridge timed out" in output.err
+    assert '"current": true' in output.out
+    assert '"live_error": "bridge timed out"' in output.out
+    assert '"runtime_current": false' in output.out
+    assert '"runtime_mismatch": "live_check_failed"' in output.out
+    assert "restart Ableton Live" in output.out
+
+
 def test_remote_script_resources_available_from_source_checkout():
     root = remote_script_root()
     assert (root / "Ableton_Live_MCP" / "bridge.py").exists()
