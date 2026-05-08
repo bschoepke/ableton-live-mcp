@@ -69,7 +69,7 @@ var MAX_DEFERRED_RAW_COMMANDS = 8;
 var COMMAND_ACK_PROTECT_MS = 10000;
 var UI_BINDING_REPORT_MIN_INTERVAL = 250;
 var WEB_STATE_PUSH_MIN_INTERVAL = 250;
-var HOST_RUNTIME_VERSION = "web-clear-guard-1";
+var HOST_RUNTIME_VERSION = "web-reload-1";
 
 function loadbang() {
     startStaticPolling();
@@ -671,6 +671,8 @@ function applyRaw(raw) {
         applyValues(command.values || command.parameters || [], true);
     } else if (command.command === "status") {
         report("status", { objects: dynamicObjects.length, device_width: currentDeviceWidth });
+    } else if (command.command === "web_reload" || command.command === "reload_webui") {
+        reloadWebUiCommand(command);
     } else {
         applySpec(command.patch || command.spec || command);
     }
@@ -804,6 +806,67 @@ function applySpec(spec) {
         reapplied_state: reapplied
     });
     pushWebState();
+}
+
+function reloadWebUiCommand(command) {
+    var items = webuiList(command.webuis || command.webui);
+    if (!items.length) {
+        for (var existingId in webObjectById) {
+            if (webObjectById.hasOwnProperty(existingId)) {
+                items.push({ id: existingId });
+            }
+        }
+    }
+    var changed = 0;
+    var missing = [];
+    for (var i = 0; i < items.length; i++) {
+        var item = items[i] || {};
+        var id = String(item.id || (items.length === 1 ? firstWebUiId() : ""));
+        if (!id || !webObjectById[id]) {
+            missing.push(id || ("index_" + i));
+            continue;
+        }
+        var spec = mergeWebUiSpec(objectSpecById[id] || {}, item);
+        objectSpecById[id] = spec;
+        var path = spec.html_path || spec.path || spec.url || spec.html_url;
+        if (!path) {
+            missing.push(id);
+            continue;
+        }
+        var readMessage = spec.read_message || spec.readMessage || ((spec.html_path || spec.path) ? "readfile" : "read");
+        var fallbackPath = spec.url || spec.html_url || "";
+        clearPendingWebUiReadsForId(id);
+        scheduleWebUiReadSeries(webObjectById[id], path, id, readMessage, fallbackPath);
+        changed += 1;
+    }
+    drainPendingWebUiReads();
+    report("webui_reload", {
+        changed: changed,
+        requested: items.length,
+        missing: missing.slice(0, 12),
+        web_read_pending: pendingWebUiReads.length
+    });
+    pushWebState();
+}
+
+function mergeWebUiSpec(base, override) {
+    var merged = cloneObject(base || {});
+    override = override || {};
+    for (var key in override) {
+        if (override.hasOwnProperty(key)) {
+            merged[key] = override[key];
+        }
+    }
+    return merged;
+}
+
+function firstWebUiId() {
+    for (var id in webObjectById) {
+        if (webObjectById.hasOwnProperty(id)) {
+            return id;
+        }
+    }
+    return "";
 }
 
 function connectPatchlines(connections, byId) {
@@ -2161,7 +2224,7 @@ function protectCommandAck(eventName) {
 }
 
 function isCommandAckEvent(eventName) {
-    return eventName === "reload" || eventName === "status" || eventName === "set" || eventName === "clear" || eventName === "error";
+    return eventName === "reload" || eventName === "status" || eventName === "set" || eventName === "clear" || eventName === "webui_reload" || eventName === "error";
 }
 
 function bindingSummaries() {

@@ -103,6 +103,7 @@ def test_initialize_includes_general_model_instructions():
     assert "web assets/source_path" in instructions
     assert "agent-settable UI" in instructions
     assert "status_state_keys/_only diag" in instructions
+    assert "web_reload UI-only" in instructions
     assert "direct status polls" in instructions
     assert "throttled fallback wakes" in instructions
     assert "load:false/set/status skip build" in instructions
@@ -969,6 +970,33 @@ def test_agent_m4l_device_tool_handles_value_updates_directly(tmp_path):
     assert result["direct"] is True
     assert result["loaded"] is False
     assert "built" not in result
+
+
+def test_agent_m4l_device_tool_handles_web_reload_directly(tmp_path):
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    command_file = tmp_path / "command.json"
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 46,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "instance_id": "Wobble",
+            "command": "web_reload",
+            "webuis": [{"id": "panel", "html_path": "/tmp/panel/index.html"}],
+            "command_file": str(command_file),
+            "udp": False,
+        }},
+    })
+
+    payload = json.loads(command_file.read_text(encoding="utf-8"))
+    result = response["result"]["structuredContent"]
+    assert bridge.calls == []
+    assert payload["command"] == "web_reload"
+    assert payload["webuis"] == [{"id": "panel", "html_path": "/tmp/panel/index.html"}]
+    assert result["direct"] is True
+    assert result["loaded"] is False
 
 
 def test_agent_m4l_device_tool_skips_oversized_direct_udp(tmp_path):
@@ -2000,6 +2028,8 @@ def test_compact_agent_m4l_status_recursively_compacts_raw_last_status():
 
 def test_agent_m4l_expected_status_event_tracks_command_intent():
     assert expected_agent_m4l_status_event("update") == "reload"
+    assert expected_agent_m4l_status_event("web_reload") == "webui_reload"
+    assert expected_agent_m4l_status_event("reload_webui") == "webui_reload"
     assert expected_agent_m4l_status_event("set") == "set"
     assert expected_agent_m4l_status_event("status") == "status"
     assert expected_agent_m4l_status_event("other") is None

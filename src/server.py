@@ -42,12 +42,12 @@ ABLETON_MCP_INSTRUCTIONS = (
     "AgentAudioTap: master tap+solo; start with path. "
     "Validate runtime_current/live_mutations_safe; no-arg tool schema=stale MCP, reload. No parallel Live API. Idle sockets auto-retry; sent-call timeouts fail closed; client/RS cooldown+serialize; live_bridge_status timeout=wedged. Save/recover modals: inspect UI, no retry mutations. "
     "Agent must visually verify M4L device UI: Ableton-window-only, no arbitrary apps/windows, select target then device-detail crop, blank_capture invalid; locked/asleep display blocks capture/e2e. "
-    "M4L: free native/web/mixed UI hot-reloads; wait_status/compact_result+command_id. Reuse hosts/IDs; host_runtime_version; avoid renderer buildup/fps; cleanup dry-run. Supports preflight, sidecar+slim set/status, UDP hints, throttled fallback wakes, load:false/set/status skip build, direct status polls, host_not_woken=no ack, midiin+midiparse, origin rect/openrect, bounds, ui_bindings, agent-settable UI, telemetry report:false, ack/state throttles, web assets/source_path, status_state_keys/_only diag, set_silent/batch/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web: prove signal telemetry+visual delta. No web ack/shrink: reload/simplify/new host. "
+    "M4L: free native/web/mixed UI hot-reloads; wait_status/compact_result+cmd. Reuse hosts/IDs; host_runtime_version; avoid renderer buildup/fps; cleanup dry-run. Supports preflight, sidecar+slim set/status, web_reload UI-only, UDP hints, throttled fallback wakes, load:false/set/status skip build, direct status polls, host_not_woken=no ack, midiin+midiparse, origin rect/openrect, bounds, ui_bindings, agent-settable UI, telemetry report:false, ack/state throttles, web assets/source_path, status_state_keys/_only diag, set_silent/batch/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web: prove signal telemetry+visual delta. No web ack/shrink: simplify/new host. "
     "Avoid broad dumps. Gotchas: eval expr-only; use exec; JSON nums; Simpler.sample not settable. "
     "full Live object model remains available."
 )
 AGENT_M4L_TOOL_DESCRIPTION = (
-    "arbitrary native UI, jweb/jbrowser web UI; wait_status compact_status status_state_keys/_only compact_result web diag."
+    "arbitrary native UI, jweb/jbrowser web UI; wait_status compact_status compact_result status_state_keys web diag."
 )
 AGENT_M4L_CLEANUP_DESCRIPTION = "Dry-run/delete AgentM4L; ask before delete."
 AGENT_AUDIO_TAP_DESCRIPTION = "AgentAudioTap: command open/start/stop/status; start with path; UDP optional."
@@ -482,6 +482,8 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
 def should_build_agent_m4l(params: dict[str, Any]) -> bool:
     if "build" in params:
         return bool(params["build"])
+    if str(params.get("command") or "").lower() in ("web_reload", "reload_webui"):
+        return False
     if params.get("load") is False and not (params.get("target_track") or params.get("ref")):
         return False
     if params.get("patch") is not None or params.get("spec") is not None or params.get("webui") is not None or params.get("webuis") is not None:
@@ -1011,7 +1013,7 @@ def should_handle_agent_m4l_direct(params: dict[str, Any]) -> bool:
     if params.get("target_track") or params.get("ref"):
         return False
     command = agent_m4l_command(params)
-    return command in ("update", "set", "status", "clear")
+    return command in ("update", "set", "status", "clear", "web_reload", "reload_webui")
 
 
 def handle_agent_m4l_direct(params: dict[str, Any]) -> dict[str, Any]:
@@ -1235,6 +1237,8 @@ def expected_agent_m4l_status_event(command: str) -> str | None:
     command = str(command or "").lower()
     if command == "update":
         return "reload"
+    if command in ("web_reload", "reload_webui"):
+        return "webui_reload"
     if command in ("set", "status", "clear"):
         return command
     return None

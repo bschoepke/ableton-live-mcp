@@ -334,6 +334,9 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "new CustomEvent('agentm4lstate'" in source
     assert "reusableWebIdsForSpec" in source
     assert "reusableWebObject" in source
+    assert "reloadWebUiCommand" in source
+    assert 'command.command === "web_reload"' in source
+    assert 'eventName === "webui_reload"' in source
     assert "rememberWebObject" in source
     assert "webObjectById" in source
     assert "HOST_RUNTIME_VERSION" in source
