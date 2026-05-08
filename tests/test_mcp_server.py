@@ -1038,6 +1038,10 @@ def test_tool_list_stays_compact():
     assert "duplicate session clips" not in live_eval["description"].lower()
     similar = next(tool for tool in response["result"]["tools"] if tool["name"] == "find_similar_sounds")
     assert "Live 12+" in similar["description"]
+    m4l = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_agent_m4l_device")
+    assert "arbitrary native UI" in m4l["description"]
+    assert "jweb/jbrowser web UI" in m4l["description"]
+    assert "wait_status" in m4l["description"]
 
 
 def test_bridge_error_omits_traceback_by_default(monkeypatch):

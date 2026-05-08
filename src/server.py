@@ -31,6 +31,11 @@ ABLETON_MCP_INSTRUCTIONS = (
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args are JSON numbers; Simpler.sample is not generally settable; use ids from summaries, not raw _live_ptr values. "
     "Hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
+AGENT_M4L_TOOL_DESCRIPTION = (
+    "Build/load/hot-reload fully custom Max for Live devices with arbitrary native UI, "
+    "jweb/jbrowser web UI, or mixed UI; supports wait_status, file-backed command updates, "
+    "device bounds, ui_bindings, and set/status fast paths."
+)
 
 
 def schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -57,14 +62,14 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "additionalProperties": False,
     }
 
-    timeout_control = {"timeout": {"type": "number", "description": "Seconds to wait for Live's main thread."}}
+    timeout_control = {"timeout": {"type": "number", "description": "Wait seconds."}}
     server.add_tool(Tool("live_ping", "Check bridge health/version.", schema(timeout_control), forward("ping")))
     response_controls = {
         "detail": {"type": "boolean"},
         "max_items": {"type": "integer"},
         "max_depth": {"type": "integer"},
         "max_string_length": {"type": "integer"},
-        "timeout": {"type": "number", "description": "Seconds to wait for Live's main thread."},
+        "timeout": {"type": "number", "description": "Wait seconds."},
     }
     mutation_controls = {
         "timeout": response_controls["timeout"],
@@ -316,11 +321,11 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
             result["webui"] = summarize_agent_m4l_webui(response_webui)
         return result
 
-    server.add_tool(Tool("live_agent_m4l_device", "", loose_schema(), agent_m4l_device))
+    server.add_tool(Tool("live_agent_m4l_device", AGENT_M4L_TOOL_DESCRIPTION, loose_schema(), agent_m4l_device))
     server.add_tool(Tool("live_transport", "", loose_schema(), forward("transport")))
     server.add_tool(Tool("live_batch", "Batch bridge operations.", schema({
         "operations": {"type": "array", "items": {"type": "object", "properties": {
-            "method": {"type": "string", "description": "Bridge method name such as get, set, call, children, or eval."},
+            "method": {"type": "string", "description": "Bridge method name."},
             "params": {"type": "object"},
         }, "required": ["method"], "additionalProperties": False}},
         "continue_on_error": {"type": "boolean"},
@@ -332,9 +337,9 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     browser_item_ref = {
         "type": "object",
         "properties": {
-            "id": {"type": "integer", "description": "Browser item id returned by live_browser_search."},
-            "uri": {"type": "string", "description": "Stable BrowserItem uri returned by live_browser_search, when Live exposes it."},
-            "path": {"type": "string", "description": "Browser path returned by live_browser_search; fallback for stale ids."},
+            "id": {"type": "integer", "description": "Browser item id."},
+            "uri": {"type": "string", "description": "Stable BrowserItem uri."},
+            "path": {"type": "string", "description": "Browser path fallback."},
         },
         "additionalProperties": False,
     }
