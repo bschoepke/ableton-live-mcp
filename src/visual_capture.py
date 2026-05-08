@@ -286,6 +286,7 @@ def list_windows_windows() -> list[WindowInfo]:
 def capture_windows_window(window: WindowInfo, output: Path, backend: str = "auto") -> None:
     if backend not in ("auto", "windows-capture"):
         raise RuntimeError("Windows Ableton visual capture supports backend='auto' or 'windows-capture'")
+    ensure_windows_capture_title_unambiguous(window)
     try:
         from windows_capture import InternalCaptureControl, WindowsCapture
     except ImportError as exc:
@@ -307,6 +308,39 @@ def capture_windows_window(window: WindowInfo, output: Path, backend: str = "aut
     capture.start()
     if not saved["ok"] or not output.exists() or output.stat().st_size <= 0:
         raise RuntimeError("Windows Ableton visual capture produced no image")
+
+
+def ensure_windows_capture_title_unambiguous(window: WindowInfo) -> None:
+    title = str(window.title or "")
+    if not title.strip():
+        raise RuntimeError("Windows Ableton visual capture requires a non-empty Ableton Live window title")
+    matches = [
+        candidate for candidate in list_platform_windows()
+        if candidate.platform == "Windows" and str(candidate.title or "") == title
+    ]
+    if not matches:
+        raise RuntimeError(
+            "Refusing Windows title-based capture because the Ableton Live window title %r could not be re-verified"
+            % title
+        )
+    ableton_matches = [candidate for candidate in matches if is_ableton_live_window(candidate)]
+    non_ableton_matches = [candidate for candidate in matches if not is_ableton_live_window(candidate)]
+    if non_ableton_matches:
+        raise RuntimeError(
+            "Refusing Windows title-based capture because the Ableton Live window title %r is shared by non-Ableton windows"
+            % title
+        )
+    target_matches = [candidate for candidate in ableton_matches if str(candidate.id) == str(window.id)]
+    if not target_matches:
+        raise RuntimeError(
+            "Refusing Windows title-based capture because the Ableton Live window id %r could not be re-verified"
+            % window.id
+        )
+    if len(ableton_matches) > 1:
+        raise RuntimeError(
+            "Refusing Windows title-based capture because multiple Ableton Live windows share the title %r"
+            % title
+        )
 
 
 def windows_process_path(pid: int) -> str:

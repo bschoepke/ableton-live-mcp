@@ -355,6 +355,86 @@ def test_macos_capture_reports_screencapture_stderr(monkeypatch, tmp_path):
         visual_capture.capture_window(window, tmp_path / "live.png", backend="screencapture")
 
 
+def test_windows_capture_rejects_empty_title(tmp_path):
+    window = WindowInfo(
+        platform="Windows",
+        id=100,
+        title="",
+        owner="Ableton Live",
+        process_path=r"C:\Program Files\Ableton\Ableton Live Suite\Program\Ableton Live Suite.exe",
+    )
+    with pytest.raises(RuntimeError, match="non-empty Ableton Live window title"):
+        visual_capture.capture_window(window, tmp_path / "live.png", backend="windows-capture")
+
+
+def test_windows_capture_rejects_stale_window_id(monkeypatch, tmp_path):
+    target = WindowInfo(
+        platform="Windows",
+        id=100,
+        title="Untitled",
+        owner="Ableton Live",
+        process_path=r"C:\Program Files\Ableton\Ableton Live Suite\Program\Ableton Live Suite.exe",
+    )
+    monkeypatch.setattr(visual_capture, "list_platform_windows", lambda: [
+        WindowInfo(
+            platform="Windows",
+            id=101,
+            title="Untitled",
+            owner="Ableton Live",
+            process_path=r"C:\Program Files\Ableton\Ableton Live Suite\Program\Ableton Live Suite.exe",
+        ),
+    ])
+
+    with pytest.raises(RuntimeError, match="window id .* could not be re-verified"):
+        visual_capture.capture_window(target, tmp_path / "live.png", backend="windows-capture")
+
+
+def test_windows_capture_rejects_duplicate_ableton_titles(monkeypatch, tmp_path):
+    target = WindowInfo(
+        platform="Windows",
+        id=100,
+        title="Untitled",
+        owner="Ableton Live",
+        process_path=r"C:\Program Files\Ableton\Ableton Live Suite\Program\Ableton Live Suite.exe",
+    )
+    monkeypatch.setattr(visual_capture, "list_platform_windows", lambda: [
+        target,
+        WindowInfo(
+            platform="Windows",
+            id=101,
+            title="Untitled",
+            owner="Ableton Live",
+            process_path=r"C:\Program Files\Ableton\Ableton Live Suite\Program\Ableton Live Suite.exe",
+        ),
+    ])
+
+    with pytest.raises(RuntimeError, match="multiple Ableton Live windows share the title"):
+        visual_capture.capture_window(target, tmp_path / "live.png", backend="windows-capture")
+
+
+def test_windows_capture_rejects_title_shared_with_non_ableton(monkeypatch, tmp_path):
+    target = WindowInfo(
+        platform="Windows",
+        id=100,
+        title="Untitled",
+        owner="Ableton Live",
+        process_path=r"C:\Program Files\Ableton\Ableton Live Suite\Program\Ableton Live Suite.exe",
+    )
+    monkeypatch.setattr(visual_capture, "list_platform_windows", lambda: [
+        target,
+        WindowInfo(
+            platform="Windows",
+            id=200,
+            title="Untitled",
+            owner="Notes",
+            process_path=r"C:\Windows\notepad.exe",
+        ),
+    ])
+
+    with pytest.raises(RuntimeError, match="shared by non-Ableton windows"):
+        visual_capture.capture_window(target, tmp_path / "live.png", backend="windows-capture")
+
+
 def test_visual_capture_cli_returns_json_error(monkeypatch, capsys):
     monkeypatch.setattr(visual_capture, "capture_ableton_window", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("blocked")))
     assert visual_capture.main([]) == 1
