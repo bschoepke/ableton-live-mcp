@@ -16,6 +16,7 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert "js agent_m4l_host.js instrument Lead %s %s" % (command_file("Lead"), status_file("Lead")) in texts
     assert not any(str(text or "").startswith("print AgentM4L_") for text in texts)
     assert "midiin" in texts
+    assert "prepend __midi_wake" in texts
     assert "plugout~ 1 2" in texts
     assert "phasor~ 1" in texts
     assert ">~ 0.5" in texts
@@ -76,7 +77,8 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert {"patchline": {"source": ["signal-wake-prepend", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["signal-wake-threshold", 0], "destination": ["signal-wake-sink", 0]}} in lines
     assert {"patchline": {"source": ["signal-wake-sink", 0], "destination": ["plugout", 0]}} in lines
-    assert {"patchline": {"source": ["midiin", 0], "destination": ["js", 0]}} in lines
+    assert {"patchline": {"source": ["midiin", 0], "destination": ["midi-wake-prepend", 0]}} in lines
+    assert {"patchline": {"source": ["midi-wake-prepend", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["midiout", 0]}} not in lines
     assert "jweb~ @rendermode 1" not in texts
     assert "prepend ui0" not in texts
@@ -117,7 +119,8 @@ def test_agent_m4l_host_does_not_impose_fixed_pass_through():
     assert {"patchline": {"source": ["signal-wake-clock", 0], "destination": ["signal-wake-threshold", 0]}} in audio_lines
     assert {"patchline": {"source": ["signal-wake-prepend", 0], "destination": ["js", 0]}} in audio_lines
     assert {"patchline": {"source": ["signal-wake-sink", 0], "destination": ["plugout", 0]}} in audio_lines
-    assert {"patchline": {"source": ["midiin", 0], "destination": ["js", 0]}} in midi_lines
+    assert {"patchline": {"source": ["midiin", 0], "destination": ["midi-wake-prepend", 0]}} in midi_lines
+    assert {"patchline": {"source": ["midi-wake-prepend", 0], "destination": ["js", 0]}} in midi_lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["midiout", 0]}} not in midi_lines
 
 
@@ -264,6 +267,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "function list()" in source
     assert "handleSignalWake" in source
     assert "__signal_wake" in source
+    assert "handleMidiWake" in source
+    assert "__midi_wake" in source
     assert "ACTIVITY_WAKE_MIN_INTERVAL" in source
     assert "handleActivityWake" in source
     assert "command_wake_skipped" in source
@@ -337,6 +342,7 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "function bang()" in source
     assert 'handleActivityWake("bang")' in source
     assert 'handleActivityWake("signal")' in source
+    assert 'handleActivityWake("midi")' in source
     assert 'handleActivityWake("list")' in source
     assert "startStaticPolling" in source
     assert 'getNamed("poll-metro")' in source

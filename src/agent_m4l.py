@@ -391,6 +391,7 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
     elif preset["io"] == "instrument":
         boxes += [
             _box("midiin", "newobj", "midiin", 20.0, 150.0),
+            _box("midi-wake-prepend", "newobj", "prepend __midi_wake", 20.0, 180.0),
             _box("midiout", "newobj", "midiout", 20.0, 250.0),
             _box("audio-out-l", "newobj", "receive~ %s" % audio_buses["output_left"], 220.0, 220.0),
             _box("audio-out-r", "newobj", "receive~ %s" % audio_buses["output_right"], 320.0, 220.0),
@@ -410,15 +411,18 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
             _line("signal-wake-prepend", 0, "js", 0),
             _line("signal-wake-threshold", 0, "signal-wake-sink", 0),
             _line("signal-wake-sink", 0, "plugout", 0),
-            _line("midiin", 0, "js", 0),
+            _line("midiin", 0, "midi-wake-prepend", 0),
+            _line("midi-wake-prepend", 0, "js", 0),
         ]
     else:
         boxes += [
             _box("midiin", "newobj", "midiin", 20.0, 150.0),
+            _box("midi-wake-prepend", "newobj", "prepend __midi_wake", 20.0, 180.0),
             _box("midiout", "newobj", "midiout", 20.0, 250.0),
         ]
         lines += [
-            _line("midiin", 0, "js", 0),
+            _line("midiin", 0, "midi-wake-prepend", 0),
+            _line("midi-wake-prepend", 0, "js", 0),
         ]
     return {
         "patcher": {

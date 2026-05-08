@@ -277,6 +277,8 @@ function anything() {
         handleFilewatchWake(atoms);
     } else if (messagename === "__signal_wake") {
         handleSignalWake();
+    } else if (messagename === "__midi_wake") {
+        handleMidiWake();
     } else if (messagename.indexOf("__live_param_") === 0) {
         handleLiveParameterObserverMessage(messagename, atoms);
     } else if (messagename === "url" || messagename === "title") {
@@ -314,6 +316,10 @@ function handleFilewatchWake(atoms) {
 
 function handleSignalWake() {
     handleActivityWake("signal");
+}
+
+function handleMidiWake() {
+    handleActivityWake("midi");
 }
 
 function handleLiveParameterObserverMessage(tag, atoms) {
@@ -426,11 +432,19 @@ function msg_string(value) {
 }
 
 function msg_int(value) {
-    handleActivityWake("int");
+    markCommandWake("int");
+    pollCommandFile();
+    if (pendingWebUiReads.length) {
+        readPendingWebUis();
+    }
 }
 
 function msg_float(value) {
-    handleActivityWake("float");
+    markCommandWake("float");
+    pollCommandFile();
+    if (pendingWebUiReads.length) {
+        readPendingWebUis();
+    }
 }
 
 function list() {
