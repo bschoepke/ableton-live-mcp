@@ -254,6 +254,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "pollTask = new Task(handlePollTask, this)" in source
     assert "schedulePollTask(FALLBACK_POLL_INTERVAL)" in source
     assert "handleActivityWake(\"task\")" in source
+    assert "function handleOsc(args)" in source
+    assert "function msg_string(value)" in source
     assert "startLiveParameterObservers" in source
     assert "handleLiveParameterChange" in source
     assert "isCommandTriggerName" in source

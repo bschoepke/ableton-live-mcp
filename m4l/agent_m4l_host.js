@@ -311,6 +311,7 @@ function anything() {
 }
 
 function handleCommandTrigger() {
+    start_polling();
     markCommandWake("command_trigger");
     pollCommandFile();
     if (pendingWebUiReads.length) {
@@ -319,6 +320,7 @@ function handleCommandTrigger() {
 }
 
 function handleFilewatchWake(atoms) {
+    start_polling();
     state.filewatch_bangs = (state.filewatch_bangs || 0) + 1;
     state.filewatch_last = shortStatusText((atoms && atoms.length ? atoms : ["bang"]).join(" "));
     markCommandWake("filewatch");
@@ -435,6 +437,7 @@ function clearPendingWebUiReadsForId(id) {
 }
 
 function handleOsc(args) {
+    start_polling();
     if (args.length < 2) {
         return;
     }
@@ -446,10 +449,12 @@ function handleOsc(args) {
 }
 
 function msg_string(value) {
+    start_polling();
     applyRaw(value);
 }
 
 function msg_int(value) {
+    start_polling();
     markCommandWake("int");
     pollCommandFile();
     if (pendingWebUiReads.length) {
@@ -458,6 +463,7 @@ function msg_int(value) {
 }
 
 function msg_float(value) {
+    start_polling();
     markCommandWake("float");
     pollCommandFile();
     if (pendingWebUiReads.length) {
@@ -474,6 +480,7 @@ function bang() {
 }
 
 function handleActivityWake(source) {
+    start_polling();
     var now = currentTimeMs();
     if (lastActivityWakeAt && now - lastActivityWakeAt < ACTIVITY_WAKE_MIN_INTERVAL) {
         state.command_wake_skipped = (state.command_wake_skipped || 0) + 1;
