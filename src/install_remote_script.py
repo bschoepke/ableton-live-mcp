@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -74,6 +75,8 @@ def remote_script_status(name: str = DEFAULT_REMOTE_SCRIPT, target_dir: Path | N
         "files_checked": len(source_hashes),
         "source_bridge_sha256": source_hashes.get("bridge.py"),
         "target_bridge_sha256": target_hashes.get("bridge.py"),
+        "source_runtime_version": _runtime_version(source / "bridge.py"),
+        "target_runtime_version": _runtime_version(target / "bridge.py") if target.is_dir() else "",
         "missing": missing,
         "mismatched": mismatched,
     }
@@ -93,6 +96,15 @@ def _file_hashes(root: Path) -> dict[str, str]:
 
 def _ignored_file(path: Path) -> bool:
     return "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}
+
+
+def _runtime_version(path: Path) -> str:
+    try:
+        source = path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+    match = re.search(r"^REMOTE_SCRIPT_RUNTIME_VERSION\s*=\s*['\"]([^'\"]+)['\"]", source, re.M)
+    return match.group(1) if match else ""
 
 
 def main(argv: list[str] | None = None) -> int:

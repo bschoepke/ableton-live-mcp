@@ -25,6 +25,7 @@ DEFAULT_CHILD_LIMIT = 200
 DEFAULT_MAIN_THREAD_TIMEOUT = 30
 DEFAULT_MAIN_THREAD_STALL_COOLDOWN = 10
 DEFAULT_BROWSER_ROOTS = ("instruments", "audio_effects", "midi_effects", "drums", "samples", "sounds", "packs", "plugins", "user_library", "user_folders", "current_project")
+REMOTE_SCRIPT_RUNTIME_VERSION = "transport-stop-settle-1"
 AGENT_AUDIO_TAP_HOST = "127.0.0.1"
 AGENT_AUDIO_TAP_PORT = 17654
 AGENT_M4L_HOST = "127.0.0.1"
@@ -340,7 +341,7 @@ class AbletonLiveMCP(ControlSurface):
 
     def _remote_script_info(self):
         path = globals().get("__file__", "")
-        info = {"path": str(path)}
+        info = {"path": str(path), "runtime_version": REMOTE_SCRIPT_RUNTIME_VERSION}
         try:
             with open(path, "rb") as handle:
                 info["bridge_sha256"] = hashlib.sha256(handle.read()).hexdigest()
@@ -761,7 +762,7 @@ class AbletonLiveMCP(ControlSurface):
             self._stop_transport(song)
         elif action not in (None, "status"):
             raise ValueError("action must be play, continue, stop, or status")
-        return {"playing": bool(getattr(song, "is_playing", False)), "time": getattr(song, "current_song_time", None)}
+        return self._transport_result(song, action)
 
     def _osc_message(self, address, args):
         def pad(value):
@@ -792,6 +793,15 @@ class AbletonLiveMCP(ControlSurface):
         song.stop_playing()
         if getattr(song, "is_playing", False):
             song.stop_playing()
+
+    def _transport_result(self, song, action):
+        raw_playing = bool(getattr(song, "is_playing", False))
+        result = {"playing": raw_playing, "time": getattr(song, "current_song_time", None)}
+        if action == "stop" and raw_playing:
+            result["playing"] = False
+            result["raw_playing"] = True
+            result["settled"] = False
+        return result
 
     def _track_has_device(self, track, name, role=None):
         return self._find_track_device(track, name, role) is not None

@@ -1260,6 +1260,23 @@ def test_transport_tool_seeks_and_retries_play(monkeypatch):
     assert calls == ["start", "continue", "start"]
 
 
+def test_transport_stop_reports_requested_state_when_live_property_lags(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    calls = []
+    song.is_playing = True
+    song.stop_playing = lambda: calls.append("stop")
+
+    result = bridge._rpc_transport({"action": "stop"})
+
+    assert result == {
+        "playing": False,
+        "time": 0.0,
+        "raw_playing": True,
+        "settled": False,
+    }
+    assert calls == ["stop", "stop"]
+
+
 def test_set_summary_compacts_existing_project_state(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     result = bridge._rpc_set_summary({"track_limit": 1, "clip_slot_limit": 1, "device_limit": 1, "arrangement_clip_limit": 1})
@@ -1754,6 +1771,7 @@ def test_ping_reports_running_remote_script_hash(monkeypatch):
     assert result["ok"] is True
     assert result["remote_script"]["path"].endswith("bridge.py")
     assert len(result["remote_script"]["bridge_sha256"]) == 64
+    assert result["remote_script"]["runtime_version"] == "transport-stop-settle-1"
 
 
 def test_batch_inherits_response_controls(monkeypatch):

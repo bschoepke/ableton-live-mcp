@@ -99,9 +99,17 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _check_running_remote_script(results: dict) -> tuple[bool, str]:
-    expected = (results.get("remote_script") or {}).get("source_bridge_sha256")
+    remote_script = results.get("remote_script") or {}
+    expected_version = remote_script.get("source_runtime_version")
+    expected = remote_script.get("source_bridge_sha256")
     runtime = ((results.get("ping") or {}).get("remote_script") or {})
+    actual_version = runtime.get("runtime_version")
     actual = runtime.get("bridge_sha256")
+    if expected_version:
+        if not actual_version:
+            return False, "missing_runtime_version"
+        if actual_version != expected_version:
+            return False, "runtime_version_mismatch"
     if not expected:
         return False, "missing_source_bridge_hash"
     if not actual:
