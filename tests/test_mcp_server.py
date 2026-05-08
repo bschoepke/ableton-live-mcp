@@ -93,7 +93,7 @@ def test_initialize_includes_general_model_instructions():
     assert "never capture arbitrary apps/windows" in instructions
     assert "device-detail crop" in instructions
     assert "blank_capture invalid" in instructions
-    assert "locked/asleep display blocks capture" in instructions
+    assert "locked/asleep display blocks capture/e2e" in instructions
     assert "audio-reactive web must prove signal telemetry+nonblank visual delta" in instructions
     assert "full Live object model remains available" in instructions
     assert len(instructions) < 1600
