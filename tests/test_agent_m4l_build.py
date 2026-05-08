@@ -14,6 +14,7 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     texts = {box["box"].get("text") for box in boxes}
     boxes_by_id = {box["box"].get("id"): box["box"] for box in boxes}
     assert "js agent_m4l_host.js instrument Lead %s %s" % (command_file("Lead"), status_file("Lead")) in texts
+    assert not any(str(text or "").startswith("print AgentM4L_") for text in texts)
     assert "midiin" in texts
     assert "plugout~ 1 2" in texts
     assert "phasor~ 4" in texts
@@ -67,6 +68,7 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert {"patchline": {"source": ["command-filewatch", 0], "destination": ["command-filewatch-prepend", 0]}} in lines
     assert {"patchline": {"source": ["command-filewatch-prepend", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["poll-delay", 0], "destination": ["js", 0]}} in lines
+    assert {"patchline": {"source": ["js", 2], "destination": ["status", 0]}} not in lines
     assert {"patchline": {"source": ["command-trigger", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["signal-wake-clock", 0], "destination": ["signal-wake-threshold", 0]}} in lines
     assert {"patchline": {"source": ["signal-wake-threshold", 0], "destination": ["signal-wake-edge", 0]}} in lines
@@ -366,6 +368,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "statusFile" in source
     assert "writeStatus" in source
     assert "statusPadSize" in source
+    assert 'outlet(2, "status", eventName' in source
+    assert "outlet(2, JSON.stringify(payload))" not in source
     assert "command_id" in source
 
 

@@ -1796,7 +1796,7 @@ function report(eventName, payload) {
         payload.connection_errors = lastConnectionErrors;
     }
     writeStatus(payload);
-    outlet(2, JSON.stringify(payload));
+    outlet(2, "status", eventName, currentCommandId || "", dynamicObjects.length, webObjects.length);
 }
 
 function bindingSummaries() {

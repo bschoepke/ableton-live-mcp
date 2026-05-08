@@ -277,7 +277,6 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
     boxes = [
         _box("comment-title", "comment", "Agent M4L Dynamic Host: %s" % name, 20.0, 20.0),
         _box("js", "newobj", js_text, 20.0, 58.0),
-        _box("status", "newobj", "print %s" % name, 20.0, 96.0),
         _box("udp", "newobj", "udpreceive %d" % udp_port(instance_id), 220.0, 20.0),
         _box("poll-loadbang", "newobj", "loadbang", 220.0, 58.0),
         _box("poll-start", "message", "1", 220.0, 96.0),
@@ -310,7 +309,6 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
         _box("script", "newobj", "thispatcher", 420.0, 20.0),
     ]
     lines = [
-        _line("js", 2, "status", 0),
         _line("udp", 0, "js", 0),
         _line("poll-loadbang", 0, "poll-start", 0),
         _line("poll-loadbang", 0, "poll-defer", 0),
