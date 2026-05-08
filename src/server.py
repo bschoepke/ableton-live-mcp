@@ -42,7 +42,7 @@ ABLETON_MCP_INSTRUCTIONS = (
     "AgentAudioTap: master tap + solo target; start with path. "
     "Idle sockets auto-retry; sent-call timeouts fail closed; live_bridge_status diagnoses hangs; check before retry; AMXD loads retry. "
     "Agent must visually verify M4L device UI with live_visual_capture after UI changes; Ableton-window-only, never capture arbitrary apps/windows; use device-detail crop/max. "
-    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status/compact_result and require matching command_id. Supports preflight files, UDP hints, set/status skip build, midiin+midiparse, origin-aligned rect/openrect sizing, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batches/list vals, audio buses, jweb/jbrowser aliases. In stressed sets, no web ack means reload/simplify or validate fresh host. "
+    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status/compact_result and require matching command_id. Supports preflight files, UDP hints, set/status skip build, midiin+midiparse, origin-aligned rect/openrect sizing, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batches/list vals, audio buses, jweb/jbrowser aliases. No web ack or width shrink: reload/simplify or validate fresh host. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args are JSON numbers; Simpler.sample is not generally settable; use ids from summaries, not raw _live_ptr values. "
     "Hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
