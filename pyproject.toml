@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ableton-live-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "General-purpose MCP bridge for Ableton Live's object model."
 readme = "README.md"
 requires-python = ">=3.10"

@@ -14,7 +14,7 @@ from similar_sounds import find_similar_sounds
 from visual_capture import capture_ableton_window
 
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 
 ABLETON_AGENT_GUIDE = "General Live object-model bridge; examples are heuristics, not limits."

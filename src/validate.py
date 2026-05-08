@@ -182,6 +182,7 @@ def mcp_tool_schema_status() -> dict:
         "ok": not failed,
         "checked": len(checks),
         "checks": checks,
+        "server_version": server.version,
     }
     if failed:
         result["next_action"] = "Restart the MCP server/client so it advertises the current local tool schemas."

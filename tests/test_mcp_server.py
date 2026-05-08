@@ -73,6 +73,12 @@ def test_lists_general_purpose_tools():
     } <= names
 
 
+def test_initialize_reports_current_server_version():
+    server = make_server(FakeBridge())
+    response = server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+    assert response["result"]["serverInfo"] == {"name": "ableton-live-mcp", "version": "0.1.1"}
+
+
 def test_initialize_includes_general_model_instructions():
     server = make_server(FakeBridge())
     response = server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
@@ -115,6 +121,7 @@ def test_initialize_includes_general_model_instructions():
 def test_validate_reports_local_mcp_tool_schemas():
     status = validate.mcp_tool_schema_status()
     assert status["ok"] is True
+    assert status["server_version"] == "0.1.1"
     checks = {item["tool"]: item for item in status["checks"]}
     assert checks["live_agent_audio_tap"]["ok"] is True
     assert checks["live_transport"]["ok"] is True
@@ -3120,6 +3127,7 @@ def test_remote_script_resources_available_from_source_checkout():
 
 def test_debug_commands_are_not_published_console_scripts():
     pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+    assert 'version = "0.1.1"' in pyproject
     assert 'ableton-live-mcp = "server:main"' in pyproject
     assert 'ableton-live-mcp-validate = "validate:main"' in pyproject
     assert 'ableton-live-mcp-install-remote-script = "install_remote_script:main"' in pyproject
