@@ -100,6 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--name", choices=(DEFAULT_REMOTE_SCRIPT,), default=DEFAULT_REMOTE_SCRIPT, help="Remote Script package to install. Default: %(default)s")
     parser.add_argument("--target-dir", type=Path, default=default_install_dir(), help="Ableton Remote Scripts directory. Default: %(default)s")
     parser.add_argument("--force", action="store_true", help="Replace an existing installed Remote Script directory.")
+    parser.add_argument("--update", action="store_true", help="Install if missing or stale; leave a current install untouched.")
     parser.add_argument("--list", action="store_true", help="List packaged Remote Scripts and exit.")
     args = parser.parse_args(argv)
 
@@ -108,7 +109,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        target = install_remote_script(args.name, args.target_dir, args.force)
+        if args.update:
+            status = remote_script_status(args.name, args.target_dir)
+            if status["current"]:
+                print("Remote Script already current: %s" % status["target"])
+                return 0
+            target = install_remote_script(args.name, args.target_dir, force=True)
+        else:
+            target = install_remote_script(args.name, args.target_dir, args.force)
     except Exception as exc:
         print("Remote Script install failed: %s" % exc, file=sys.stderr)
         return 1

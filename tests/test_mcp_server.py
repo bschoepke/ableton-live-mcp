@@ -9,7 +9,7 @@ import pytest
 import validate
 from benchmark import run_benchmark
 from bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig, effective_main_thread_timeout
-from install_remote_script import install_remote_script, remote_script_root, remote_script_status
+from install_remote_script import install_remote_script, main as install_remote_script_main, remote_script_root, remote_script_status
 from prompt_audit import run_prompt_audit
 from server import expected_agent_m4l_status_event, make_server, should_build_agent_m4l, wait_agent_m4l_status
 from validate import main as validate_main
@@ -1289,6 +1289,20 @@ def test_remote_script_status_detects_stale_install(tmp_path):
     assert stale["current"] is False
     assert stale["mismatched"] == ["bridge.py"]
     assert stale["target_bridge_sha256"] != stale["source_bridge_sha256"]
+
+
+def test_remote_script_installer_update_replaces_stale_install(tmp_path, capsys):
+    target = install_remote_script("Ableton_Live_MCP", tmp_path)
+    (target / "bridge.py").write_text("# stale\n", encoding="utf-8")
+
+    assert install_remote_script_main(["--target-dir", str(tmp_path), "--update"]) == 0
+    updated_output = capsys.readouterr()
+    assert "Installed" in updated_output.out
+    assert remote_script_status(target_dir=tmp_path)["current"] is True
+
+    assert install_remote_script_main(["--target-dir", str(tmp_path), "--update"]) == 0
+    current_output = capsys.readouterr()
+    assert "already current" in current_output.out
 
 
 def test_validate_can_check_remote_script_without_live(tmp_path, capsys):
