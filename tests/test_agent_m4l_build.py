@@ -28,6 +28,7 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert "path this_device parameters 1" in texts
     assert "live.observer value" in texts
     assert "prepend __command_trigger" in texts
+    assert "filewatch %s" % command_file("Lead") in texts
     assert "deferlow" in texts
     assert "delay 100" in texts
     assert boxes_by_id["command-trigger"]["maxclass"] == "live.numbox"
@@ -44,6 +45,9 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert {"patchline": {"source": ["trigger-path", 0], "destination": ["trigger-observer", 1]}} in lines
     assert {"patchline": {"source": ["trigger-observer", 0], "destination": ["trigger-prepend", 0]}} in lines
     assert {"patchline": {"source": ["trigger-prepend", 0], "destination": ["js", 0]}} in lines
+    assert {"patchline": {"source": ["poll-loadbang", 0], "destination": ["command-filewatch-start", 0]}} in lines
+    assert {"patchline": {"source": ["command-filewatch-start", 0], "destination": ["command-filewatch", 0]}} in lines
+    assert {"patchline": {"source": ["command-filewatch", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["poll-delay", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["command-trigger", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["midiout", 0]}} not in lines

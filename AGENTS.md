@@ -129,6 +129,8 @@ The generated device command file is also the host's recovery payload when Max r
 
 When a host AMXD is loaded after its command file has already been written, the JS `loadbang` should explicitly start the static low-priority `metro` poller and consume the prewritten command file once. The host should also include `live.thisdevice` and self-starting metro attributes as secondary startup paths. The same polling bang should service pending web reads so browser retries do not depend solely on Max JS `Task` scheduling.
 
+Generated host AMXDs should include a static `filewatch <command_file>` object connected to JS and started from `loadbang`/`live.thisdevice`. Treat `filewatch` as the primary wakeup for follow-up command-file writes; keep UDP, hidden parameter toggles, static/dynamic metros, and JS `Task` polling as secondary hints because they have all been observed to stall in stressed sets.
+
 After a generated spec loads, the host should also create and explicitly start a hidden dynamic low-priority `qmetro` connected back into the JS object as a secondary wakeup path. Do not assume timer wakeups are sufficient in a stressed Live set; every follow-up `set`/`status` must be validated by a matching status `command_id`.
 
 Setting a generated `live.numbox`/`live.*` parameter through the Live API does not reliably emit from the UI object's Max outlet. If the host observes Live parameters, the observer path must remain generic: observe the generated device's current parameters and route names that match `ui_bindings` through the same binding code as native UI gestures. Treat observer output as opportunistic state sync until validated by a status update.
