@@ -858,8 +858,11 @@ function reapplyStateValues() {
 
 function setStateValue(id, value, skipSource, command) {
     id = String(id);
-    if (uiBindings[id]) {
-        return false;
+    var binding = uiBindings[id];
+    if (binding) {
+        setUiSourceValue(id, value);
+        setBoundTarget(binding, valueFromUiBinding(binding, value), id);
+        return true;
     }
     var obj = objectById[id];
     if (!obj && !hasUiBindingTarget(id)) {

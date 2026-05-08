@@ -27,7 +27,7 @@ ABLETON_MCP_INSTRUCTIONS = (
     "find_similar_sounds requires Live 12+ analysis data. "
     "For AgentAudioTap, prefer master tap + solo target; start with path. "
     "Idle sockets auto-retry; fresh AMXD loads retry. "
-    "M4L: live_agent_m4l_device hot-reloads native/web UI; file authoritative, per-instance UDP hint; set/status skip build; use wait_status, midiin+midiparse, presentation_rect/devicewidth/ui_bindings, set_silent, audio buses, jweb/jbrowser aliases. "
+    "M4L: live_agent_m4l_device hot-reloads native/web UI; file authoritative, per-instance UDP hint; set/status skip build; use wait_status, midiin+midiparse, presentation_rect/devicewidth/ui_bindings, agent-settable UI, set_silent, audio buses, jweb/jbrowser aliases. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via browser or create audio clips; use ids from bridge summaries, not raw _live_ptr values. "
     "These are hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )

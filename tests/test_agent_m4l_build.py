@@ -151,6 +151,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "applyUiBinding" in source
     assert "updateUiBindings" in source
     assert "setUiSourceValue" in source
+    assert "var binding = uiBindings[id]" in source
+    assert "setBoundTarget(binding, valueFromUiBinding(binding, value), id)" in source
     assert "restoreState" in source
     assert "reapplyStateValues" in source
     assert "restored_state" in source
