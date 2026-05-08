@@ -79,7 +79,7 @@ For web UI, `webui` may be an object or array of objects; each entry can choose 
 
 Generated web UI should acknowledge basic readiness before expensive work. Send a small `uiReady`/equivalent message from a classic bootstrap script before loading large modules, WebGL scenes, models, or generated bundles; then report feature readiness such as `threeReady` separately and provide a fallback/error state instead of letting one import or renderer failure leave a blank panel.
 
-Use the host's `web_url`/`web_title` status state to distinguish page load from custom JavaScript readiness. If neither appears after selecting the device and showing Detail/Device Chain, the embedded browser itself did not finish loading; inspect the Max/CEF logs and active renderer process count before debugging the generated HTML.
+Use the host's `web_read_scheduled`, `web_read_attempts`, `web_url`, and `web_title` status state to distinguish host delivery, browser load, and custom JavaScript readiness. If read attempts increment but no `web_url`/`web_title` appears after selecting the device and showing Detail/Device Chain, the embedded browser itself did not finish loading; inspect the Max/CEF logs and active renderer process count before debugging the generated HTML.
 
 For generated MIDI effects, validate the transformed MIDI itself, not only downstream audio. Put the MIDI effect before a known-good instrument, expose compact telemetry with `ui_bind` on message-rate objects such as input pitch, output pitch, gate, or velocity, and verify both the MIDI effect status and the downstream instrument status agree on the transformed note values while the track meters are nonzero.
 

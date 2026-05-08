@@ -138,6 +138,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "webui.url || webui.html_url || webui.html_path" in source
     assert "scheduleWebUiRead" in source
     assert "readPendingWebUis" in source
+    assert "web_read_scheduled" in source
+    assert "web_read_attempts" in source
     assert 'obj.message("read", reads[i].path)' in source
     assert "presentation_rect" in source
     assert "scriptSendBox" in source

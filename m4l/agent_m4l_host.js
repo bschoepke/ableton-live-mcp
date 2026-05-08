@@ -369,6 +369,7 @@ function createWebUi(webui, index, byId) {
 
 function scheduleWebUiRead(obj, path, id) {
     pendingWebUiReads.push({ obj: obj, path: String(path), id: String(id) });
+    state.web_read_scheduled = (state.web_read_scheduled || 0) + 1;
     if (!webReadTask) {
         webReadTask = new Task(readPendingWebUis, this);
     }
@@ -382,6 +383,7 @@ function scheduleWebUiRead(obj, path, id) {
 function readPendingWebUis() {
     var reads = pendingWebUiReads;
     pendingWebUiReads = [];
+    state.web_read_attempts = (state.web_read_attempts || 0) + reads.length;
     for (var i = 0; i < reads.length; i++) {
         try {
             reads[i].obj.message("read", reads[i].path);
