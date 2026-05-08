@@ -2642,6 +2642,16 @@ def test_debug_commands_are_not_published_console_scripts():
     assert "ableton-live-mcp-prompt-audit =" not in pyproject
 
 
+def test_dev_extra_includes_visual_capture_dependencies():
+    pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+    dev_block = pyproject.split("dev = [", 1)[1].split("]\n", 1)[0]
+
+    assert '"pytest>=8.0"' in dev_block
+    assert '"Pillow>=10"' in dev_block
+    assert '"pyobjc-framework-Quartz; platform_system == \'Darwin\'"' in dev_block
+    assert '"windows-capture; platform_system == \'Windows\'"' in dev_block
+
+
 def test_smoke_suite_runs_expected_bridge_methods():
     class SmokeBridge:
         def __init__(self):

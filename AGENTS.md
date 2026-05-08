@@ -6,6 +6,8 @@
    python -m pip install -e ".[dev]"
    ```
 
+   The `dev` extra intentionally includes the Ableton-only visual capture dependencies used for M4L UI verification. For a lean runtime install that still needs screenshots, install the `visual` extra too.
+
 2. Install the Ableton Remote Script:
 
    ```sh
