@@ -58,7 +58,17 @@ var currentDeviceWidth = DEFAULT_DEVICE_WIDTH;
 var currentDeviceHeight = DEFAULT_DEVICE_HEIGHT;
 var lastActivityWakeAt = 0;
 var pollTaskScheduled = 0;
+var commandAckProtectedUntil = 0;
+var commandAckProtectedId = "";
+var lastUiBindingReportAt = 0;
+var lastWebStatePushAt = 0;
+var webStatePushTask = null;
+var webStatePushScheduled = 0;
+var pendingWebStatePush = 0;
 var MAX_DEFERRED_RAW_COMMANDS = 8;
+var COMMAND_ACK_PROTECT_MS = 10000;
+var UI_BINDING_REPORT_MIN_INTERVAL = 250;
+var WEB_STATE_PUSH_MIN_INTERVAL = 100;
 var HOST_RUNTIME_VERSION = "web-clear-guard-1";
 
 function loadbang() {
@@ -1335,10 +1345,41 @@ function applyUiBinding(source, atoms) {
     var value = valueFromUiBinding(binding, atoms[0]);
     setBoundTarget(binding, value, source);
     if (binding.report) {
-        report("set", { changed: 1, source: source, target: binding.target });
+        reportUiBindingSet(source, binding);
     }
     drainPendingWebUiReads();
-    pushWebState();
+    scheduleWebStatePush();
+}
+
+function reportUiBindingSet(source, binding) {
+    var now = currentTimeMs();
+    if (shouldSuppressUiBindingStatusReport(now)) {
+        state.ui_binding_reports_suppressed = (state.ui_binding_reports_suppressed || 0) + 1;
+        state.ui_binding_last_suppressed = shortStatusText(source);
+        return;
+    }
+    lastUiBindingReportAt = now;
+    report("set", { changed: 1, source: source, target: binding.target });
+}
+
+function shouldSuppressUiBindingStatusReport(now) {
+    if (!commandAckProtectedId) {
+        return shouldThrottleUiBindingStatusReport(now);
+    }
+    if (now > commandAckProtectedUntil) {
+        commandAckProtectedId = "";
+        commandAckProtectedUntil = 0;
+        return shouldThrottleUiBindingStatusReport(now);
+    }
+    return true;
+}
+
+function shouldThrottleUiBindingStatusReport(now) {
+    if (lastUiBindingReportAt && now - lastUiBindingReportAt < UI_BINDING_REPORT_MIN_INTERVAL) {
+        state.ui_binding_reports_throttled = (state.ui_binding_reports_throttled || 0) + 1;
+        return true;
+    }
+    return false;
 }
 
 function valueFromUiBinding(binding, rawValue) {
@@ -1921,10 +1962,46 @@ function shouldOutputStoredValue(spec) {
 }
 
 function pushWebState() {
+    pendingWebStatePush = 0;
+    lastWebStatePushAt = currentTimeMs();
     var raw = JSON.stringify(state);
     for (var i = 0; i < webObjects.length; i++) {
         sendWebState(webObjects[i], raw);
     }
+}
+
+function scheduleWebStatePush() {
+    if (!webObjects.length) {
+        return;
+    }
+    var now = currentTimeMs();
+    var elapsed = lastWebStatePushAt ? now - lastWebStatePushAt : WEB_STATE_PUSH_MIN_INTERVAL;
+    if (elapsed >= WEB_STATE_PUSH_MIN_INTERVAL) {
+        pushWebState();
+        return;
+    }
+    pendingWebStatePush = 1;
+    state.web_state_push_throttled = (state.web_state_push_throttled || 0) + 1;
+    if (!webStatePushTask) {
+        webStatePushTask = new Task(handleWebStatePushTask, this);
+    }
+    if (webStatePushScheduled) {
+        return;
+    }
+    try {
+        webStatePushScheduled = 1;
+        webStatePushTask.schedule(Math.max(1, WEB_STATE_PUSH_MIN_INTERVAL - elapsed));
+    } catch (errScheduleWebState) {
+        webStatePushScheduled = 0;
+    }
+}
+
+function handleWebStatePushTask() {
+    webStatePushScheduled = 0;
+    if (!pendingWebStatePush) {
+        return;
+    }
+    pushWebState();
 }
 
 function drainPendingWebUiReads() {
@@ -1986,7 +2063,15 @@ function clearDynamic(preserveWebIds) {
         } catch (errCancel) {
         }
     }
+    if (webStatePushTask) {
+        try {
+            webStatePushTask.cancel();
+        } catch (errCancelWebState) {
+        }
+    }
     pendingWebUiReads = [];
+    pendingWebStatePush = 0;
+    webStatePushScheduled = 0;
     cancelLiveParameterObserverRefreshTasks();
     liveParameterObservers = [];
     for (var i = dynamicObjects.length - 1; i >= 0; i--) {
@@ -2064,6 +2149,19 @@ function report(eventName, payload) {
     }
     writeStatus(payload);
     outlet(2, "status", eventName, currentCommandId || "", dynamicObjects.length, webObjects.length);
+    protectCommandAck(eventName);
+}
+
+function protectCommandAck(eventName) {
+    if (!currentCommandId || !isCommandAckEvent(eventName)) {
+        return;
+    }
+    commandAckProtectedId = currentCommandId;
+    commandAckProtectedUntil = currentTimeMs() + COMMAND_ACK_PROTECT_MS;
+}
+
+function isCommandAckEvent(eventName) {
+    return eventName === "reload" || eventName === "status" || eventName === "set" || eventName === "clear" || eventName === "error";
 }
 
 function bindingSummaries() {

@@ -95,6 +95,8 @@ def test_initialize_includes_general_model_instructions():
     assert "load:false/set/status skip build" in instructions
     assert "host_not_woken=no ack" in instructions
     assert "host_runtime_version" in instructions
+    assert "telemetry report:false" in instructions
+    assert "ack/state throttles" in instructions
     assert "Agent must visually verify M4L device UI" in instructions
     assert "Ableton-window-only" in instructions
     assert "never capture arbitrary apps/windows" in instructions

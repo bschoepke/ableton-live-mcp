@@ -283,6 +283,16 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "ACTIVITY_WAKE_MIN_INTERVAL" in source
     assert "handleActivityWake" in source
     assert "command_wake_skipped" in source
+    assert "COMMAND_ACK_PROTECT_MS" in source
+    assert "UI_BINDING_REPORT_MIN_INTERVAL" in source
+    assert "WEB_STATE_PUSH_MIN_INTERVAL" in source
+    assert "reportUiBindingSet" in source
+    assert "shouldSuppressUiBindingStatusReport" in source
+    assert "shouldThrottleUiBindingStatusReport" in source
+    assert "scheduleWebStatePush" in source
+    assert "web_state_push_throttled" in source
+    assert "ui_binding_reports_suppressed" in source
+    assert "ui_binding_reports_throttled" in source
     assert "handleLiveParameterObserverMessage" in source
     assert "applyUiBinding(source, [liveApiObservedValue(atoms)])" in source
     assert "createLiveParameterObserverForSource" in source
