@@ -90,6 +90,7 @@ def test_initialize_includes_general_model_instructions():
     assert "webui_read diagnostics" in instructions
     assert "throttled fallback wakes" in instructions
     assert "load:false/set/status skip build" in instructions
+    assert "stale status=no host ack" in instructions
     assert "Agent must visually verify M4L device UI" in instructions
     assert "Ableton-window-only" in instructions
     assert "never capture arbitrary apps/windows" in instructions
