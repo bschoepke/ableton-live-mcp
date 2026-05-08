@@ -418,6 +418,7 @@ def test_agent_m4l_write_webui_generates_jweb_page(tmp_path, monkeypatch):
     assert "web_dom_ready" in html
     assert "web_error" in html
     assert "agent_web_tick" in html
+    assert "setTimeout(tick,500)" in html
     assert "agentM4L.outlet" in html
     assert "setTimeout(flush" in html
     assert 'data-param="cutoff"' in html

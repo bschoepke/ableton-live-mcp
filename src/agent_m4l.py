@@ -838,7 +838,7 @@ AGENT_M4L_WEBUI_BOOTSTRAP_JS = (
     "window.agentM4L.outlet=o;"
     "o('web_ready',Date.now()%1000000000);"
     "document.addEventListener('DOMContentLoaded',function(){o('web_dom_ready',Date.now()%1000000000)});"
-    "function tick(){send(['agent_web_tick',Date.now()%1000000000]);setTimeout(tick,1000)}setTimeout(tick,1000);"
+    "function tick(){send(['agent_web_tick',Date.now()%1000000000]);setTimeout(tick,500)}setTimeout(tick,500);"
     "window.addEventListener('error',function(e){o('web_error',String(e&&e.message||e&&e.error||'error').slice(0,240))});"
     "window.addEventListener('unhandledrejection',function(e){o('web_error',String(e&&e.reason||'unhandledrejection').slice(0,240))});"
     "})();"
