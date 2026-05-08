@@ -298,8 +298,11 @@ def test_clip_add_notes_tool_forwards_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)
     args = {
-        "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
+        "ref": {"path": "live_set tracks 0 clip_slots 0"},
+        "create_clip_length": 4.0,
+        "clip_name": "Generated Clip",
         "clear": True,
+        "fire": True,
         "notes": [{"pitch": 60, "start_time": 0.0, "duration": 1.0, "velocity": 80}],
     }
     response = server.handle({
@@ -1674,6 +1677,8 @@ def test_tool_list_stays_compact():
     assert "compact_status" in m4l["description"]
     assert "compact_result" in m4l["description"]
     assert "web diag" in m4l["description"]
+    clip_add = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_clip_add_notes")
+    assert "create a MIDI clip" in clip_add["description"]
     transport = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_transport")
     assert "continue" in transport["description"]
     assert {"action", "time", "timeout", "strict_timeout"} <= set(transport["inputSchema"]["properties"])

@@ -889,9 +889,32 @@ class AbletonLiveMCP(ControlSurface):
         }
 
     def _rpc_clip_add_notes(self, params):
-        clip = self._resolve(params.get("ref"))
+        target = self._resolve(params.get("ref"))
+        created_clip = False
+        launched = False
+        if hasattr(target, "has_clip") and hasattr(target, "clip"):
+            if not getattr(target, "has_clip", False):
+                length = params.get("create_clip_length")
+                if length is None:
+                    raise ValueError("clip_add_notes requires create_clip_length when ref is an empty clip slot")
+                target.create_clip(float(length))
+                created_clip = True
+            clip = target.clip
+        else:
+            clip = target
         if not getattr(clip, "is_midi_clip", False):
             raise ValueError("clip_add_notes requires a MIDI clip")
+        if params.get("clip_name") is not None:
+            try:
+                clip.name = str(params.get("clip_name"))
+            except Exception:
+                pass
+        for key, attr in (("loop_start", "loop_start"), ("loop_end", "loop_end")):
+            if params.get(key) is not None:
+                try:
+                    setattr(clip, attr, float(params.get(key)))
+                except Exception:
+                    pass
         if params.get("clear"):
             try:
                 clip.remove_notes_extended(from_pitch=0, pitch_span=128, from_time=0.0, time_span=float(getattr(clip, "length", 0.0)))
@@ -924,9 +947,14 @@ class AbletonLiveMCP(ControlSurface):
             ))
         if specs:
             clip.add_new_notes(tuple(specs))
+        if params.get("fire") and hasattr(target, "fire"):
+            target.fire()
+            launched = True
         return {
             "clip": self._clip_summary(clip, None),
             "added": len(specs),
+            "created_clip": created_clip,
+            "launched": launched,
             "note_count": len(list(clip.get_all_notes_extended())),
         }
 

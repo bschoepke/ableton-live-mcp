@@ -44,8 +44,8 @@ ABLETON_MCP_INSTRUCTIONS = (
     "Hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
 AGENT_M4L_TOOL_DESCRIPTION = (
-    "Custom M4L build/load/hot-reload: arbitrary native UI, jweb/jbrowser web UI/mixed; "
-    "wait_status/compact_status/compact_result, file commands, bounds, ui_bindings, web diag, set/status fast paths."
+    "Custom M4L: arbitrary native UI, jweb/jbrowser web UI/mixed; "
+    "wait_status/compact_status/compact_result, files, bounds, ui_bindings, web diag, fast paths."
 )
 AGENT_AUDIO_TAP_DESCRIPTION = "Command AgentAudioTap capture: use start with path, then stop/status; file command reliable, UDP optional."
 AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap on master or target; optionally solo target track and reset transport."
@@ -171,10 +171,13 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "velocity": {"type": "number"},
         "mute": {"type": "boolean"},
     }, "required": ["pitch", "start_time", "duration", "velocity"], "additionalProperties": False}
-    server.add_tool(Tool("live_clip_add_notes", "Add MIDI notes to a clip from JSON note specs.", schema({
+    server.add_tool(Tool("live_clip_add_notes", "Add notes; create a MIDI clip.", schema({
         "ref": ref,
         "notes": {"type": "array", "items": note_spec},
         "clear": {"type": "boolean"},
+        "create_clip_length": {"type": "number"},
+        "clip_name": {"type": "string"},
+        "fire": {"type": "boolean"},
         "clear_range": {"type": "object", "properties": {
             "from_pitch": {"type": "integer"},
             "pitch_span": {"type": "integer"},
