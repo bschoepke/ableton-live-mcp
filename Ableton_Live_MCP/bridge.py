@@ -844,6 +844,10 @@ class AbletonLiveMCP(ControlSurface):
     def _transport_result(self, song, action):
         raw_playing = bool(getattr(song, "is_playing", False))
         result = {"playing": raw_playing, "time": getattr(song, "current_song_time", None)}
+        if action in ("play", "continue") and not raw_playing:
+            result["playing"] = True
+            result["raw_playing"] = False
+            result["settled"] = False
         if action == "stop" and raw_playing:
             result["playing"] = False
             result["raw_playing"] = True

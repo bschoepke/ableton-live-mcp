@@ -1277,6 +1277,24 @@ def test_transport_stop_reports_requested_state_when_live_property_lags(monkeypa
     assert calls == ["stop", "stop"]
 
 
+def test_transport_play_reports_requested_state_when_live_property_lags(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    calls = []
+    song.is_playing = False
+    song.start_playing = lambda: calls.append("start")
+    song.continue_playing = lambda: calls.append("continue")
+
+    result = bridge._rpc_transport({"action": "play"})
+
+    assert result == {
+        "playing": True,
+        "time": 0.0,
+        "raw_playing": False,
+        "settled": False,
+    }
+    assert calls == ["start", "continue", "start"]
+
+
 def test_set_summary_compacts_existing_project_state(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     result = bridge._rpc_set_summary({"track_limit": 1, "clip_slot_limit": 1, "device_limit": 1, "arrangement_clip_limit": 1})

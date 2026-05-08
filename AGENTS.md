@@ -191,6 +191,8 @@ For long generated-device soaks, track transport state separately from command/d
 
 In heavy generated sets, timeline seeks and repeated `transport play` with `time: 0` can be much slower than compact status/value commands. Prefer checking transport status, using continue/play without a seek, or relaunching only the target clip when possible; reserve timeline resets for tests that specifically need them and give those calls a realistic timeout.
 
+Transport `play`, `continue`, and `stop` responses may include `settled: false` with a `raw_playing` value when Live's `is_playing` property lags the requested action. Treat that as a successful command with pending state settlement, then verify with a follow-up status call if the exact transport state matters.
+
 Bridge calls in heavily stressed Live sets can take tens of seconds even when Live eventually responds. Treat short socket timeouts as inconclusive under load; retry with a longer timeout and record bridge latency separately from generated-device failures.
 
 For bridge health checks in a stressed set, use an explicit longer wait. If the active MCP client has a stale `live_ping` schema that does not expose `timeout`, call `live_batch` with one `ping` operation and `timeout` around 45 seconds before concluding the bridge is unavailable.
