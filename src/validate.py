@@ -164,6 +164,7 @@ def _probe_bridge_status(timeout: float) -> dict:
 def _live_failure_diagnostics(exc: Exception, bridge_status: dict | None = None) -> tuple[str, str]:
     message = str(exc)
     lower = message.lower()
+    bridge_unresponsive = _bridge_status_probe_unresponsive(bridge_status)
     if "connection refused" in lower:
         return (
             "bridge_not_listening",
@@ -180,11 +181,21 @@ def _live_failure_diagnostics(exc: Exception, bridge_status: dict | None = None)
                 "live_main_thread_hung",
                 "The bridge socket thread is responsive, but Live's main thread did not execute scheduled work or is in a protective stall cooldown. Stop sending Live API mutations; save/recover the set if possible, then restart Ableton Live or reload the Control Surface with user authorization and rerun validation.",
             )
+        if bridge_unresponsive:
+            return (
+                "live_process_unresponsive",
+                "The Live API check timed out and the socket-thread bridge_status probe also timed out. Treat Ableton Live/Max as wedged: stop sending MCP calls, preserve diagnostics such as visual capture or an OS process sample, and recover/restart/reload Live only with user authorization before validating again.",
+            )
         return (
             "live_main_thread_timeout",
             "Check Ableton Live for modal dialogs, permission prompts, browser/indexing stalls, heavy UI work, or a client-side stall cooldown after a sent timeout; resolve the blocker, then rerun validation before sending more mutations.",
         )
     if "timed out" in lower:
+        if bridge_unresponsive:
+            return (
+                "bridge_unresponsive",
+                "The bridge request timed out and the socket-thread bridge_status probe also timed out. Treat the Live/Max process or Remote Script bridge as wedged; stop retrying Live API calls, preserve diagnostics, and recover/restart/reload Live only with user authorization before validating again.",
+            )
         return (
             "bridge_response_timeout",
             "Check Ableton Live for modal dialogs or UI stalls. In stressed sets, retry with a longer timeout only after confirming no modal is blocking Live.",
@@ -193,6 +204,17 @@ def _live_failure_diagnostics(exc: Exception, bridge_status: dict | None = None)
         "live_check_failed",
         "Start Ableton Live and select or reload the Ableton_Live_MCP Control Surface; if the bridge remains unresponsive, restart Ableton Live.",
     )
+
+
+def _bridge_status_probe_unresponsive(bridge_status: dict | None) -> bool:
+    if not isinstance(bridge_status, dict):
+        return False
+    if bridge_status.get("server_thread_responsive"):
+        return False
+    if bridge_status.get("ok") is not False:
+        return False
+    text = str(bridge_status.get("error") or "").lower()
+    return "timed out" in text
 
 
 if __name__ == "__main__":

@@ -2810,7 +2810,9 @@ def test_validate_live_failure_prints_structured_diagnostics(tmp_path, monkeypat
     install_remote_script("Ableton_Live_MCP", tmp_path)
 
     class FakeClient:
-        def request(self, _method, _params):
+        def request(self, method, _params):
+            if method == "bridge_status":
+                raise AbletonBridgeError("bridge_status unavailable")
             raise AbletonBridgeError("bridge timed out")
 
     monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
@@ -2826,11 +2828,33 @@ def test_validate_live_failure_prints_structured_diagnostics(tmp_path, monkeypat
     assert "modal" in output.out
 
 
+def test_validate_classifies_bridge_status_timeout_as_unresponsive(tmp_path, monkeypatch, capsys):
+    install_remote_script("Ableton_Live_MCP", tmp_path)
+
+    class FakeClient:
+        def request(self, method, _params):
+            if method == "bridge_status":
+                raise AbletonBridgeError("Ableton bridge request 'bridge_status' timed out after 2s")
+            raise AbletonBridgeError("Ableton bridge request 'batch' timed out after 4s")
+
+    monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
+
+    assert validate_main(["--target-dir", str(tmp_path), "--timeout", "3", "--strict-timeout"]) == 1
+    output = capsys.readouterr()
+    assert '"live_failure_type": "bridge_unresponsive"' in output.out
+    assert '"runtime_mismatch": "bridge_unresponsive"' in output.out
+    assert '"bridge_status": {' in output.out
+    assert '"ok": false' in output.out
+    assert "stop retrying Live API calls" in output.out
+
+
 def test_validate_classifies_live_main_thread_timeout(tmp_path, monkeypatch, capsys):
     install_remote_script("Ableton_Live_MCP", tmp_path)
 
     class FakeClient:
-        def request(self, _method, _params):
+        def request(self, method, _params):
+            if method == "bridge_status":
+                raise AbletonBridgeError("bridge_status unavailable")
             raise AbletonBridgeError("-32000 Timed out waiting for Live main thread")
 
     monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
@@ -2841,6 +2865,25 @@ def test_validate_classifies_live_main_thread_timeout(tmp_path, monkeypatch, cap
     assert '"runtime_mismatch": "live_main_thread_timeout"' in output.out
     assert "modal dialogs" in output.out
     assert "before sending more mutations" in output.out
+
+
+def test_validate_classifies_main_thread_timeout_with_status_timeout_as_process_unresponsive(tmp_path, monkeypatch, capsys):
+    install_remote_script("Ableton_Live_MCP", tmp_path)
+
+    class FakeClient:
+        def request(self, method, _params):
+            if method == "bridge_status":
+                raise AbletonBridgeError("Ableton bridge request 'bridge_status' timed out after 2s")
+            raise AbletonBridgeError("-32000 Timed out waiting for Live main thread during batch after 3s")
+
+    monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
+
+    assert validate_main(["--target-dir", str(tmp_path), "--timeout", "3", "--strict-timeout"]) == 1
+    output = capsys.readouterr()
+    assert '"live_failure_type": "live_process_unresponsive"' in output.out
+    assert '"runtime_mismatch": "live_process_unresponsive"' in output.out
+    assert "socket-thread bridge_status probe also timed out" in output.out
+    assert "OS process sample" in output.out
 
 
 def test_validate_classifies_live_main_thread_hung_when_socket_thread_responds(tmp_path, monkeypatch, capsys):

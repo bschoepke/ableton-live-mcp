@@ -40,7 +40,7 @@ ABLETON_MCP_INSTRUCTIONS = (
     "Compact live_exec/live_batch; limit props/children/strings. "
     "find_similar_sounds requires Live 12+. "
     "AgentAudioTap: master tap+solo target; start with path. "
-    "Idle sockets auto-retry; sent-call timeouts fail closed; client/RS cooldown+serialize; use live_bridge_status before retry. "
+    "Idle sockets auto-retry; sent-call timeouts fail closed; client/RS cooldown+serialize; live_bridge_status timeout=wedged. "
     "Agent must visually verify M4L device UI via live_visual_capture: Ableton-window-only, never capture arbitrary apps/windows, device-detail crop, blank_capture invalid; locked/asleep display blocks capture/e2e. "
     "M4L: arbitrary native/web/mixed UI hot-reloads; wait_status/compact_result + matching command_id. Reuse hosts/IDs; check host_runtime_version; avoid web-renderer buildup; cleanup dry-run before delete. Supports preflight files, UDP hints, throttled fallback wakes, load:false/set/status skip build, host_not_woken=no ack, midiin+midiparse, origin-aligned rect/openrect, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batch/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web: prove signal telemetry+visual delta. No web ack/shrink: reload/simplify or fresh host. "
     "Avoid broad dumps. Gotchas: live_eval expr-only; use live_exec; Live nums JSON; Simpler.sample not settable; ids from summaries. "

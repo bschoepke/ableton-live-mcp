@@ -50,6 +50,8 @@ If validation fails with `live_error`, preserve `live_failure_type`, `runtime_mi
 
 When the bridge socket still responds but Live's main thread does not execute scheduled work, validation reports `live_failure_type: "live_main_thread_hung"` and may include `bridge_status.server_thread_responsive: true`. Treat this as a real Live hang, not a retryable command failure: stop sending Live API mutations, avoid piling up queued callbacks, and ask for explicit authorization before reloading the Control Surface or restarting Live. Use `live_bridge_status` only for no-Live-API socket-thread diagnostics while the set is wedged.
 
+When validation reports `live_failure_type: "bridge_unresponsive"` or `"live_process_unresponsive"`, even the socket-thread `live_bridge_status` probe timed out. Do not keep probing or retry with longer Live API calls; preserve diagnostics, use Ableton-only visual capture or an OS process sample if the display/session allows it, and recover/restart/reload Live only with user authorization.
+
 ## Repository operations
 
 Never push commits, branches, or tags to a remote without explicit user authorization.
