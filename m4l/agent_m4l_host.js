@@ -1781,6 +1781,7 @@ function applyValues(values, shouldReport) {
         shouldReport = true;
     }
     var changed = 0;
+    var shouldPushWebState = shouldReport || valuesRequestWebStatePush(values);
     for (var i = 0; i < values.length; i++) {
         var item = values[i];
         var id = String(item.id);
@@ -1796,7 +1797,19 @@ function applyValues(values, shouldReport) {
         report("set", { changed: changed });
     }
     drainPendingWebUiReads();
-    pushWebState();
+    if (shouldPushWebState) {
+        pushWebState();
+    }
+}
+
+function valuesRequestWebStatePush(values) {
+    for (var i = 0; i < values.length; i++) {
+        var item = values[i] || {};
+        if (item.push_state || item.pushState || item.echo_state || item.echoState) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function sendObjectValue(obj, spec, value, command) {
