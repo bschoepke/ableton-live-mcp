@@ -18,7 +18,7 @@ from prompt_audit import run_generated_m4l_local_preflight, run_prompt_audit
 from server import agent_m4l_status_timeout, agent_m4l_status_timeout_reason, expected_agent_m4l_status_event, make_server, should_build_agent_m4l, summarize_agent_m4l_status, wait_agent_m4l_status
 from validate import main as validate_main
 from similar_sounds import encode_feature
-from smoke import main as smoke_main, run_core_regression, run_smoke
+from smoke import main as smoke_main, run_core_regression, run_generated_m4l_regression, run_smoke
 
 
 class FakeBridge:
@@ -3435,13 +3435,83 @@ def test_core_regression_exercises_existing_non_m4l_surfaces(tmp_path):
     assert audio_call["file_path"] == str(audio_file)
 
 
+def test_generated_m4l_regression_exercises_three_roles():
+    class RegressionBridge:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, method, params):
+            self.calls.append((method, params))
+            if method == "ping":
+                return {"ok": True, "remote_script": {"runtime_version": "test"}}
+            if method == "exec":
+                return {"instrument_path": "live_set tracks 0", "midi_path": "live_set tracks 1"}
+            if method == "clip_add_notes":
+                return {"added": len(params.get("notes") or []), "note_api": "extended", "launched": bool(params.get("fire"))}
+            if method == "transport":
+                return {"playing": True}
+            if method == "get":
+                return {"properties": {"output_meter_level": 0.5, "playing_slot_index": 0}}
+            raise AssertionError(method)
+
+    class RegressionMcp:
+        def __init__(self):
+            self.calls = []
+
+        def handle(self, request):
+            args = request["params"]["arguments"]
+            self.calls.append(args)
+            command = args.get("command") or ("update" if args.get("patch") else "status")
+            role = args.get("role", "instrument")
+            instance = args.get("instance_id", "Device").replace(" ", "_")
+            event = "webui_reload" if command == "web_reload" else ("reload" if command == "update" else command)
+            state = {
+                "level_meter": 0.25,
+                "pitch_value": 60,
+                "input_pitch": 60,
+                "web_title": "Smoke",
+                "web_read_pending": 0,
+            }
+            content = {
+                "role": role,
+                "instance_id": instance,
+                "command": command,
+                "command_file": "/tmp/%s.json" % instance,
+                "status_file": "/tmp/%s_status.json" % instance,
+                "loaded": command == "update",
+                "status": {
+                    "event": event,
+                    "host_runtime_version": "web-reload-1",
+                    "device_width": 760,
+                    "device_height": 170,
+                    "state": state,
+                },
+            }
+            if role == "instrument":
+                content["webui"] = {"webuis": [{"id": "smoke_scope", "html_path": "/tmp/smoke/index.html", "url": "file:///tmp/smoke/index.html"}]}
+            return {"result": {"structuredContent": content}}
+
+    bridge = RegressionBridge()
+    mcp = RegressionMcp()
+    code, output = run_generated_m4l_regression(bridge, mcp=mcp, settle_seconds=0)
+    methods = [method for method, _params in bridge.calls]
+    roles = {call.get("role") for call in mcp.calls if call.get("command") != "status"}
+
+    assert code == 0
+    assert output["ok"] is True
+    assert output["destructive"] is True
+    assert {"instrument", "audio_effect", "midi_effect"} <= roles
+    assert any(call.get("command") == "web_reload" for call in mcp.calls)
+    assert {"ping", "exec", "clip_add_notes", "transport", "get"} <= set(methods)
+
+
 def test_smoke_core_regression_cli_requires_yes(monkeypatch, capsys):
     monkeypatch.setenv("ABLETON_LIVE_MCP_DEBUG", "1")
     monkeypatch.setattr("sys.argv", ["ableton-live-mcp-smoke", "--core-regression"])
 
     assert smoke_main() == 2
     output = capsys.readouterr()
-    assert "Refusing to run destructive core regression without --yes" in output.err
+    assert "Refusing to run destructive smoke regression without --yes" in output.err
 
 
 def test_benchmark_records_latency_and_payload_size():

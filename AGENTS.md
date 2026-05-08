@@ -171,6 +171,8 @@ For generated instrument tests, prefer `live_clip_add_notes` targeting an empty 
 
 For repeated ad-hoc instrument tests that need a clean pattern in the same Session slot, prefer `replace_existing_clip: true` with `create_clip_length` over `clear: true`; replacing the slot clip avoids note-clear APIs and reduces the chance of Live showing the legacy MIDI Remote Script warning modal.
 
+For compact generated-device regression coverage, use `ABLETON_LIVE_MCP_DEBUG=1 .venv/bin/python src/smoke.py --generated-m4l --yes`. It destructively creates fresh `MCP Generated M4L ...` tracks, loads generated instrument/audio-effect/MIDI-effect devices, validates extended MIDI note setup, nonzero instrument/audio-effect telemetry, compact direct status polling, and UI-only `web_reload` without dumping full status JSON.
+
 If Live shows the modal warning that a custom MIDI Remote Script uses an older process to modify MIDI notes, treat that as a validation blocker and preserve it in notes. Do not click through automatically. Prefer the extended note APIs through `live_clip_add_notes`; only pass `allow_legacy_note_api: true` for deliberate compatibility testing in a disposable set.
 
 `live_exec` and `live_eval` reject obsolete MIDI note methods such as `set_notes`, `get_notes`, `remove_notes`, and selected-note APIs by default. Do not bypass this for ordinary generated-device work; use the JSON-safe note helpers instead. `allow_legacy_note_api: true` is only for deliberate compatibility probes in disposable sets.
