@@ -127,6 +127,8 @@ For repeated ad-hoc instrument tests that need a clean pattern in the same Sessi
 
 If Live shows the modal warning that a custom MIDI Remote Script uses an older process to modify MIDI notes, treat that as a validation blocker and preserve it in notes. Do not click through automatically. Prefer the extended note APIs through `live_clip_add_notes`; only pass `allow_legacy_note_api: true` for deliberate compatibility testing in a disposable set.
 
+`live_exec` and `live_eval` reject obsolete MIDI note methods such as `set_notes`, `get_notes`, `remove_notes`, and selected-note APIs by default. Do not bypass this for ordinary generated-device work; use the JSON-safe note helpers instead. `allow_legacy_note_api: true` is only for deliberate compatibility probes in disposable sets.
+
 MIDI note helper responses should report `note_api: "extended"` during normal validation. If a call reports `note_api: "legacy"` or refuses a legacy note API path, treat that as compatibility/debug evidence, not a green e2e signal for Live 12+ generated-device tests.
 
 For rich web UI, put large libraries, models, images, fonts, or generated bundles in the webui `assets` map/list and reference the written relative files from HTML/JS. Asset entries may carry inline `content`/`text`/`base64` or copy bytes from a local `source_path`/`file_path`, which lets generated Three.js/WebGL panels bundle real local modules without stuffing the command JSON. After materialization, command patches should carry only paths and small metadata, not bulky `html`, `css`, `js`, `controls`, or asset source content. This keeps creative UIs such as Three.js scenes practical without making M4L command files slow or fragile.

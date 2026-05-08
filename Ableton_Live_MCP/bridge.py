@@ -34,6 +34,14 @@ AGENT_M4L_RECOVERY_PATCH_KEYS = (
     "objects", "connections", "ui_bindings", "bindings", "webui", "webuis",
     "device_width", "devicewidth", "width", "device_height", "deviceheight", "height",
 )
+LEGACY_NOTE_API_NAMES = (
+    "set_notes",
+    "get_notes",
+    "remove_notes",
+    "replace_selected_notes",
+    "select_all_notes",
+    "deselect_all_notes",
+)
 
 
 class _EncodedResult(list):
@@ -1313,6 +1321,7 @@ class AbletonLiveMCP(ControlSurface):
         return {"previewing": True, "item": self._browser_item_result(None, item, None)}
 
     def _rpc_eval(self, params):
+        self._reject_legacy_note_api_code(params.get("expr"), params)
         ref = params.get("ref")
         obj = self._resolve(ref) if ref else None
         env = {
@@ -1325,6 +1334,7 @@ class AbletonLiveMCP(ControlSurface):
         return eval(params["expr"], env, {})
 
     def _rpc_exec(self, params):
+        self._reject_legacy_note_api_code(params.get("code"), params)
         ref = params.get("ref")
         obj = self._resolve(ref) if ref else None
         env = {
@@ -1337,6 +1347,14 @@ class AbletonLiveMCP(ControlSurface):
         }
         exec(params["code"], env, env)
         return env.get("result")
+
+    def _reject_legacy_note_api_code(self, code, params):
+        if params.get("allow_legacy_note_api"):
+            return
+        compact = "".join(str(code or "").split())
+        for name in LEGACY_NOTE_API_NAMES:
+            if ("%s(" % name) in compact:
+                raise RuntimeError("Refusing obsolete MIDI note API %s in live_exec/live_eval; use live_clip_add_notes/live_clip_update_notes or pass allow_legacy_note_api only for disposable compatibility testing" % name)
 
     def _rpc_observe(self, params):
         obj = self._resolve(params.get("ref"))

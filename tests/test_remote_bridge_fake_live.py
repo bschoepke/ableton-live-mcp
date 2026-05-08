@@ -1292,6 +1292,38 @@ def test_clip_update_notes_refuses_legacy_note_api(monkeypatch):
         raise AssertionError("expected legacy note API refusal")
 
 
+def test_exec_refuses_obsolete_note_api_code(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+
+    try:
+        bridge._rpc_exec({"code": "clip = song.tracks[0].clip_slots[0].clip\nclip.set_notes(())"})
+    except RuntimeError as exc:
+        assert "Refusing obsolete MIDI note API set_notes" in str(exc)
+        assert "live_clip_add_notes" in str(exc)
+    else:
+        raise AssertionError("expected obsolete note API refusal")
+
+
+def test_eval_refuses_obsolete_note_api_code(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+
+    try:
+        bridge._rpc_eval({"expr": "song.tracks[0].clip_slots[0].clip.remove_notes(0, 0, 1, 128)"})
+    except RuntimeError as exc:
+        assert "Refusing obsolete MIDI note API remove_notes" in str(exc)
+    else:
+        raise AssertionError("expected obsolete note API refusal")
+
+
+def test_exec_can_explicitly_allow_obsolete_note_api_code(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    result = bridge._rpc_exec({
+        "code": "result = 'remove_notes(compatibility probe only)'",
+        "allow_legacy_note_api": True,
+    })
+    assert result == "remove_notes(compatibility probe only)"
+
+
 def test_clip_add_notes_accepts_json_note_specs(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     result = bridge._rpc_clip_add_notes({

@@ -425,22 +425,16 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "include_self": {"type": "boolean"},
         "db_path": {"type": "string"},
     }), find_similar_sounds))
-    server.add_tool(Tool("live_eval", (
-        "Evaluate a Python expression inside Live with song, app, obj, and Live bindings. "
-        + ABLETON_AGENT_GUIDE
-        + " Use live_exec for statements; prefer installed browser/library assets before generated assets unless asked."
-    ), schema({
+    server.add_tool(Tool("live_eval", "Evaluate Live Python expression; use live_exec for statements.", schema({
         "expr": {"type": "string"},
         "ref": ref,
+        "allow_legacy_note_api": {"type": "boolean"},
         **response_controls,
     }, ["expr"]), forward("eval")))
-    server.add_tool(Tool("live_exec", (
-        "Execute Python statements inside Live with song, app, obj, this, Live, and result bindings. "
-        + "Set result to a compact dict/list summary to return it. "
-        + ABLETON_AGENT_GUIDE
-    ), schema({
+    server.add_tool(Tool("live_exec", "Execute Live Python statements; set result for compact return.", schema({
         "code": {"type": "string"},
         "ref": ref,
+        "allow_legacy_note_api": {"type": "boolean"},
         **guarded_response_controls,
         **strict_timeout_control,
     }, ["code"]), forward("exec")))

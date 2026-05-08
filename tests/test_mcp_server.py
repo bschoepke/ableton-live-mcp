@@ -1596,7 +1596,7 @@ def make_similarity_db(tmp_path):
 def test_exec_tool_forwards_code_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)
-    args = {"code": "result = {'tracks': len(song.tracks)}", "max_items": 10}
+    args = {"code": "result = {'tracks': len(song.tracks)}", "max_items": 10, "allow_legacy_note_api": True}
     response = server.handle({
         "jsonrpc": "2.0",
         "id": 41,
@@ -1605,6 +1605,11 @@ def test_exec_tool_forwards_code_to_bridge():
     })
     assert bridge.calls == [("exec", args)]
     assert response["result"]["structuredContent"]["method"] == "exec"
+    tools = server.handle({"jsonrpc": "2.0", "id": 42, "method": "tools/list"})["result"]["tools"]
+    exec_tool = next(tool for tool in tools if tool["name"] == "live_exec")
+    eval_tool = next(tool for tool in tools if tool["name"] == "live_eval")
+    assert "allow_legacy_note_api" in exec_tool["inputSchema"]["properties"]
+    assert "allow_legacy_note_api" in eval_tool["inputSchema"]["properties"]
 
 
 def test_browser_search_schema_mentions_plugins_root():
