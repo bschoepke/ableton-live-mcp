@@ -275,6 +275,7 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "__midi_wake" in source
     assert "handleWebTick" in source
     assert "agent_web_tick" in source
+    assert 'name === "web_tick" || name === "agent_web_tick"' in source
     assert "ACTIVITY_WAKE_MIN_INTERVAL" in source
     assert "handleActivityWake" in source
     assert "command_wake_skipped" in source

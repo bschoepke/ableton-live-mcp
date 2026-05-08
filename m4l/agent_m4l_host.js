@@ -370,6 +370,8 @@ function handleTaggedWebUiMessage(tag, atoms) {
         handleWebUiReadyMessage(rest, id);
     } else if (name === "web_error" || name === "webError" || name === "error") {
         handleWebUiErrorMessage(rest, id);
+    } else if (name === "web_tick" || name === "agent_web_tick") {
+        handleWebTick();
     } else if (name === "set" || name === "param") {
         applyValues([{ id: String(rest[0]), value: rest[1] }], true);
     } else if (name === "set_silent" || name === "param_silent") {
