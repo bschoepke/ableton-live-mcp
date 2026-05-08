@@ -23,6 +23,7 @@ DEVICE_WIDTH_PADDING = 20
 DEFAULT_DEVICE_HEIGHT = 170
 MIN_DEVICE_HEIGHT = 120
 DEVICE_HEIGHT_PADDING = 20
+STATUS_PATH_PREVIEW_LIMIT = 24
 
 ROLE_PRESETS = {
     "audio_effect": {
@@ -214,6 +215,22 @@ def replace_ptch_chunk(container: bytes, payload: bytes) -> bytes:
         + payload
         + container[payload_end:]
     )
+
+
+def extract_ptch_chunk(container: bytes) -> bytes:
+    index = container.find(b"ptch")
+    if index < 0:
+        raise ValueError("AMXD container is missing a ptch chunk")
+    size_start = index + 4
+    size_end = size_start + 4
+    if size_end > len(container):
+        raise ValueError("AMXD container has a truncated ptch chunk header")
+    size = int.from_bytes(container[size_start:size_end], "little")
+    payload_start = size_end
+    payload_end = payload_start + size
+    if payload_end > len(container):
+        raise ValueError("AMXD container has a truncated ptch chunk payload")
+    return container[payload_start:payload_end]
 
 
 def _minimal_amxd_container(role: str, payload: bytes) -> bytes:
@@ -485,6 +502,108 @@ def contains_agent_m4l_devices(folder: Path) -> bool:
         return False
 
 
+def agent_m4l_wrapper_paths() -> list[Path]:
+    paths: list[Path] = []
+    roots = [GENERATED_DIR]
+    for role in ROLE_PRESETS:
+        roots.append(install_folder(role))
+    for root in roots:
+        try:
+            paths.extend(sorted(root.glob("AgentM4L_*.maxpat")))
+            paths.extend(sorted(root.glob("AgentM4L_*.amxd")))
+        except Exception:
+            continue
+    return paths
+
+
+def wrapper_has_console_status_sink(path: Path) -> bool:
+    try:
+        if path.suffix.lower() == ".maxpat":
+            patch = json.loads(path.read_text(encoding="utf-8"))
+        elif path.suffix.lower() == ".amxd":
+            payload = extract_ptch_chunk(path.read_bytes()).rstrip(b"\x00")
+            patch = json.loads(payload.decode("utf-8"))
+        else:
+            return False
+    except Exception:
+        return False
+    return bool(console_status_sink_ids(patch))
+
+
+def console_status_sink_ids(patch: dict[str, Any]) -> set[str]:
+    sink_ids: set[str] = set()
+    boxes = patch.get("patcher", {}).get("boxes") or []
+    for item in boxes:
+        box = item.get("box") if isinstance(item, dict) else None
+        if not isinstance(box, dict):
+            continue
+        text = str(box.get("text") or "")
+        box_id = str(box.get("id") or "")
+        if text.startswith("print AgentM4L_") or (box_id == "status" and text.startswith("print ")):
+            sink_ids.add(box_id)
+    return sink_ids
+
+
+def remove_console_status_sinks(patch: dict[str, Any]) -> bool:
+    patcher = patch.get("patcher")
+    if not isinstance(patcher, dict):
+        return False
+    sink_ids = console_status_sink_ids(patch)
+    if not sink_ids:
+        return False
+    boxes = patcher.get("boxes") or []
+    patcher["boxes"] = [
+        item for item in boxes
+        if str((item.get("box") or {}).get("id") or "") not in sink_ids
+    ]
+    lines = patcher.get("lines") or []
+    kept_lines = []
+    for item in lines:
+        line = item.get("patchline") if isinstance(item, dict) else None
+        if not isinstance(line, dict):
+            kept_lines.append(item)
+            continue
+        source = line.get("source") or []
+        destination = line.get("destination") or []
+        source_id = str(source[0]) if source else ""
+        destination_id = str(destination[0]) if destination else ""
+        if source_id in sink_ids or destination_id in sink_ids:
+            continue
+        kept_lines.append(item)
+    patcher["lines"] = kept_lines
+    return True
+
+
+def repair_console_status_sink(path: Path) -> bool:
+    try:
+        if path.suffix.lower() == ".maxpat":
+            patch = json.loads(path.read_text(encoding="utf-8"))
+            if not remove_console_status_sinks(patch):
+                return False
+            path.write_text(json.dumps(patch, indent=2), encoding="utf-8")
+            return True
+        if path.suffix.lower() == ".amxd":
+            container = path.read_bytes()
+            payload = extract_ptch_chunk(container).rstrip(b"\x00")
+            patch = json.loads(payload.decode("utf-8"))
+            if not remove_console_status_sinks(patch):
+                return False
+            new_payload = json.dumps(patch, indent=2).encode("utf-8") + b"\x00"
+            path.write_bytes(replace_ptch_chunk(container, new_payload))
+            return True
+    except Exception:
+        return False
+    return False
+
+
+def stale_console_status_wrapper_paths() -> list[Path]:
+    return [path for path in agent_m4l_wrapper_paths() if wrapper_has_console_status_sink(path)]
+
+
+def preview_paths(paths: list[str]) -> list[str]:
+    return paths[:STATUS_PATH_PREVIEW_LIMIT]
+
+
 def agent_m4l_host_status() -> dict[str, Any]:
     source_hash = sha256_file(HOST_JS) if HOST_JS.is_file() else None
     checked = []
@@ -506,21 +625,27 @@ def agent_m4l_host_status() -> dict[str, Any]:
             missing.append(str(path))
         elif not current:
             stale.append(str(path))
+    wrapper_paths = agent_m4l_wrapper_paths()
+    stale_wrappers = [str(path) for path in stale_console_status_wrapper_paths()]
     return {
         "source": str(HOST_JS),
         "source_sha256": source_hash,
-        "current": bool(source_hash) and not missing and not stale,
+        "current": bool(source_hash) and not missing and not stale and not stale_wrappers,
         "targets_checked": len(checked),
         "targets": checked,
         "missing": missing,
         "stale": stale,
+        "stale_wrappers": preview_paths(stale_wrappers),
+        "stale_wrappers_count": len(stale_wrappers),
+        "stale_wrappers_checked": len(wrapper_paths),
     }
 
 
-def sync_host_js(dry_run: bool = False) -> dict[str, Any]:
+def sync_host_js(dry_run: bool = False, repair_wrappers: bool = True) -> dict[str, Any]:
     before = agent_m4l_host_status()
     copied = []
     skipped = []
+    repaired_wrappers = []
     if not HOST_JS.is_file():
         raise FileNotFoundError("Agent M4L host JS is missing: %s" % HOST_JS)
     source_hash = before.get("source_sha256")
@@ -533,9 +658,18 @@ def sync_host_js(dry_run: bool = False) -> dict[str, Any]:
             path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(HOST_JS, path)
         copied.append(str(path))
+    if repair_wrappers:
+        for path in stale_console_status_wrapper_paths():
+            if dry_run:
+                repaired_wrappers.append(str(path))
+            elif repair_console_status_sink(path):
+                repaired_wrappers.append(str(path))
     after = before if dry_run else agent_m4l_host_status()
     after["copied"] = copied
     after["skipped"] = skipped
+    after["repaired_wrappers"] = preview_paths(repaired_wrappers)
+    after["repaired_wrappers_count"] = len(repaired_wrappers)
+    after["repair_wrappers"] = repair_wrappers
     after["dry_run"] = dry_run
     after["source_sha256"] = source_hash
     return after
@@ -782,11 +916,12 @@ def main() -> None:
 
 
 def sync_host_main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Sync Agent M4L host JS beside generated/installed AgentM4L devices.")
+    parser = argparse.ArgumentParser(description="Sync Agent M4L host files beside generated/installed AgentM4L devices.")
     parser.add_argument("--dry-run", action="store_true", help="Report stale/missing host JS copies without writing.")
+    parser.add_argument("--no-repair-wrappers", action="store_true", help="Do not remove stale Max Console print sinks from generated/installed wrappers.")
     args = parser.parse_args(argv)
     try:
-        print(json.dumps(sync_host_js(dry_run=args.dry_run), indent=2, sort_keys=True))
+        print(json.dumps(sync_host_js(dry_run=args.dry_run, repair_wrappers=not args.no_repair_wrappers), indent=2, sort_keys=True))
     except Exception as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2, sort_keys=True))
         return 1

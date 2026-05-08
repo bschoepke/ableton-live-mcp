@@ -2152,7 +2152,7 @@ def test_validate_checks_agent_m4l_host_companion_js(tmp_path, monkeypatch, caps
     install_remote_script("Ableton_Live_MCP", tmp_path / "remote")
     assert validate_main(["--skip-live", "--target-dir", str(tmp_path / "remote")]) == 1
     failed = capsys.readouterr()
-    assert "companion JS is missing or stale" in failed.err
+    assert "host files are missing or stale" in failed.err
 
     (generated / "agent_m4l_host.js").write_text("current host\n", encoding="utf-8")
     (install / "agent_m4l_host.js").write_text("current host\n", encoding="utf-8")

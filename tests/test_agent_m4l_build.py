@@ -457,6 +457,52 @@ def test_agent_m4l_sync_host_js_updates_existing_targets(tmp_path, monkeypatch):
     assert (install / "agent_m4l_host.js").read_text(encoding="utf-8") == "current host\n"
 
 
+def test_agent_m4l_sync_repairs_stale_console_print_wrappers(tmp_path, monkeypatch):
+    source = tmp_path / "source" / "agent_m4l_host.js"
+    source.parent.mkdir()
+    source.write_text("current host\n", encoding="utf-8")
+    generated = tmp_path / "generated"
+    generated.mkdir()
+    install = tmp_path / "install" / "audio"
+    install.mkdir(parents=True)
+
+    patch = make_host_patch("audio_effect", "Console Test", "Console Test")
+    patch["patcher"]["boxes"].append({
+        "box": {
+            "id": "status",
+            "maxclass": "newobj",
+            "text": "print AgentM4L_audio_effect_Console_Test",
+        },
+    })
+    patch["patcher"]["lines"].append({"patchline": {"source": ["js", 2], "destination": ["status", 0]}})
+    patch_path = generated / "AgentM4L_audio_effect_Console_Test.maxpat"
+    amxd_path = install / "AgentM4L_audio_effect_Console_Test.amxd"
+    patch_path.write_text(json.dumps(patch), encoding="utf-8")
+    build_amxd(patch_path, amxd_path, "audio_effect")
+    (generated / "AgentM4L_audio_effect_Console_Test.amxd").write_text("device", encoding="utf-8")
+    (generated / "agent_m4l_host.js").write_text("current host\n", encoding="utf-8")
+    (install / "agent_m4l_host.js").write_text("current host\n", encoding="utf-8")
+
+    monkeypatch.setattr(agent_m4l, "HOST_JS", source)
+    monkeypatch.setattr(agent_m4l, "GENERATED_DIR", generated)
+    monkeypatch.setattr(agent_m4l, "ROLE_PRESETS", {"audio_effect": agent_m4l.ROLE_PRESETS["audio_effect"]})
+    monkeypatch.setattr(agent_m4l, "install_folder", lambda _role: install)
+
+    before = agent_m4l.agent_m4l_host_status()
+    assert before["current"] is False
+    assert before["stale_wrappers_count"] == 2
+    assert str(patch_path) in before["stale_wrappers"]
+    assert str(amxd_path) in before["stale_wrappers"]
+
+    synced = agent_m4l.sync_host_js()
+    assert synced["current"] is True
+    assert synced["repaired_wrappers_count"] == 2
+    assert sorted(Path(path).suffix for path in synced["repaired_wrappers"]) == [".amxd", ".maxpat"]
+    repaired_patch = json.loads(patch_path.read_text(encoding="utf-8"))
+    assert not agent_m4l.console_status_sink_ids(repaired_patch)
+    assert b"print AgentM4L_audio_effect_Console_Test" not in amxd_path.read_bytes()
+
+
 def test_agent_m4l_role_amxdtype_values_match_live_categories():
     assert make_host_patch("audio_effect", "Fx")["patcher"]["amxdtype"] == 1633771873
     assert make_host_patch("instrument", "Inst")["patcher"]["amxdtype"] == 1768515945

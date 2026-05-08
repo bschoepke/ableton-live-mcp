@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if not m4l_host_ok and not args.allow_stale_m4l_host:
         print(json.dumps(results, indent=2, sort_keys=True))
-        print("Ableton Live MCP validation failed: generated Agent M4L host companion JS is missing or stale", file=sys.stderr)
+        print("Ableton Live MCP validation failed: generated Agent M4L host files are missing or stale", file=sys.stderr)
         return 1
     if args.skip_live:
         print(json.dumps(results, indent=2, sort_keys=True))
