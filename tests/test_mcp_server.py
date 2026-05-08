@@ -76,6 +76,7 @@ def test_initialize_includes_general_model_instructions():
     server = make_server(FakeBridge())
     response = server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
     instructions = response["result"]["instructions"]
+    assert "review AGENTS.md" in instructions
     assert "devices/plugins unless asked" in instructions
     assert "roots:['plugins']" in instructions
     assert "find_similar_sounds requires Live 12+" in instructions
