@@ -83,6 +83,7 @@ def test_initialize_includes_general_model_instructions():
     assert "find_similar_sounds requires Live 12+" in instructions
     assert "start with path" in instructions
     assert "Idle sockets auto-retry" in instructions
+    assert "Validate runtime_current" in instructions
     assert "sent-call timeouts fail closed" in instructions
     assert "client/RS cooldown" in instructions
     assert "live_bridge_status" in instructions
