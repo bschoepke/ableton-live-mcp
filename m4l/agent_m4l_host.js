@@ -773,7 +773,7 @@ function createWebUi(webui, index, byId) {
             }
         }
     }
-    scheduleWebUiRead(obj, path, id, 0, readMessage, fallbackPath);
+    scheduleWebUiReadSeries(obj, path, id, readMessage, fallbackPath);
 }
 
 function reusableWebIdsForSpec(spec) {
@@ -826,16 +826,18 @@ function containsObject(list, obj) {
     return false;
 }
 
-function scheduleWebUiRead(obj, path, id, attempt, readMessage, fallbackPath) {
-    attempt = Number(attempt || 0);
-    var delay = attempt === 0 ? 0 : webUiReadDelay(attempt);
-    pendingWebUiReads.push({ obj: obj, path: String(path), id: String(id), attempt: attempt, read_message: String(readMessage || "read"), fallback_path: String(fallbackPath || ""), due_time: nowMs() + delay });
-    state.web_read_scheduled = (state.web_read_scheduled || 0) + 1;
-    state.web_read_pending = pendingWebUiReads.length;
-    if (attempt === 0) {
-        readPendingWebUis();
-        return;
+function scheduleWebUiReadSeries(obj, path, id, readMessage, fallbackPath) {
+    var baseTime = nowMs();
+    var dueTime = baseTime;
+    for (var attempt = 0; attempt < WEBUI_READ_DELAYS.length; attempt++) {
+        if (attempt > 0) {
+            dueTime += webUiReadDelay(attempt);
+        }
+        pendingWebUiReads.push({ obj: obj, path: String(path), id: String(id), attempt: attempt, read_message: String(readMessage || "read"), fallback_path: String(fallbackPath || ""), due_time: dueTime });
     }
+    state.web_read_scheduled = (state.web_read_scheduled || 0) + WEBUI_READ_DELAYS.length;
+    state.web_read_pending = pendingWebUiReads.length;
+    readPendingWebUis();
     scheduleNextPendingWebRead();
 }
 
@@ -893,9 +895,7 @@ function readPendingWebUis() {
         } catch (err) {
             report("error", { reason: "webui_load_failed", id: id, detail: String(err) });
         }
-        if (!loadedWebUis[id] && reads[i].attempt + 1 < WEBUI_READ_DELAYS.length) {
-            scheduleWebUiRead(reads[i].obj, reads[i].path, id, reads[i].attempt + 1, reads[i].read_message, reads[i].fallback_path);
-        } else if (!loadedWebUis[id]) {
+        if (!loadedWebUis[id] && reads[i].attempt + 1 >= WEBUI_READ_DELAYS.length) {
             state["web_" + key + "_read_exhausted"] = 1;
             report("error", { reason: "webui_read_exhausted", id: id, attempts: reads[i].attempt + 1 });
         }

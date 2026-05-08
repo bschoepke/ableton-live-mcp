@@ -125,6 +125,8 @@ The command-file poll path must also service due web UI reads, even when no comm
 
 When scheduling browser read retries, arm a due-time task without repeatedly canceling/rescheduling the same `Task` from inside its callback. Max JS `Task` callbacks can be fragile under load; duplicate wakes are safer than stranding all later retries, as long as each wake checks due time before reading.
 
+Pre-arm the full web-read retry series with per-attempt due times when a panel is created. Do not rely on scheduling attempt N+1 from inside attempt N; in stressed sets that callback chain can stop after one fallback attempt even while the host is otherwise alive.
+
 When a generated web panel has a local `html_path`, pass that filesystem path to the Max `readfile` message first and keep `url`/`html_url` available for fallback `read` attempts. The host alternates to URL-style `read` on retries when a local page does not acknowledge, because different Max/CEF states can prefer different load paths.
 
 For direct generated audio-effect graphs, connect `plugin` outlet 0/1 through the generated processing objects and into `plugout` inlet 0/1. The static `audio-in-l`, `audio-in-r`, `audio-out-l`, and `audio-out-r` objects are named send/receive bus endpoints for cross-patcher routing, not direct signal sources/destinations for a simple pass-through chain.
