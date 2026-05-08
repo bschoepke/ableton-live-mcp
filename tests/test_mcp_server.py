@@ -114,6 +114,8 @@ def test_initialize_includes_general_model_instructions():
     assert "No default piano/knob UI/templates" in instructions
     assert "ui_bindings/no loops" in instructions
     assert "Agent must visually verify M4L device UI" in instructions
+    assert "inspect pixels" in instructions
+    assert "status/meter not enough" in instructions
     assert "Ableton-window-only" in instructions
     assert "no arbitrary apps/windows" in instructions
     assert "select target then device-detail crop" in instructions
