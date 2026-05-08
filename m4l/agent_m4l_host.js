@@ -60,6 +60,7 @@ var lastActivityWakeAt = 0;
 var pollTaskScheduled = 0;
 var commandAckProtectedUntil = 0;
 var commandAckProtectedId = "";
+var commandAckProtectedEvent = "";
 var lastUiBindingReportAt = 0;
 var lastWebStatePushAt = 0;
 var webStatePushTask = null;
@@ -1434,6 +1435,7 @@ function shouldSuppressUiBindingStatusReport(now) {
     if (now > commandAckProtectedUntil) {
         commandAckProtectedId = "";
         commandAckProtectedUntil = 0;
+        commandAckProtectedEvent = "";
         return shouldThrottleUiBindingStatusReport(now);
     }
     return true;
@@ -2262,9 +2264,34 @@ function report(eventName, payload) {
     if (connectionErrorsTruncated) {
         payload.connection_errors_truncated = connectionErrorsTruncated;
     }
+    if (shouldPreserveCommandAckStatus(eventName)) {
+        state.command_ack_status_preserved = (state.command_ack_status_preserved || 0) + 1;
+        state.command_ack_status_preserved_event = shortStatusText(eventName);
+        return;
+    }
     writeStatus(payload);
     outlet(2, "status", eventName, currentCommandId || "", dynamicObjects.length, webObjects.length);
     protectCommandAck(eventName);
+}
+
+function shouldPreserveCommandAckStatus(eventName) {
+    if (isCommandAckEvent(eventName)) {
+        return false;
+    }
+    if (!commandAckProtectedId || !currentCommandId || commandAckProtectedId !== currentCommandId) {
+        return false;
+    }
+    if (commandAckProtectedEvent === "reload") {
+        return false;
+    }
+    var now = currentTimeMs();
+    if (now > commandAckProtectedUntil) {
+        commandAckProtectedId = "";
+        commandAckProtectedUntil = 0;
+        commandAckProtectedEvent = "";
+        return false;
+    }
+    return true;
 }
 
 function protectCommandAck(eventName) {
@@ -2272,6 +2299,7 @@ function protectCommandAck(eventName) {
         return;
     }
     commandAckProtectedId = currentCommandId;
+    commandAckProtectedEvent = String(eventName || "");
     commandAckProtectedUntil = currentTimeMs() + COMMAND_ACK_PROTECT_MS;
 }
 

@@ -147,9 +147,13 @@ Generated web UI should react through the generic host state channel, not bespok
 
 The host deliberately sends a slim, throttled web-state payload to `jweb`/`jbrowser` panels. Treat `agentm4lstate` as a low-rate control/telemetry feed, not a video-rate transport. Do not depend on internal diagnostics such as `web_read_*`, `command_wake_*`, or `live_parameter_*` being present in web state; request explicit compact status snapshots for diagnostics instead.
 
+Generated-device status files are command acknowledgement channels, not web event logs. The host protects fresh `reload`/`status`/`set` acknowledgements from being overwritten by unrelated `webui` title/ready/heartbeat reports; agents should poll for the expected event and request explicit status snapshots when they need diagnostics.
+
 Creative web panels must budget their own renderer work. Prefer event-driven redraws or cap canvas/WebGL/Three.js loops around 24-30 FPS unless the validation specifically needs a higher frame rate, and pause or lower the rate when the visual is idle, transport is stopped, or no recent audio/MIDI telemetry has changed. A beautiful panel that keeps Live or Max Helper renderers hot while silent is a reliability failure, even if command delivery still works.
 
 For audio-reactive web visuals, validation must prove reactivity to real audio telemetry, not only parameter changes. Drive web state from an audio probe such as `peakamp~`/meter/analyzer via a non-settable telemetry binding, then compare at least two states caused by changing the actual audio source path, such as upstream instrument/device on versus off or signal versus silence. Require both status evidence that the audio-derived telemetry changed and nonblank Ableton visual captures showing the web visual changed.
+
+Clock audio telemetry probes explicitly at a modest rate, for example `qmetro 60` into `peakamp~`, `snapshot~`, or the chosen analyzer. Do not assume a signal object will push fresh values into a native number box or web state without a scheduler tick.
 
 For audio-effect validation, prefer the cleanest available source/silence toggle over fighting transport mechanics. If arrangement imports or timeline seeks behave unpredictably in a busy set, load the generated effect on the master track or another known audio path fed by an already-playing instrument/clip, then compare telemetry and captures with upstream tracks unmuted versus muted/stopped. This validates the effect and web visual reactivity without depending on brittle arrangement-playhead setup.
 

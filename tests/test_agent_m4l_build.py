@@ -286,6 +286,10 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "COMMAND_ACK_PROTECT_MS" in source
     assert "UI_BINDING_REPORT_MIN_INTERVAL" in source
     assert "WEB_STATE_PUSH_MIN_INTERVAL" in source
+    assert "shouldPreserveCommandAckStatus" in source
+    assert "command_ack_status_preserved" in source
+    assert "commandAckProtectedId !== currentCommandId" in source
+    assert 'commandAckProtectedEvent === "reload"' in source
     assert "reportUiBindingSet" in source
     assert "shouldSuppressUiBindingStatusReport" in source
     assert "shouldThrottleUiBindingStatusReport" in source
