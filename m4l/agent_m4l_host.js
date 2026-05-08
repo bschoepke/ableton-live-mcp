@@ -46,6 +46,7 @@ var DEVICE_HEIGHT_PADDING = 20;
 var currentDeviceWidth = DEFAULT_DEVICE_WIDTH;
 var currentDeviceHeight = DEFAULT_DEVICE_HEIGHT;
 var lastActivityWakeAt = 0;
+var pollTaskScheduled = 0;
 
 function loadbang() {
     startStaticPolling();
@@ -79,10 +80,27 @@ function startStaticPolling() {
 
 function start_polling() {
     if (!pollTask) {
-        pollTask = new Task(pollCommandFile, this);
-        pollTask.interval = FALLBACK_POLL_INTERVAL;
-        pollTask.repeat();
+        pollTask = new Task(handlePollTask, this);
     }
+    schedulePollTask(FALLBACK_POLL_INTERVAL);
+}
+
+function schedulePollTask(delay) {
+    if (!pollTask || pollTaskScheduled) {
+        return;
+    }
+    try {
+        pollTaskScheduled = 1;
+        pollTask.schedule(Number(delay || FALLBACK_POLL_INTERVAL));
+    } catch (err) {
+        pollTaskScheduled = 0;
+    }
+}
+
+function handlePollTask() {
+    pollTaskScheduled = 0;
+    handleActivityWake("task");
+    schedulePollTask(FALLBACK_POLL_INTERVAL);
 }
 
 function pollCommandFile() {

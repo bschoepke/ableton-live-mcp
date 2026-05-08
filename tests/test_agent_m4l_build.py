@@ -251,7 +251,9 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "LiveAPI" in source
     assert "directLiveApiObserversEnabled" in source
     assert "state.live_api_observers_enabled" in source
-    assert "pollTask.interval = FALLBACK_POLL_INTERVAL" in source
+    assert "pollTask = new Task(handlePollTask, this)" in source
+    assert "schedulePollTask(FALLBACK_POLL_INTERVAL)" in source
+    assert "handleActivityWake(\"task\")" in source
     assert "startLiveParameterObservers" in source
     assert "handleLiveParameterChange" in source
     assert "isCommandTriggerName" in source
