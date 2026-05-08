@@ -104,17 +104,39 @@ def _scenario_library_sample_track(client: AbletonBridgeClient) -> dict[str, Any
         return _scenario_result("library_sample_track", "Use an installed cowbell sample", calls, skipped="no cowbell sample found")
     track_path = calls[1]["result"]["track_path"]
     calls.append(_call(client, "browser_load", {"item": {"id": results[0]["id"]}, "target_track": {"path": track_path}}, "load_sample_into_track"))
-    calls.append(_call(client, "exec", {"code": _ADD_SAMPLE_NOTES_CODE % track_path, "timeout": 5}, "add_sample_midi_hook"))
+    calls.append(_call(client, "clip_add_notes", {
+        "ref": {"path": "%s clip_slots 0" % track_path},
+        "create_clip_length": 4.0,
+        "clip_name": "Audit Cowbell Hook",
+        "notes": [{"pitch": 60, "start_time": start, "duration": 0.1, "velocity": 100} for start in (0.0, 0.75, 1.5, 2.25, 3.0)],
+    }, "add_sample_midi_hook"))
+    calls.append(_call(client, "clip_duplicate_to_arrangement", {
+        "track": {"path": track_path},
+        "clip": {"path": "%s clip_slots 0 clip" % track_path},
+        "destination_time": 16.0,
+    }, "duplicate_sample_hook_to_arrangement"))
     return _scenario_result("library_sample_track", "Use an installed cowbell sample", calls)
 
 
 def _scenario_existing_project_edit(client: AbletonBridgeClient) -> dict[str, Any]:
     calls = [
-        _call(client, "exec", {"code": _EXISTING_EDIT_SETUP_CODE, "timeout": 5}, "seed_existing_midi_arrangement_clip"),
-        _call(client, "set_summary", {"track_query": "Audit Existing MIDI", "track_limit": 1, "clip_slot_limit": 2, "device_limit": 2, "arrangement_clip_limit": 8}, "summarize_existing_project"),
+        _call(client, "exec", {"code": _EXISTING_EDIT_SETUP_CODE, "timeout": 5}, "create_existing_midi_track"),
     ]
+    track_path = calls[0]["result"]["track_path"]
+    calls.append(_call(client, "clip_add_notes", {
+        "ref": {"path": "%s clip_slots 0" % track_path},
+        "create_clip_length": 4.0,
+        "clip_name": "MCP Prompt Audit Existing",
+        "notes": [{"pitch": 60 + index, "start_time": index * 0.5, "duration": 0.25, "velocity": 50 + index * 4} for index in range(8)],
+    }, "seed_existing_midi_session_clip"))
+    calls.append(_call(client, "clip_duplicate_to_arrangement", {
+        "track": {"path": track_path},
+        "clip": {"path": "%s clip_slots 0 clip" % track_path},
+        "destination_time": 32.0,
+    }, "seed_existing_midi_arrangement_clip"))
+    calls.append(_call(client, "set_summary", {"track_query": "Audit Existing MIDI", "track_limit": 1, "clip_slot_limit": 2, "device_limit": 2, "arrangement_clip_limit": 8}, "summarize_existing_project"))
     clip_id = None
-    for track in calls[1]["result"].get("tracks", []):
+    for track in calls[-1]["result"].get("tracks", []):
         for clip in track.get("arrangement_clips") or []:
             if clip.get("name") == "MCP Prompt Audit Existing":
                 clip_id = clip["id"]
@@ -128,12 +150,24 @@ def _scenario_existing_project_edit(client: AbletonBridgeClient) -> dict[str, An
 
 def _scenario_clip_automation_edit(client: AbletonBridgeClient) -> dict[str, Any]:
     calls = [
-        _call(client, "exec", {"code": _AUTOMATION_SETUP_CODE, "timeout": 5}, "seed_existing_automation_clip"),
-        _call(client, "set_summary", {"track_query": "Audit Automation", "track_limit": 1, "clip_slot_limit": 2, "device_limit": 1, "arrangement_clip_limit": 4}, "summarize_automation_target"),
+        _call(client, "exec", {"code": _AUTOMATION_SETUP_CODE, "timeout": 5}, "create_automation_track"),
     ]
+    track_path = calls[0]["result"]["track_path"]
+    calls.append(_call(client, "clip_add_notes", {
+        "ref": {"path": "%s clip_slots 0" % track_path},
+        "create_clip_length": 4.0,
+        "clip_name": "MCP Prompt Audit Automation",
+        "notes": [{"pitch": 48, "start_time": start, "duration": 0.25, "velocity": 76} for start in (0.0, 1.0, 2.0, 3.0)],
+    }, "seed_automation_session_clip"))
+    calls.append(_call(client, "clip_duplicate_to_arrangement", {
+        "track": {"path": track_path},
+        "clip": {"path": "%s clip_slots 0 clip" % track_path},
+        "destination_time": 40.0,
+    }, "seed_existing_automation_clip"))
+    calls.append(_call(client, "set_summary", {"track_query": "Audit Automation", "track_limit": 1, "clip_slot_limit": 2, "device_limit": 1, "arrangement_clip_limit": 4}, "summarize_automation_target"))
     clip_id = None
     track_index = None
-    for track in calls[1]["result"].get("tracks", []):
+    for track in calls[-1]["result"].get("tracks", []):
         if track.get("name") == "Audit Automation":
             track_index = track.get("index")
         for clip in track.get("clips") or []:
@@ -867,46 +901,20 @@ song.view.selected_track = track
 result = {"track_path": "live_set tracks %s" % (len(song.tracks) - 1), "track": track.name}
 '''
 
-_ADD_SAMPLE_NOTES_CODE = r'''
-track = this._resolve_path("%s")
-if not track.clip_slots[0].has_clip:
-    track.clip_slots[0].create_clip(4.0)
-clip = track.clip_slots[0].clip
-clip.name = "Audit Cowbell Hook"
-specs = [Live.Clip.MidiNoteSpecification(pitch=60, start_time=start, duration=0.1, velocity=100, mute=False) for start in (0.0, 0.75, 1.5, 2.25, 3.0)]
-clip.add_new_notes(tuple(specs))
-track.duplicate_clip_to_arrangement(clip, 16.0)
-result = {"clip": clip.name, "notes": len(specs), "arrangement_clip_count": len(track.arrangement_clips)}
-'''
-
 _EXISTING_EDIT_SETUP_CODE = r'''
 song.create_midi_track(len(song.tracks))
 track = song.tracks[-1]
 track.name = "Audit Existing MIDI"
-slot = track.clip_slots[0]
-slot.create_clip(4.0)
-clip = slot.clip
-clip.name = "MCP Prompt Audit Existing"
-specs = [Live.Clip.MidiNoteSpecification(pitch=60 + index, start_time=index * 0.5, duration=0.25, velocity=50 + index * 4, mute=False) for index in range(8)]
-clip.add_new_notes(tuple(specs))
-arrangement_clip = track.duplicate_clip_to_arrangement(clip, 32.0)
-arrangement_clip.name = "MCP Prompt Audit Existing"
-result = {"track": track.name, "notes": len(specs), "arrangement_clip_count": len(track.arrangement_clips)}
+song.view.selected_track = track
+result = {"track_path": "live_set tracks %s" % (len(song.tracks) - 1), "track": track.name}
 '''
 
 _AUTOMATION_SETUP_CODE = r'''
 song.create_midi_track(len(song.tracks))
 track = song.tracks[-1]
 track.name = "Audit Automation"
-slot = track.clip_slots[0]
-slot.create_clip(4.0)
-clip = slot.clip
-clip.name = "MCP Prompt Audit Automation"
-specs = [Live.Clip.MidiNoteSpecification(pitch=48, start_time=start, duration=0.25, velocity=76, mute=False) for start in (0.0, 1.0, 2.0, 3.0)]
-clip.add_new_notes(tuple(specs))
-arrangement_clip = track.duplicate_clip_to_arrangement(clip, 40.0)
-arrangement_clip.name = "MCP Prompt Audit Automation"
-result = {"track": track.name, "clip": clip.name, "arrangement_clip_count": len(track.arrangement_clips)}
+song.view.selected_track = track
+result = {"track_path": "live_set tracks %s" % (len(song.tracks) - 1), "track": track.name}
 '''
 
 _AUDIO_WARP_SETUP_CODE = r'''

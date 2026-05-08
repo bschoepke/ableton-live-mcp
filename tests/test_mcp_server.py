@@ -2341,7 +2341,7 @@ def test_prompt_audit_runs_expected_bridge_methods(monkeypatch, tmp_path):
                 return {"id": 601, "properties": {"name": "Track Volume", "value": 0.85}}
             if method == "clip_notes":
                 return {"notes": [{"note_id": 1, "velocity": 64.0}]}
-            if method in {"clip_update_notes", "clip_warp_markers", "clip_envelope", "browser_load", "track_create_audio_clip"}:
+            if method in {"clip_add_notes", "clip_duplicate_to_arrangement", "clip_update_notes", "clip_warp_markers", "clip_envelope", "browser_load", "track_create_audio_clip"}:
                 return {"ok": True}
             raise AssertionError(method)
 
@@ -2353,7 +2353,7 @@ def test_prompt_audit_runs_expected_bridge_methods(monkeypatch, tmp_path):
     assert output["ok"] is True
     assert output["destructive"] is True
     assert sum(1 for call in audit["calls"] if call["method"] == "local_m4l_preflight") == 3
-    assert {"batch", "exec", "set_summary", "get", "clip_notes", "clip_update_notes", "clip_envelope", "clip_warp_markers", "track_create_audio_clip", "browser_search", "browser_load", "agent_m4l_device"} <= set(methods)
+    assert {"batch", "exec", "set_summary", "get", "clip_notes", "clip_add_notes", "clip_duplicate_to_arrangement", "clip_update_notes", "clip_envelope", "clip_warp_markers", "track_create_audio_clip", "browser_search", "browser_load", "agent_m4l_device"} <= set(methods)
     agent_m4l_calls = [params for method, params in bridge.calls if method == "agent_m4l_device"]
     assert len(agent_m4l_calls) == 4
     assert {call["role"] for call in agent_m4l_calls[:3]} == {"audio_effect", "midi_effect", "instrument"}
