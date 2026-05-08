@@ -75,6 +75,7 @@ def test_initialize_includes_general_model_instructions():
     assert "Idle sockets auto-retry" in instructions
     assert "jweb/jbrowser aliases" in instructions
     assert "agent-settable UI" in instructions
+    assert "early web ack" in instructions
     assert "full Live object model remains available" in instructions
     assert len(instructions) < 1500
 

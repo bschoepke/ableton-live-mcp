@@ -9,6 +9,7 @@ var statusFile = jsarguments.length > 4 ? String(jsarguments[4]) : "";
 var lastCommandId = "";
 var currentCommandId = "";
 var pollTask = null;
+var webReadTask = null;
 var dynamicObjects = [];
 var objectById = {};
 var objectSpecById = {};
@@ -19,6 +20,7 @@ var uiBindingUpdating = false;
 var statusPadSize = 65536;
 var lastConnectionErrors = [];
 var lastReloadCommandId = "";
+var pendingWebUiReads = [];
 var DEFAULT_DEVICE_WIDTH = 420;
 var MIN_DEVICE_WIDTH = 260;
 var DEVICE_WIDTH_PADDING = 20;
@@ -65,9 +67,18 @@ function anything() {
         applyValues(valuesFromAtoms(atoms), true);
     } else if (messagename === "set_many_silent" || messagename === "param_many_silent") {
         applyValues(valuesFromAtoms(atoms), false);
+    } else if (messagename === "url" || messagename === "title") {
+        handleWebUiLoadMessage(messagename, atoms);
     } else {
         applyRaw([messagename].concat(atoms).join(" "));
     }
+}
+
+function handleWebUiLoadMessage(name, atoms) {
+    var value = shortStatusText(atoms.length ? atoms[0] : "");
+    state["web_" + String(name)] = value;
+    report("webui", { message: String(name), value: value });
+    pushWebState();
 }
 
 function handleOsc(args) {
@@ -228,7 +239,7 @@ function connectPatchlines(connections, byId) {
             errors.push({ from: srcId, to: dstId, outlet: Number(c.outlet || 0), inlet: Number(c.inlet || 0), reason: String(err) });
         }
     }
-    lastConnectionErrors = errors;
+    lastConnectionErrors = lastConnectionErrors.concat(errors);
     return { connected: connected, errors: errors };
 }
 
@@ -314,7 +325,7 @@ function createWebUis(webuiSpec, byId) {
 
 function createWebUi(webui, index, byId) {
     var rect = webui.presentation_rect || [0, 0, 320, 160];
-    var path = webui.html_path || webui.path || webui.url;
+    var path = webui.url || webui.html_url || webui.html_path || webui.path;
     if (!path) {
         return;
     }
@@ -341,6 +352,7 @@ function createWebUi(webui, index, byId) {
     try {
         this.patcher.connect(obj, webMessageOutlet(objectName), this.box, 0);
     } catch (err) {
+        lastConnectionErrors.push({ from: id, to: "js", outlet: webMessageOutlet(objectName), inlet: 0, reason: String(err) });
     }
     if (webui.audio_out) {
         var plugout = getNamed("plugout");
@@ -352,14 +364,30 @@ function createWebUi(webui, index, byId) {
             }
         }
     }
+    scheduleWebUiRead(obj, path, id);
+}
+
+function scheduleWebUiRead(obj, path, id) {
+    pendingWebUiReads.push({ obj: obj, path: String(path), id: String(id) });
+    if (!webReadTask) {
+        webReadTask = new Task(readPendingWebUis, this);
+    }
     try {
-        if (String(path).indexOf("file:") === 0) {
-            obj.message("read", path);
-        } else {
-            obj.message("readfile", path);
+        webReadTask.cancel();
+    } catch (errCancel) {
+    }
+    webReadTask.schedule(100);
+}
+
+function readPendingWebUis() {
+    var reads = pendingWebUiReads;
+    pendingWebUiReads = [];
+    for (var i = 0; i < reads.length; i++) {
+        try {
+            reads[i].obj.message("read", reads[i].path);
+        } catch (err) {
+            report("error", { reason: "webui_load_failed", id: reads[i].id, detail: String(err) });
         }
-    } catch (err2) {
-        report("error", { reason: "webui_load_failed", detail: String(err2) });
     }
 }
 
@@ -414,7 +442,12 @@ function normalizeUiBinding(raw, item) {
         target_min: binding.target_min !== undefined ? binding.target_min : binding.min,
         target_max: binding.target_max !== undefined ? binding.target_max : binding.max,
         scale: !!binding.scale || !!binding.normalized || binding.source_min !== undefined || binding.source_max !== undefined,
-        report: binding.report !== false
+        report: binding.report !== false,
+        source_settable: binding.source_settable !== undefined ? binding.source_settable !== false : (
+            binding.set_source !== undefined ? binding.set_source !== false : (
+                binding.write_source !== undefined ? binding.write_source !== false : binding.report !== false
+            )
+        )
     };
 }
 
@@ -504,7 +537,9 @@ function updateUiBindings(id, value, skipSource) {
         }
         var binding = uiBindings[source];
         if (binding.target === id && source !== skipSource) {
-            setUiSourceValue(source, sourceValueFromUiBinding(binding, value));
+            if (canSetUiSource(binding)) {
+                setUiSourceValue(source, sourceValueFromUiBinding(binding, value));
+            }
         }
     }
 }
@@ -536,6 +571,10 @@ function setUiSourceValue(source, value) {
         }
     }
     uiBindingUpdating = false;
+}
+
+function canSetUiSource(binding) {
+    return !binding || binding.source_settable !== false;
 }
 
 function normalizeWebObject(name) {
@@ -667,7 +706,7 @@ function configureObject(obj, item) {
         if (!boxAttrs.hasOwnProperty(key)) {
             continue;
         }
-        setObjectBoxAttr(obj, scriptName, key, asArray(boxAttrs[key]));
+        setBoxOnlyAttr(obj, scriptName, key, asArray(boxAttrs[key]));
     }
     if (item.send_to_back || item.layer === "back") {
         scriptCommand(scriptName, "sendtoback", []);
@@ -721,6 +760,17 @@ function setObjectBoxAttr(obj, scriptName, messageName, values) {
     try {
         obj[String(messageName)] = args.length === 1 ? args[0] : args;
     } catch (err) {
+    }
+}
+
+function setBoxOnlyAttr(obj, scriptName, messageName, values) {
+    var args = asArray(values);
+    if (scriptName) {
+        scriptSendBox(scriptName, String(messageName), args);
+    }
+    try {
+        obj.box.setattr.apply(obj.box, [String(messageName)].concat(args));
+    } catch (errBoxSetAttr) {
     }
 }
 
@@ -829,6 +879,14 @@ function valuesFromJson(raw) {
     return result;
 }
 
+function shortStatusText(value) {
+    var text = String(value);
+    if (text.length > 240) {
+        return text.substring(0, 237) + "...";
+    }
+    return text;
+}
+
 function restoreState(previousState) {
     var restored = 0;
     for (var id in previousState) {
@@ -860,7 +918,9 @@ function setStateValue(id, value, skipSource, command) {
     id = String(id);
     var binding = uiBindings[id];
     if (binding) {
-        setUiSourceValue(id, value);
+        if (canSetUiSource(binding)) {
+            setUiSourceValue(id, value);
+        }
         setBoundTarget(binding, valueFromUiBinding(binding, value), id);
         return true;
     }
@@ -955,6 +1015,13 @@ function pushWebState() {
 }
 
 function clearDynamic() {
+    if (webReadTask) {
+        try {
+            webReadTask.cancel();
+        } catch (errCancel) {
+        }
+    }
+    pendingWebUiReads = [];
     for (var i = dynamicObjects.length - 1; i >= 0; i--) {
         try {
             this.patcher.remove(dynamicObjects[i]);
@@ -1001,7 +1068,8 @@ function bindingSummaries() {
         result.push({
             source: source,
             target: uiBindings[source].target,
-            scale: !!uiBindings[source].scale
+            scale: !!uiBindings[source].scale,
+            source_settable: uiBindings[source].source_settable !== false
         });
     }
     return result;

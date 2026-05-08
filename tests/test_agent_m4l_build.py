@@ -135,8 +135,13 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "jweb~" in source
     assert "createWebUi" in source
     assert "createWebUis" in source
+    assert "webui.url || webui.html_url || webui.html_path" in source
+    assert "scheduleWebUiRead" in source
+    assert "readPendingWebUis" in source
+    assert 'obj.message("read", reads[i].path)' in source
     assert "presentation_rect" in source
     assert "scriptSendBox" in source
+    assert "setBoxOnlyAttr" in source
     assert "script\", \"newdefault\"" in source
     assert "setattr" in source
     assert "sendtoback" in source
@@ -153,6 +158,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "setUiSourceValue" in source
     assert "var binding = uiBindings[id]" in source
     assert "setBoundTarget(binding, valueFromUiBinding(binding, value), id)" in source
+    assert "source_settable" in source
+    assert "canSetUiSource" in source
     assert "restoreState" in source
     assert "reapplyStateValues" in source
     assert "restored_state" in source
@@ -162,6 +169,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "set_silent" in source
     assert "param_silent" in source
     assert "set_many_silent" in source
+    assert "handleWebUiLoadMessage" in source
+    assert "shortStatusText" in source
     assert "valuesFromAtoms" in source
     assert "valuesFromJson" in source
     assert "applyValues([{ id: String(atoms[0]), value: atoms[1] }], false)" in source
@@ -174,6 +183,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "obj.message(\"bang\")" in source
     assert "connectPatchlines" in source
     assert "connection_errors" in source
+    assert "lastConnectionErrors.push" in source
+    assert "lastConnectionErrors.concat(errors)" in source
     assert "configureDeviceBounds" in source
     assert "inferDeviceWidth" in source
     assert "devicewidth" in source
