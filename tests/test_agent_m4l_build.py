@@ -270,6 +270,7 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "handleFilewatchWake" in source
     assert "filewatch_bangs" in source
     assert "markCommandWake" in source
+    assert 'report("filewatch"' not in source
     assert "command_wake_source" in source
     assert "function list()" in source
     assert "handleSignalWake" in source

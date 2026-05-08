@@ -449,12 +449,8 @@ function handleFilewatchWake(atoms) {
     state.filewatch_bangs = (state.filewatch_bangs || 0) + 1;
     state.filewatch_last = shortStatusText((atoms && atoms.length ? atoms : ["bang"]).join(" "));
     markCommandWake("filewatch");
-    var before = lastCommandId;
     pollCommandFile();
     drainPendingWebUiReads();
-    if (before === lastCommandId) {
-        report("filewatch", { filewatch_bangs: state.filewatch_bangs });
-    }
 }
 
 function handleSignalWake() {
