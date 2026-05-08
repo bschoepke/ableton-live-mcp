@@ -1047,6 +1047,9 @@ def test_tool_list_stays_compact():
     assert "arbitrary native UI" in m4l["description"]
     assert "jweb/jbrowser web UI" in m4l["description"]
     assert "wait_status" in m4l["description"]
+    transport = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_transport")
+    assert "continue" in transport["description"]
+    assert {"action", "time", "timeout", "strict_timeout"} <= set(transport["inputSchema"]["properties"])
 
 
 def test_bridge_error_omits_traceback_by_default(monkeypatch):

@@ -326,7 +326,12 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         return result
 
     server.add_tool(Tool("live_agent_m4l_device", AGENT_M4L_TOOL_DESCRIPTION, loose_schema(), agent_m4l_device))
-    server.add_tool(Tool("live_transport", "", loose_schema(), forward("transport")))
+    server.add_tool(Tool("live_transport", "Transport status/play/continue/stop with optional seek.", schema({
+        "action": {"type": "string", "description": "status, play, continue, or stop."},
+        "time": {"type": "number", "description": "Optional song-time seek."},
+        "timeout": response_controls["timeout"],
+        **strict_timeout_control,
+    }), forward("transport")))
     server.add_tool(Tool("live_batch", "Batch bridge operations.", schema({
         "operations": {"type": "array", "items": {"type": "object", "properties": {
             "method": {"type": "string", "description": "Bridge method name."},
