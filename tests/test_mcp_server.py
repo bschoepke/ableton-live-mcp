@@ -596,6 +596,69 @@ def test_agent_m4l_device_tool_preflight_counts_top_level_webui(tmp_path):
     assert preflight["counts"]["webuis"] == 1
 
 
+def test_agent_m4l_preflight_reports_presentation_bounds_and_clip_warnings(tmp_path):
+    html_path = tmp_path / "panel.html"
+    html_path.write_text("<html></html>", encoding="utf-8")
+    server = make_server(FakeBridge())
+
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 807,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "instrument",
+            "name": "Bounds Warning",
+            "preflight_only": True,
+            "patch": {
+                "device_width": 320,
+                "device_height": 130,
+                "objects": [
+                    {"id": "keys", "text": "kslider", "presentation_rect": [12, 12, 260, 58]},
+                ],
+                "webui": {"id": "panel", "html_path": str(html_path), "presentation_rect": [280, 20, 100, 130]},
+            },
+        }},
+    })
+
+    preflight = response["result"]["structuredContent"]["preflight"]
+    warning_codes = {item["code"] for item in preflight["warnings"]}
+    assert preflight["ok"] is True
+    assert preflight["bounds"] == {"width": 320, "height": 130}
+    assert preflight["presentation_bounds"] == {
+        "min_x": 12,
+        "min_y": 12,
+        "right": 380,
+        "bottom": 150,
+        "width": 368,
+        "height": 138,
+    }
+    assert "presentation_rect_exceeds_device_width" in warning_codes
+    assert "presentation_rect_exceeds_device_height" in warning_codes
+
+
+def test_agent_m4l_preflight_warns_on_tall_device_height(tmp_path):
+    server = make_server(FakeBridge())
+
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 808,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "name": "Tall Freeform UI",
+            "preflight_only": True,
+            "patch": {
+                "device_height": 320,
+                "objects": [{"id": "scope", "text": "panel", "presentation_rect": [0, 0, 400, 300]}],
+            },
+        }},
+    })
+
+    preflight = response["result"]["structuredContent"]["preflight"]
+    assert preflight["ok"] is True
+    assert {"code": "tall_device_height_visual_capture_required", "device_height": 320, "advisory_height": 240} in preflight["warnings"]
+
+
 def test_agent_m4l_preflight_warns_on_direct_live_api_observers(tmp_path):
     html_path = tmp_path / "panel.html"
     html_path.write_text("<html></html>")

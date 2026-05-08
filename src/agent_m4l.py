@@ -423,7 +423,7 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
             "fileversion": 1,
             "appversion": {"major": 8, "minor": 6, "revision": 0, "architecture": "x64"},
             "classnamespace": "box",
-            "rect": [80.0, 80.0, float(max(620, device_width)), float(max(360, device_height + 190))],
+            "rect": [0.0, 0.0, float(device_width), float(device_height)],
             "openrect": [0.0, 0.0, float(device_width), float(device_height)],
             "bglocked": 0,
             "openinpresentation": 1,

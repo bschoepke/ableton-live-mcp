@@ -629,7 +629,7 @@ function configureDeviceBounds(spec) {
     currentDeviceHeight = bounds.height;
     setPatcherAttr("devicewidth", [bounds.width]);
     setPatcherAttr("openrect", [0, 0, bounds.width, bounds.height]);
-    setPatcherAttr("rect", [80, 80, Math.max(620, bounds.width), Math.max(360, bounds.height + 190)]);
+    setPatcherAttr("rect", [0, 0, bounds.width, bounds.height]);
 }
 
 function inferDeviceWidth(spec, fallback) {

@@ -82,6 +82,7 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert "prepend ui0" not in texts
     assert patch["patcher"]["devicewidth"] == 420.0
     assert patch["patcher"]["openrect"] == [0.0, 0.0, 420.0, 170.0]
+    assert patch["patcher"]["rect"] == [0.0, 0.0, 420.0, 170.0]
     assert patch["patcher"]["amxdtype"] == 1768515945
 
 
@@ -359,6 +360,7 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "rectBottom" in source
     assert "devicewidth" in source
     assert "openrect" in source
+    assert "height + 190" not in source
     assert "device_width" in source
     assert "device_height" in source
     assert "lastReloadCommandId" in source

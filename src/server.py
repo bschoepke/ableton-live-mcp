@@ -21,6 +21,7 @@ ABLETON_AGENT_GUIDE = "General Live object-model bridge; examples are heuristics
 AGENT_M4L_MAX_UDP_BYTES = 8192
 AGENT_M4L_DEFAULT_STATUS_TIMEOUT = 2.0
 AGENT_M4L_WEB_STATUS_TIMEOUT = 9.0
+AGENT_M4L_LIVE_DEVICE_HEIGHT_ADVISORY = 240
 AGENT_M4L_RECOVERY_PATCH_KEYS = (
     "objects", "connections", "ui_bindings", "bindings", "webui", "webuis",
     "device_width", "devicewidth", "width", "device_height", "deviceheight", "height",
@@ -35,13 +36,13 @@ ABLETON_MCP_INSTRUCTIONS = (
     "General Live bridge; not a recipe API. "
     "Prefer installed Packs/user assets/samples/presets/devices/plugins unless asked. "
     "Discover via browser tools roots:['plugins']; SKU/indexing vary. "
-    "Existing sets: start with live_set_summary; use expected_set_signature for destructive edits. "
-    "Prefer compact live_exec/live_batch, property lists, child limits, and JSON-safe clip helpers. "
+    "Existing sets: live_set_summary first; expected_set_signature for destructive edits. "
+    "Prefer compact live_exec/live_batch, property lists, child limits, JSON-safe clip helpers. "
     "find_similar_sounds requires Live 12+ analysis data. "
-    "AgentAudioTap: prefer master tap + solo target; start with path. "
-    "Idle sockets auto-retry; sent-call timeouts fail closed; live_bridge_status diagnoses socket-vs-main hangs; check status before retry; AMXD loads retry. "
+    "AgentAudioTap: master tap + solo target; start with path. "
+    "Idle sockets auto-retry; sent-call timeouts fail closed; live_bridge_status diagnoses hangs; check status before retry; AMXD loads retry. "
     "Agent must visually verify M4L device UI with live_visual_capture after UI changes; Ableton-window-only, never capture arbitrary apps/windows. "
-    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status/compact_result and require matching command_id. Supports preflight, files, UDP hints, set/status skip build, midiin+midiparse, rect sizing, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batches/list values, audio buses, jweb/jbrowser aliases. In stressed sets, no web ack means reload/simplify or validate a fresh host. "
+    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status/compact_result and require matching command_id. Supports preflight files, UDP hints, set/status skip build, midiin+midiparse, origin-aligned rect/openrect sizing, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batches/list values, audio buses, jweb/jbrowser aliases. In stressed sets, no web ack means reload/simplify or validate fresh host. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args are JSON numbers; Simpler.sample is not generally settable; use ids from summaries, not raw _live_ptr values. "
     "Hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
@@ -624,6 +625,33 @@ def preflight_agent_m4l(params: dict[str, Any]) -> dict[str, Any]:
     for key in ("html", "js", "css", "controls"):
         if _agent_m4l_webui_source_key_present(webuis, key):
             warnings.append({"code": "raw_webui_source_in_payload", "key": key})
+    presentation_bounds = agent_m4l_presentation_bounds(objects, webuis)
+    device_width = int(params.get("device_width") or 0)
+    device_height = int(params.get("device_height") or 0)
+    if presentation_bounds:
+        if presentation_bounds["min_x"] < 0 or presentation_bounds["min_y"] < 0:
+            warnings.append({
+                "code": "presentation_rect_negative_origin_may_clip",
+                "bounds": presentation_bounds,
+            })
+        if device_width and presentation_bounds["right"] > device_width:
+            warnings.append({
+                "code": "presentation_rect_exceeds_device_width",
+                "right": presentation_bounds["right"],
+                "device_width": device_width,
+            })
+        if device_height and presentation_bounds["bottom"] > device_height:
+            warnings.append({
+                "code": "presentation_rect_exceeds_device_height",
+                "bottom": presentation_bounds["bottom"],
+                "device_height": device_height,
+            })
+    if device_height > AGENT_M4L_LIVE_DEVICE_HEIGHT_ADVISORY:
+        warnings.append({
+            "code": "tall_device_height_visual_capture_required",
+            "device_height": device_height,
+            "advisory_height": AGENT_M4L_LIVE_DEVICE_HEIGHT_ADVISORY,
+        })
     command_bytes = len(json.dumps(params, separators=(",", ":"), default=str).encode("utf-8"))
     if command_bytes > AGENT_M4L_MAX_UDP_BYTES:
         warnings.append({"code": "udp_hint_will_skip_large_payload", "bytes": command_bytes})
@@ -641,9 +669,10 @@ def preflight_agent_m4l(params: dict[str, Any]) -> dict[str, Any]:
             "values": len(values),
         },
         "bounds": {
-            "width": int(params.get("device_width") or 0),
-            "height": int(params.get("device_height") or 0),
+            "width": device_width,
+            "height": device_height,
         },
+        "presentation_bounds": presentation_bounds,
         "command_bytes": command_bytes,
         "recovered_patch": recovered_patch,
     }
@@ -656,6 +685,46 @@ def compact_agent_m4l_preflight_issues(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool]:
     truncated = len(errors) > limit or len(warnings) > limit
     return errors[:limit], warnings[:limit], truncated
+
+
+def agent_m4l_presentation_bounds(objects: list[dict[str, Any]], webuis: list[dict[str, Any]]) -> dict[str, int] | None:
+    bounds: dict[str, float] | None = None
+    for item in list(objects) + list(webuis):
+        rect = item.get("presentation_rect")
+        normalized = normalize_agent_m4l_rect(rect)
+        if normalized is None:
+            continue
+        x, y, width, height = normalized
+        left = x
+        top = y
+        right = x + width
+        bottom = y + height
+        if bounds is None:
+            bounds = {"min_x": left, "min_y": top, "right": right, "bottom": bottom}
+        else:
+            bounds["min_x"] = min(bounds["min_x"], left)
+            bounds["min_y"] = min(bounds["min_y"], top)
+            bounds["right"] = max(bounds["right"], right)
+            bounds["bottom"] = max(bounds["bottom"], bottom)
+    if bounds is None:
+        return None
+    return {
+        "min_x": int(round(bounds["min_x"])),
+        "min_y": int(round(bounds["min_y"])),
+        "right": int(round(bounds["right"])),
+        "bottom": int(round(bounds["bottom"])),
+        "width": int(round(bounds["right"] - bounds["min_x"])),
+        "height": int(round(bounds["bottom"] - bounds["min_y"])),
+    }
+
+
+def normalize_agent_m4l_rect(rect: Any) -> tuple[float, float, float, float] | None:
+    if not isinstance(rect, list) or len(rect) < 4:
+        return None
+    try:
+        return float(rect[0]), float(rect[1]), float(rect[2]), float(rect[3])
+    except (TypeError, ValueError):
+        return None
 
 
 def _agent_m4l_webui_source_key_present(webuis: list[dict[str, Any]], key: str) -> bool:
