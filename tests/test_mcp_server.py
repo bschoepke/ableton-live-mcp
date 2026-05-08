@@ -2030,8 +2030,13 @@ def test_prompt_audit_runs_expected_bridge_methods():
     assert output["destructive"] is True
     assert {"batch", "exec", "set_summary", "get", "clip_notes", "clip_update_notes", "clip_envelope", "clip_warp_markers", "track_create_audio_clip", "browser_search", "browser_load", "agent_m4l_device"} <= set(methods)
     agent_m4l_calls = [params for method, params in bridge.calls if method == "agent_m4l_device"]
-    assert agent_m4l_calls[0]["load"] is False
-    assert agent_m4l_calls[0]["udp"] is False
-    assert agent_m4l_calls[0]["patch"]["webui"]["object"] == "jbrowser~"
-    assert agent_m4l_calls[0]["patch"]["webui"]["url"] == "about:blank"
-    assert agent_m4l_calls[0]["patch"]["device_height"] == 170
+    assert len(agent_m4l_calls) == 4
+    assert {call["role"] for call in agent_m4l_calls[:3]} == {"audio_effect", "midi_effect", "instrument"}
+    assert all(call["load"] is False and call["udp"] is False for call in agent_m4l_calls)
+    assert agent_m4l_calls[0]["patch"]["webuis"][0]["object"] == "jbrowser~"
+    assert agent_m4l_calls[0]["patch"]["objects"][3]["text"].startswith("pictslider")
+    assert agent_m4l_calls[1]["patch"]["objects"][1]["text"] == "kslider"
+    assert agent_m4l_calls[2]["patch"]["webui"]["id"] == "glass_scene"
+    assert agent_m4l_calls[3]["command"] == "set"
+    assert agent_m4l_calls[3]["values"][0]["value"] == [1, 0, 1, 1, 0, 1, 0, 1]
+    assert agent_m4l_calls[3]["values"][1]["value"]["pressure"] == 0.44

@@ -185,28 +185,177 @@ def _scenario_audio_vocal_import(client: AbletonBridgeClient) -> dict[str, Any]:
 
 
 def _scenario_generated_m4l_device(client: AbletonBridgeClient) -> dict[str, Any]:
-    calls = [_call(client, "agent_m4l_device", {
-        "role": "audio_effect",
-        "instance_id": "Prompt Audit M4L Direct",
-        "command": "update",
-        "load": False,
-        "udp": False,
-        "id": "prompt-audit-m4l-update",
-        "patch": {
-            "device_width": 520,
-            "device_height": 170,
-            "objects": [
-                {"id": "macro_value", "text": "flonum", "presentation_rect": [12, 12, 90, 24]},
-                {"id": "label", "text": "comment Prompt Audit Generated M4L", "presentation_rect": [116, 12, 220, 24]},
+    calls = [
+        _call(client, "agent_m4l_device", {
+            "role": "audio_effect",
+            "instance_id": "Prompt Audit Reactive Field",
+            "command": "update",
+            "load": False,
+            "udp": False,
+            "id": "prompt-audit-reactive-field-update",
+            "patch": _creative_audio_effect_patch(),
+        }, "write_audio_effect_native_web_reactive_patch"),
+        _call(client, "agent_m4l_device", {
+            "role": "midi_effect",
+            "instance_id": "Prompt Audit Matrix Sequencer",
+            "command": "update",
+            "load": False,
+            "udp": False,
+            "id": "prompt-audit-matrix-sequencer-update",
+            "patch": _creative_midi_effect_patch(),
+        }, "write_midi_effect_keyboard_matrix_patch"),
+        _call(client, "agent_m4l_device", {
+            "role": "instrument",
+            "instance_id": "Prompt Audit Piano Synth",
+            "command": "update",
+            "load": False,
+            "udp": False,
+            "id": "prompt-audit-piano-synth-update",
+            "patch": _creative_instrument_patch(),
+        }, "write_instrument_piano_web_patch"),
+        _call(client, "agent_m4l_device", {
+            "role": "audio_effect",
+            "instance_id": "Prompt Audit Reactive Field",
+            "command": "set",
+            "load": False,
+            "udp": False,
+            "id": "prompt-audit-reactive-field-values",
+            "values": [
+                {"id": "step_pattern", "value": [1, 0, 1, 1, 0, 1, 0, 1], "message": "list"},
+                {"id": "gesture_payload", "value": {"x": 0.31, "y": 0.72, "pressure": 0.44}, "message": "symbol"},
             ],
-            "webui": {"id": "audit_panel", "object": "jbrowser~", "url": "about:blank", "presentation_rect": [12, 48, 480, 100]},
-            "ui_bindings": [
-                {"source": "macro_value", "target": "macro_value", "source_min": 0, "source_max": 1, "target_min": 0, "target_max": 1}
-            ],
-            "connections": [],
+        }, "write_list_and_object_ui_values"),
+    ]
+    return _scenario_result("generated_m4l_creative_devices", "Make custom Max for Live devices with creative UI", calls)
+
+
+def _creative_audio_effect_patch() -> dict[str, Any]:
+    return {
+        "device_width": 980,
+        "device_height": 260,
+        "objects": [
+            {"id": "title", "text": "comment Reactive Field FX", "presentation_rect": [12, 10, 160, 18]},
+            {"id": "drive_ui", "text": "live.dial @parameter_enable 1 @parameter_shortname Drive", "presentation_rect": [14, 40, 52, 64]},
+            {"id": "mix_ui", "text": "live.dial @parameter_enable 1 @parameter_shortname Mix", "presentation_rect": [76, 40, 52, 64]},
+            {"id": "xy_field", "text": "pictslider", "presentation_rect": [144, 36, 150, 120]},
+            {"id": "step_pattern", "text": "multislider @size 8 @setstyle 1", "presentation_rect": [14, 174, 280, 52], "list_message": "list"},
+            {"id": "gesture_payload", "text": "message", "presentation_rect": [308, 174, 120, 22], "object_message": "symbol"},
+            {"id": "drive_amount", "text": "flonum", "value": 0.55, "patching_rect": [20, 300, 60, 22]},
+            {"id": "mix_amount", "text": "flonum", "value": 0.8, "patching_rect": [100, 300, 60, 22]},
+            {"id": "gain_l", "text": "*~ 0.8", "patching_rect": [20, 340, 70, 22]},
+            {"id": "gain_r", "text": "*~ 0.8", "patching_rect": [120, 340, 70, 22]},
+            {"id": "level_probe", "text": "peakamp~ 40", "patching_rect": [220, 340, 90, 22]},
+            {"id": "level_value", "text": "flonum", "presentation_rect": [308, 46, 72, 22]},
+        ],
+        "webuis": [
+            {
+                "id": "reactive_scene",
+                "object": "jbrowser~",
+                "url": "about:blank",
+                "presentation_rect": [420, 10, 540, 220],
+                "reuse": True,
+            }
+        ],
+        "ui_bindings": [
+            {"source": "drive_ui", "target": "drive_amount", "source_min": 0, "source_max": 127, "target_min": 0.1, "target_max": 1.5},
+            {"source": "mix_ui", "target": "mix_amount", "source_min": 0, "source_max": 127, "target_min": 0, "target_max": 1},
+            {"source": "level_value", "target": "level_meter", "report": False, "source_settable": False},
+        ],
+        "connections": [
+            {"from": "plugin", "outlet": 0, "to": "gain_l", "inlet": 0},
+            {"from": "plugin", "outlet": 1, "to": "gain_r", "inlet": 0},
+            {"from": "drive_amount", "outlet": 0, "to": "gain_l", "inlet": 1},
+            {"from": "drive_amount", "outlet": 0, "to": "gain_r", "inlet": 1},
+            {"from": "gain_l", "outlet": 0, "to": "plugout", "inlet": 0},
+            {"from": "gain_r", "outlet": 0, "to": "plugout", "inlet": 1},
+            {"from": "gain_l", "outlet": 0, "to": "level_probe", "inlet": 0},
+            {"from": "level_probe", "outlet": 0, "to": "level_value", "inlet": 0},
+        ],
+    }
+
+
+def _creative_midi_effect_patch() -> dict[str, Any]:
+    return {
+        "device_width": 760,
+        "device_height": 230,
+        "objects": [
+            {"id": "title", "text": "comment Matrix MIDI Sequencer", "presentation_rect": [12, 10, 180, 18]},
+            {"id": "keyboard", "text": "kslider", "presentation_rect": [12, 38, 330, 54]},
+            {"id": "gate_grid", "text": "matrixctrl @rows 4 @columns 16", "presentation_rect": [12, 108, 420, 84]},
+            {"id": "transpose_ui", "text": "live.numbox @parameter_enable 1 @parameter_shortname Transpose", "presentation_rect": [356, 38, 76, 24]},
+            {"id": "midi_parser", "text": "midiparse", "patching_rect": [20, 290, 90, 22]},
+            {"id": "note_unpack", "text": "unpack 0 0", "patching_rect": [120, 290, 90, 22]},
+            {"id": "input_pitch", "text": "number", "patching_rect": [220, 290, 60, 22]},
+            {"id": "input_velocity", "text": "number", "patching_rect": [290, 290, 60, 22]},
+        ],
+        "webui": {
+            "id": "piano_roll",
+            "object": "jbrowser~",
+            "url": "about:blank",
+            "presentation_rect": [452, 10, 292, 182],
+            "reuse": True,
         },
-    }, "write_generated_m4l_native_web_patch")]
-    return _scenario_result("generated_m4l_device", "Make a custom Max for Live device with bespoke UI", calls)
+        "ui_bindings": [
+            {"source": "transpose_ui", "target": "transpose_value", "source_min": -24, "source_max": 24, "target_min": -24, "target_max": 24},
+            {"source": "input_pitch", "target": "input_pitch", "report": False, "source_settable": False},
+        ],
+        "connections": [
+            {"from": "midiin", "outlet": 0, "to": "midi_parser", "inlet": 0},
+            {"from": "midi_parser", "outlet": 0, "to": "note_unpack", "inlet": 0},
+            {"from": "note_unpack", "outlet": 0, "to": "input_pitch", "inlet": 0},
+            {"from": "note_unpack", "outlet": 1, "to": "input_velocity", "inlet": 0},
+            {"from": "midiin", "outlet": 0, "to": "midiout", "inlet": 0},
+        ],
+    }
+
+
+def _creative_instrument_patch() -> dict[str, Any]:
+    buses = {
+        "left": "agent_m4l_Prompt_Audit_Piano_Synth_audio_out_l",
+        "right": "agent_m4l_Prompt_Audit_Piano_Synth_audio_out_r",
+    }
+    return {
+        "device_width": 900,
+        "device_height": 270,
+        "objects": [
+            {"id": "title", "text": "comment Piano Glass Synth", "presentation_rect": [12, 10, 160, 18]},
+            {"id": "keyboard", "text": "kslider", "presentation_rect": [12, 38, 420, 58]},
+            {"id": "partials", "text": "multislider @size 12 @setstyle 1", "presentation_rect": [12, 118, 420, 64]},
+            {"id": "tone_ui", "text": "live.dial @parameter_enable 1 @parameter_shortname Tone", "presentation_rect": [448, 38, 54, 64]},
+            {"id": "motion_ui", "text": "pictslider", "presentation_rect": [518, 38, 112, 112]},
+            {"id": "midi_parser", "text": "midiparse", "patching_rect": [20, 330, 90, 22]},
+            {"id": "note_unpack", "text": "unpack 0 0", "patching_rect": [120, 330, 90, 22]},
+            {"id": "pitch_mtof", "text": "mtof", "patching_rect": [220, 330, 60, 22]},
+            {"id": "osc", "text": "cycle~ 220", "patching_rect": [300, 330, 80, 22]},
+            {"id": "velocity_scale", "text": "/ 127.", "patching_rect": [220, 365, 60, 22]},
+            {"id": "velocity_signal", "text": "sig~ 0.", "patching_rect": [300, 365, 70, 22]},
+            {"id": "amp", "text": "*~", "patching_rect": [400, 330, 60, 22]},
+            {"id": "out_l", "text": "send~ %s" % buses["left"], "patching_rect": [480, 320, 150, 22]},
+            {"id": "out_r", "text": "send~ %s" % buses["right"], "patching_rect": [480, 350, 150, 22]},
+        ],
+        "webui": {
+            "id": "glass_scene",
+            "object": "jbrowser~",
+            "url": "about:blank",
+            "presentation_rect": [648, 10, 232, 210],
+            "reuse": True,
+        },
+        "ui_bindings": [
+            {"source": "tone_ui", "target": "tone_value", "source_min": 0, "source_max": 127, "target_min": 0, "target_max": 1},
+        ],
+        "connections": [
+            {"from": "midiin", "outlet": 0, "to": "midi_parser", "inlet": 0},
+            {"from": "midi_parser", "outlet": 0, "to": "note_unpack", "inlet": 0},
+            {"from": "note_unpack", "outlet": 0, "to": "pitch_mtof", "inlet": 0},
+            {"from": "pitch_mtof", "outlet": 0, "to": "osc", "inlet": 0},
+            {"from": "note_unpack", "outlet": 1, "to": "velocity_scale", "inlet": 0},
+            {"from": "velocity_scale", "outlet": 0, "to": "velocity_signal", "inlet": 0},
+            {"from": "osc", "outlet": 0, "to": "amp", "inlet": 0},
+            {"from": "velocity_signal", "outlet": 0, "to": "amp", "inlet": 1},
+            {"from": "amp", "outlet": 0, "to": "out_l", "inlet": 0},
+            {"from": "amp", "outlet": 0, "to": "out_r", "inlet": 0},
+        ],
+    }
 
 
 def _scenario_plugin_discovery(client: AbletonBridgeClient) -> dict[str, Any]:
