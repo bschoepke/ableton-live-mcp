@@ -2468,6 +2468,41 @@ def test_validate_checks_agent_m4l_host_companion_js(tmp_path, monkeypatch, caps
     assert '"current": true' in passed.out
 
 
+def test_visual_capture_dependency_status_classifies_platform_requirements():
+    found = {"PIL.Image", "Quartz"}
+    status = validate.visual_capture_dependency_status("Darwin", lambda module: object() if module in found else None)
+
+    assert status["ok"] is True
+    assert status["supported_platform"] is True
+    assert {item["module"] for item in status["dependencies"]} == {"PIL.Image", "Quartz"}
+
+    missing = validate.visual_capture_dependency_status("Windows", lambda module: object() if module == "PIL.Image" else None)
+    assert missing["ok"] is False
+    assert missing["missing"] == ["windows-capture"]
+    assert ".[visual]" in missing["next_action"]
+
+    unsupported = validate.visual_capture_dependency_status("Linux", lambda _module: object())
+    assert unsupported["ok"] is False
+    assert unsupported["supported_platform"] is False
+
+
+def test_validate_requires_visual_capture_dependencies_for_default_setup(tmp_path, monkeypatch, capsys):
+    install_remote_script("Ableton_Live_MCP", tmp_path)
+    monkeypatch.setattr(validate, "visual_capture_dependency_status", lambda: {
+        "ok": False,
+        "missing": ["Pillow"],
+        "next_action": 'Install visual capture dependencies with python -m pip install -e ".[visual]" or ".[dev]".',
+    })
+
+    assert validate_main(["--skip-live", "--target-dir", str(tmp_path)]) == 1
+    failed = capsys.readouterr()
+    assert "visual capture dependencies are unavailable" in failed.err
+    assert '"visual_capture"' in failed.out
+
+    assert validate_main(["--skip-live", "--target-dir", str(tmp_path), "--allow-missing-visual-capture"]) == 0
+    capsys.readouterr()
+
+
 def test_validate_rejects_running_stale_remote_script(tmp_path, monkeypatch, capsys):
     missing = remote_script_status(target_dir=tmp_path)
     assert missing["installed"] is False

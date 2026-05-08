@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
+import platform
 import sys
 from pathlib import Path
+from typing import Callable
 
 import agent_m4l
 from bridge import AbletonBridgeClient, AbletonBridgeError
@@ -16,6 +19,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-live", action="store_true", help="Only validate local Remote Script freshness.")
     parser.add_argument("--allow-stale-remote-script", action="store_true", help="Do not fail when the installed or running Remote Script differs from this checkout.")
     parser.add_argument("--allow-stale-m4l-host", action="store_true", help="Do not fail when generated Agent M4L host companion JS copies are stale.")
+    parser.add_argument("--allow-missing-visual-capture", action="store_true", help="Do not fail when Ableton-only visual capture dependencies are unavailable.")
     parser.add_argument("--timeout", type=float, default=45.0, help="Seconds to wait for Live checks.")
     parser.add_argument("--strict-timeout", action="store_true", help="Do not clamp short Live check timeouts to the default main-thread wait.")
     args = parser.parse_args(argv)
@@ -23,9 +27,11 @@ def main(argv: list[str] | None = None) -> int:
     results = {
         "remote_script": remote_script_status(target_dir=args.target_dir),
         "m4l_host": agent_m4l.agent_m4l_host_status(),
+        "visual_capture": visual_capture_dependency_status(),
     }
     remote_ok = bool(results["remote_script"].get("current"))
     m4l_host_ok = bool(results["m4l_host"].get("current"))
+    visual_ok = bool(results["visual_capture"].get("ok"))
     if not remote_ok and not args.allow_stale_remote_script:
         print(json.dumps(results, indent=2, sort_keys=True))
         print("Ableton Live MCP validation failed: installed Remote Script is missing or stale", file=sys.stderr)
@@ -33,6 +39,10 @@ def main(argv: list[str] | None = None) -> int:
     if not m4l_host_ok and not args.allow_stale_m4l_host:
         print(json.dumps(results, indent=2, sort_keys=True))
         print("Ableton Live MCP validation failed: generated Agent M4L host files are missing or stale", file=sys.stderr)
+        return 1
+    if not visual_ok and not args.allow_missing_visual_capture:
+        print(json.dumps(results, indent=2, sort_keys=True))
+        print("Ableton Live MCP validation failed: Ableton-only visual capture dependencies are unavailable", file=sys.stderr)
         return 1
     if args.skip_live:
         print(json.dumps(results, indent=2, sort_keys=True))
@@ -99,6 +109,45 @@ def _check_running_remote_script(results: dict) -> tuple[bool, str]:
     if actual != expected:
         return False, "bridge_hash_mismatch"
     return True, ""
+
+
+def visual_capture_dependency_status(
+    system: str | None = None,
+    finder: Callable[[str], object | None] | None = None,
+) -> dict:
+    system = system or platform.system()
+    finder = finder or importlib.util.find_spec
+    supported = system in ("Darwin", "Windows")
+    dependencies = [
+        _visual_dependency("Pillow", "PIL.Image", True, finder),
+    ]
+    if system == "Darwin":
+        dependencies.append(_visual_dependency("pyobjc-framework-Quartz", "Quartz", True, finder))
+    elif system == "Windows":
+        dependencies.append(_visual_dependency("windows-capture", "windows_capture", True, finder))
+    missing = [item["package"] for item in dependencies if item.get("required") and not item.get("available")]
+    ok = supported and not missing
+    result = {
+        "ok": ok,
+        "platform": system,
+        "supported_platform": supported,
+        "dependencies": dependencies,
+    }
+    if not supported:
+        result["next_action"] = "Ableton visual capture currently supports macOS and Windows only."
+    elif missing:
+        result["next_action"] = 'Install visual capture dependencies with python -m pip install -e ".[visual]" or ".[dev]".'
+        result["missing"] = missing
+    return result
+
+
+def _visual_dependency(package: str, module: str, required: bool, finder: Callable[[str], object | None]) -> dict:
+    return {
+        "package": package,
+        "module": module,
+        "required": required,
+        "available": finder(module) is not None,
+    }
 
 
 def _probe_bridge_status(timeout: float) -> dict:
