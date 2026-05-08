@@ -32,6 +32,7 @@ var currentDeviceWidth = DEFAULT_DEVICE_WIDTH;
 function loadbang() {
     start_polling();
     report("ready", { role: role, instance_id: instanceId, command_file: commandFile, device_width: currentDeviceWidth });
+    pollCommandFile();
 }
 
 function start_polling() {
