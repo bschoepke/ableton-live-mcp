@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import socket
 import time
 from pathlib import Path
 from typing import Any
 
 from bridge import AbletonBridgeClient, BridgeConfig
-from agent_m4l import build_device, slugify, write_webui
+from agent_m4l import build_device, command_file as agent_m4l_command_file, device_name as agent_m4l_device_name, normalize_role, slugify, status_file as agent_m4l_status_file, udp_port as agent_m4l_udp_port, write_webui
 from mcp import StdioMcpServer, Tool
 from similar_sounds import find_similar_sounds
 
@@ -20,12 +22,12 @@ ABLETON_MCP_INSTRUCTIONS = (
     "Prefer installed content, Packs, user assets, samples, presets, devices, and indexed third-party audio plugins before generated assets unless asked. "
     "Discover with live_browser_capabilities/live_browser_roots/live_browser_search incl roots:['plugins']; SKU, Packs, folders, plugin indexing vary. "
     "For existing sets, start with live_set_summary; pass expected_set_signature to destructive edits. "
-    "For speed, prefer compact live_exec, live_batch, property lists, child limits, max_items, max_depth. "
+    "For speed, prefer compact live_exec/live_batch, property lists, child limits, max_items, max_depth. "
     "For clip work, prefer JSON-safe helpers before hand-coding C++ signatures. "
     "find_similar_sounds requires Live 12+ analysis data. "
     "For AgentAudioTap, prefer master tap + solo target; start with path. "
-    "Idle sockets auto-retry; fresh AMXD loads retry client-side; set timeouts for slow Live work. "
-    "M4L: live_agent_m4l_device hot-reloads native/web UI; file authoritative, UDP hint; set/status skip build; use wait_status, midiin+midiparse, presentation_rect/ui_bindings, audio buses, jweb/jbrowser aliases. "
+    "Idle sockets auto-retry; fresh AMXD loads retry client-side; timeouts for slow Live work. "
+    "M4L: live_agent_m4l_device hot-reloads native/web UI; file authoritative, per-instance UDP hint; set/status skip build; use wait_status, midiin+midiparse, presentation_rect/ui_bindings, audio buses, jweb/jbrowser aliases. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via browser or create audio clips; use ids from bridge summaries, not raw _live_ptr values. "
     "These are hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
@@ -272,7 +274,8 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
                 params["patch"] = dict(params["patch"])
                 for webui_key, rendered in webui.items():
                     params["patch"][webui_key] = rendered
-        if should_build_agent_m4l(params):
+        should_build = should_build_agent_m4l(params)
+        if should_build:
             built = build_device(
                 str(params.get("role") or "audio_effect"),
                 str(params.get("instance_id") or params.get("name") or "device"),
@@ -284,10 +287,13 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
             params["command_file"] = built["command_file"]
             params["status_file"] = built["status_file"]
             previous_status_mtime = _file_mtime(params["status_file"])
-        result = bridge.request("agent_m4l_device", params)
-        load_retry_timeout = float(load_retry_timeout_arg) if load_retry_timeout_arg is not None else (6.0 if built is not None else 0.0)
-        if load_retry_timeout > 0 and _should_retry_agent_m4l_load(params, result):
-            result = retry_agent_m4l_load(bridge, params, result, load_retry_timeout, load_retry_interval)
+        if not should_build and should_handle_agent_m4l_direct(params):
+            result = handle_agent_m4l_direct(params)
+        else:
+            result = bridge.request("agent_m4l_device", params)
+            load_retry_timeout = float(load_retry_timeout_arg) if load_retry_timeout_arg is not None else (6.0 if built is not None else 0.0)
+            if load_retry_timeout > 0 and _should_retry_agent_m4l_load(params, result):
+                result = retry_agent_m4l_load(bridge, params, result, load_retry_timeout, load_retry_interval)
         if wait_status:
             result["status"] = wait_agent_m4l_status(
                 str(result.get("status_file") or params.get("status_file") or ""),
@@ -449,6 +455,134 @@ def _should_retry_agent_m4l_load(params: dict[str, Any], result: dict[str, Any])
     if not (params.get("target_track") or params.get("ref")):
         return False
     return result.get("loaded") is False and bool(result.get("load_error"))
+
+
+def should_handle_agent_m4l_direct(params: dict[str, Any]) -> bool:
+    if params.get("target_track") or params.get("ref"):
+        return False
+    command = agent_m4l_command(params)
+    return command in ("update", "set", "status", "clear")
+
+
+def handle_agent_m4l_direct(params: dict[str, Any]) -> dict[str, Any]:
+    role = normalize_role(str(params.get("role") or "audio_effect"))
+    raw_instance = str(params.get("instance_id") or params.get("name") or "device")
+    instance_id = slugify(raw_instance)
+    title = str(params.get("name")) if params.get("name") else None
+    command_path = str(params.get("command_file") or agent_m4l_command_file(instance_id))
+    status_path = str(params.get("status_file") or agent_m4l_status_file(instance_id))
+    command = agent_m4l_command(params)
+    patch = params.get("patch") or params.get("spec")
+    if patch is None and (params.get("webui") or params.get("webuis")):
+        patch = {}
+    if patch is not None and params.get("webui"):
+        patch = dict(patch)
+        patch["webui"] = params.get("webui")
+    if patch is not None and params.get("webuis"):
+        patch = dict(patch)
+        patch["webuis"] = params.get("webuis")
+    if patch is None and command in ("set", "status"):
+        patch = agent_m4l_recovery_patch(command_path)
+    values = params.get("values")
+    parameters = params.get("parameters")
+    command_hash = {
+        "command": command,
+        "instance_id": instance_id,
+        "patch": patch,
+        "values": values,
+        "parameters": parameters,
+        "webui": params.get("webui"),
+        "webuis": params.get("webuis"),
+        "nonce": time.time(),
+    }
+    command_id = str(params.get("id") or hashlib.sha1(json.dumps(command_hash, sort_keys=True).encode("utf-8")).hexdigest())
+    payload = {
+        "id": command_id,
+        "command": command,
+        "role": role,
+        "instance_id": instance_id,
+        "patch": patch,
+        "values": values,
+        "parameters": parameters,
+        "webui": params.get("webui"),
+        "webuis": params.get("webuis"),
+    }
+    write_command_file = params.get("write_command_file")
+    if write_command_file is None:
+        write_command_file = True
+    if write_command_file:
+        Path(command_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(command_path).write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+    port = int(params.get("port") or agent_m4l_udp_port(instance_id))
+    sent = False
+    if params.get("udp", True):
+        sent = send_agent_m4l_udp(instance_id, port, agent_m4l_udp_payload(payload))
+    return {
+        "sent": sent,
+        "command": command,
+        "role": role,
+        "instance_id": instance_id,
+        "device_name": str(params.get("device_name") or agent_m4l_device_name(role, raw_instance, title)),
+        "command_id": command_id,
+        "command_file": command_path,
+        "command_file_written": bool(write_command_file),
+        "status_file": status_path,
+        "port": port,
+        "loaded": False,
+        "direct": True,
+    }
+
+
+def agent_m4l_command(params: dict[str, Any]) -> str:
+    if params.get("command"):
+        return str(params["command"])
+    if params.get("values") or params.get("parameters"):
+        return "set"
+    if params.get("patch") or params.get("spec") or params.get("webui") or params.get("webuis"):
+        return "update"
+    return "status"
+
+
+def agent_m4l_recovery_patch(command_path: str) -> Any:
+    try:
+        payload = json.loads(Path(command_path).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    patch = payload.get("patch") or payload.get("spec")
+    if not patch and (payload.get("objects") or payload.get("webui") or payload.get("webuis")):
+        patch = payload
+    return patch
+
+
+def agent_m4l_udp_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    if payload.get("command") not in ("set", "status"):
+        return payload
+    slim = dict(payload)
+    for key in ("patch", "spec", "webui", "webuis"):
+        slim.pop(key, None)
+    return slim
+
+
+def send_agent_m4l_udp(instance_id: str, port: int, payload: dict[str, Any]) -> bool:
+    raw = json.dumps(payload, separators=(",", ":"))
+    message = osc_message("/agent_m4l", [instance_id, raw])
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.sendto(message, ("127.0.0.1", port))
+        return True
+    finally:
+        sock.close()
+
+
+def osc_message(address: str, args: list[Any]) -> bytes:
+    def pad(value: str) -> bytes:
+        data = value.encode("utf-8") + b"\x00"
+        return data + (b"\x00" * ((4 - (len(data) % 4)) % 4))
+
+    payload = pad(address) + pad("," + ("s" * len(args)))
+    for arg in args:
+        payload += pad(str(arg))
+    return payload
 
 
 def retry_agent_m4l_load(bridge: AbletonBridgeClient, params: dict[str, Any], result: dict[str, Any], timeout: float, interval: float) -> dict[str, Any]:

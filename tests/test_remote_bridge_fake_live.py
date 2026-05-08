@@ -581,7 +581,7 @@ def test_agent_m4l_device_writes_command_sends_udp_and_loads(monkeypatch):
     assert '"instance_id":"Wobble"' in written["value"]
     assert '"cycle~ 110"' in written["value"]
     assert '"webui":{"html_path":"/tmp/wobble/index.html"' in written["value"]
-    assert sent[0][1] == ("127.0.0.1", 17655)
+    assert sent[0][1] == ("127.0.0.1", bridge._agent_m4l_port("Wobble"))
     assert b"/agent_m4l" in sent[0][0]
 
 
@@ -692,10 +692,12 @@ def test_agent_m4l_value_update_writes_file_with_recovery_patch(monkeypatch):
 
     assert result["sent"] is True
     assert result["command_file_written"] is True
-    assert sent and sent[0][1] == ("127.0.0.1", 17655)
+    assert sent and sent[0][1] == ("127.0.0.1", bridge._agent_m4l_port("Wobble"))
     assert payload["command"] == "set"
     assert payload["values"] == [{"id": "cutoff", "value": 0.72}]
     assert payload["patch"]["objects"][0]["id"] == "cutoff"
+    assert b'"values":[{"id":"cutoff","value":0.72}]' in sent[0][0]
+    assert b'"patch"' not in sent[0][0]
 
 
 def test_agent_m4l_device_top_level_webuis_trigger_update(monkeypatch):

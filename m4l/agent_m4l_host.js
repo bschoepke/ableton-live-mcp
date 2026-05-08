@@ -74,6 +74,10 @@ function msg_string(value) {
     applyRaw(value);
 }
 
+function bang() {
+    pollCommandFile();
+}
+
 function applyRaw(raw) {
     var command;
     raw = String(raw || "");

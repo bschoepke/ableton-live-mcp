@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import argparse
+import hashlib
 import re
 import shutil
 from pathlib import Path
@@ -13,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 HOST_JS = ROOT / "m4l" / "agent_m4l_host.js"
 GENERATED_DIR = ROOT / "m4l" / "generated"
 WEBUI_DIR = GENERATED_DIR / "webui"
+UDP_PORT_BASE = 17655
+UDP_PORT_SPAN = 30000
 
 ROLE_PRESETS = {
     "audio_effect": {
@@ -81,6 +84,11 @@ def audio_bus_names(instance_id: str) -> dict[str, str]:
         "output_left": "%s_audio_out_l" % stem,
         "output_right": "%s_audio_out_r" % stem,
     }
+
+
+def udp_port(instance_id: str) -> int:
+    digest = hashlib.sha1(slugify(instance_id).encode("utf-8")).hexdigest()
+    return UDP_PORT_BASE + (int(digest[:8], 16) % UDP_PORT_SPAN)
 
 
 def max_arg(value: str) -> str:
@@ -189,12 +197,18 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None) -> di
         _box("comment-title", "comment", "Agent M4L Dynamic Host: %s" % name, 20.0, 20.0),
         _box("js", "newobj", js_text, 20.0, 58.0),
         _box("status", "newobj", "print %s" % name, 20.0, 96.0),
-        _box("udp", "newobj", "udpreceive 17655", 220.0, 20.0),
+        _box("udp", "newobj", "udpreceive %d" % udp_port(instance_id), 220.0, 20.0),
+        _box("poll-loadbang", "newobj", "loadbang", 220.0, 58.0),
+        _box("poll-start", "message", "1", 220.0, 96.0),
+        _box("poll-metro", "newobj", "qmetro 20", 220.0, 134.0),
         _box("script", "newobj", "thispatcher", 420.0, 20.0),
     ]
     lines = [
         _line("js", 2, "status", 0),
         _line("udp", 0, "js", 0),
+        _line("poll-loadbang", 0, "poll-start", 0),
+        _line("poll-start", 0, "poll-metro", 0),
+        _line("poll-metro", 0, "js", 0),
     ]
     audio_buses = audio_bus_names(instance_id)
     if preset["io"] == "audio_effect":
@@ -276,6 +290,7 @@ def build_device(role: str, instance_id: str, title: str | None = None, install:
         "command_file": command_file(instance_id),
         "status_file": status_file(instance_id),
         "audio_buses": audio_bus_names(instance_id),
+        "udp_port": udp_port(instance_id),
     }
 
 

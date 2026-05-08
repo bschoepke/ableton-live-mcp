@@ -28,6 +28,7 @@ AGENT_AUDIO_TAP_HOST = "127.0.0.1"
 AGENT_AUDIO_TAP_PORT = 17654
 AGENT_M4L_HOST = "127.0.0.1"
 AGENT_M4L_PORT = 17655
+AGENT_M4L_PORT_SPAN = 30000
 
 
 def _temp_file(name):
@@ -317,14 +318,17 @@ class AbletonLiveMCP(ControlSurface):
 
         sent = False
         if params.get("udp", True):
-            raw = json.dumps(payload, separators=(",", ":"))
+            port = int(params.get("port") or self._agent_m4l_port(instance_id))
+            raw = json.dumps(self._agent_m4l_udp_payload(payload), separators=(",", ":"))
             message = self._osc_message("/agent_m4l", [instance_id, raw])
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             try:
-                sock.sendto(message, (AGENT_M4L_HOST, int(params.get("port") or AGENT_M4L_PORT)))
+                sock.sendto(message, (AGENT_M4L_HOST, port))
                 sent = True
             finally:
                 sock.close()
+        else:
+            port = int(params.get("port") or self._agent_m4l_port(instance_id))
 
         loaded = False
         load_error = None
@@ -366,6 +370,7 @@ class AbletonLiveMCP(ControlSurface):
             "command_file": command_file,
             "command_file_written": bool(write_command_file),
             "status_file": status_file,
+            "port": port,
             "loaded": loaded,
         }
         if load_error:
@@ -373,6 +378,20 @@ class AbletonLiveMCP(ControlSurface):
         if target_track is not None:
             result["track"] = self._track_summary(target_track, None, 0, 16, 0)
         return result
+
+    def _agent_m4l_port(self, instance_id):
+        digest = hashlib.sha1(self._agent_m4l_slug(instance_id).encode("utf-8")).hexdigest()
+        return AGENT_M4L_PORT + (int(digest[:8], 16) % AGENT_M4L_PORT_SPAN)
+
+    def _agent_m4l_udp_payload(self, payload):
+        command = payload.get("command")
+        if command not in ("set", "status"):
+            return payload
+        slim = dict(payload)
+        for key in ("patch", "spec", "webui", "webuis"):
+            if key in slim:
+                del slim[key]
+        return slim
 
     def _agent_m4l_recovery_patch(self, command_file):
         try:

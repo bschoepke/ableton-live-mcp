@@ -488,14 +488,19 @@ def test_agent_m4l_device_tool_retries_fresh_build_load(monkeypatch, tmp_path):
     assert "load_error" not in result
 
 
-def test_agent_m4l_device_tool_forwards_value_updates_without_build():
+def test_agent_m4l_device_tool_handles_value_updates_directly(tmp_path):
     bridge = FakeBridge()
     server = make_server(bridge)
+    command_file = tmp_path / "command.json"
+    status_file = tmp_path / "status.json"
     args = {
         "role": "audio_effect",
         "instance_id": "Wobble",
         "command": "set",
         "values": [{"id": "dial", "value": 0.4}],
+        "command_file": str(command_file),
+        "status_file": str(status_file),
+        "udp": False,
     }
     response = server.handle({
         "jsonrpc": "2.0",
@@ -503,9 +508,45 @@ def test_agent_m4l_device_tool_forwards_value_updates_without_build():
         "method": "tools/call",
         "params": {"name": "live_agent_m4l_device", "arguments": args},
     })
-    assert bridge.calls == [("agent_m4l_device", args)]
-    assert "built" not in response["result"]["structuredContent"]
-    assert response["result"]["structuredContent"]["method"] == "agent_m4l_device"
+    payload = json.loads(command_file.read_text(encoding="utf-8"))
+    result = response["result"]["structuredContent"]
+    assert bridge.calls == []
+    assert payload["values"] == [{"id": "dial", "value": 0.4}]
+    assert result["direct"] is True
+    assert result["loaded"] is False
+    assert "built" not in result
+
+
+def test_agent_m4l_device_tool_direct_update_preserves_recovery_patch(tmp_path):
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    command_file = tmp_path / "command.json"
+    status_file = tmp_path / "status.json"
+    command_file.write_text(json.dumps({
+        "id": "patch1",
+        "command": "update",
+        "patch": {"objects": [{"id": "dial", "text": "flonum"}], "connections": []},
+    }), encoding="utf-8")
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 50,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "instance_id": "Wobble",
+            "command": "set",
+            "values": [{"id": "dial", "value": 0.7}],
+            "command_file": str(command_file),
+            "status_file": str(status_file),
+            "udp": False,
+        }},
+    })
+
+    payload = json.loads(command_file.read_text(encoding="utf-8"))
+    assert bridge.calls == []
+    assert response["result"]["structuredContent"]["direct"] is True
+    assert payload["patch"]["objects"][0]["id"] == "dial"
+    assert payload["values"] == [{"id": "dial", "value": 0.7}]
 
 
 def test_agent_m4l_device_tool_materializes_webui_arrays(monkeypatch, tmp_path):
@@ -612,6 +653,7 @@ def test_agent_m4l_device_tool_waits_for_status_without_forwarding_wait_args(tmp
         "values": [{"id": "dial", "value": 0.4}],
         "command_file": str(tmp_path / "command.json"),
         "status_file": str(status_file),
+        "ref": {"path": "live_set tracks 0"},
         "wait_status": True,
         "status_timeout": 0.2,
     }

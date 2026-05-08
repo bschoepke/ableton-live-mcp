@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import agent_m4l
-from agent_m4l import audio_bus_names, build_amxd, build_pool, command_file, make_host_patch, replace_ptch_chunk, status_file, write_webui
+from agent_m4l import audio_bus_names, build_amxd, build_pool, command_file, make_host_patch, replace_ptch_chunk, status_file, udp_port, write_webui
 
 
 def test_agent_m4l_host_patch_contains_runtime_and_role_io():
@@ -18,6 +18,8 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     buses = audio_bus_names("Lead")
     assert "receive~ %s" % buses["output_left"] in texts
     assert "receive~ %s" % buses["output_right"] in texts
+    assert "udpreceive %d" % udp_port("Lead") in texts
+    assert "qmetro 20" in texts
     assert {"patchline": {"source": ["midiin", 0], "destination": ["midiout", 0]}} not in lines
     assert "jweb~ @rendermode 1" not in texts
     assert "prepend ui0" not in texts
@@ -104,8 +106,15 @@ def test_agent_m4l_build_device_installs_companion_js_when_not_installing(tmp_pa
     texts = {box["box"].get("text") for box in patch["patcher"]["boxes"]}
     assert result["name"] == "AgentM4L_midi_effect_Gate_Test"
     assert result["installed_path"] == ""
+    assert result["udp_port"] == udp_port("Gate Test")
     assert "midiout" in texts
     assert Path(result["amxd_path"]).with_name("agent_m4l_host.js").exists()
+
+
+def test_agent_m4l_udp_ports_are_stable_and_instance_scoped():
+    assert udp_port("Lead") == udp_port("Lead")
+    assert udp_port("Lead") != udp_port("Other Lead")
+    assert 17655 <= udp_port("Lead") < 47655
 
 
 def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
@@ -133,6 +142,7 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "command.command === \"set\"" in source
     assert "applyValues" in source
     assert "sendNumericValue" in source
+    assert "function bang()" in source
     assert "shouldSendToggleValue" in source
     assert 'obj.message("int", Math.round(value) ? 1 : 0)' in source
     assert "shouldOutputStoredValue" in source
