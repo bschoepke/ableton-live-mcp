@@ -122,7 +122,9 @@ def test_initialize_includes_general_model_instructions():
     assert "device-detail crop" in instructions
     assert "blank_capture invalid" in instructions
     assert "locked/asleep display blocks capture/e2e" in instructions
-    assert "audio-reactive web: clock/prove signal+visual delta" in instructions
+    assert "FFT/spectrum=real telemetry/no fake" in instructions
+    assert "audio-reactive web: prove signal+visual delta" in instructions
+    assert "Smooth clicks" in instructions
     assert "full Live object model remains available" in instructions
     assert len(instructions) < 1600
 
