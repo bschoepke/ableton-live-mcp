@@ -236,45 +236,7 @@ def _scenario_audio_vocal_import(client: AbletonBridgeClient) -> dict[str, Any]:
 
 
 def _scenario_generated_m4l_device(client: AbletonBridgeClient) -> dict[str, Any]:
-    audio_effect = {
-        "role": "audio_effect",
-        "instance_id": "Prompt Audit Reactive Field",
-        "command": "update",
-        "load": False,
-        "udp": False,
-        "id": "prompt-audit-reactive-field-update",
-        "patch": _creative_audio_effect_patch(),
-    }
-    midi_effect = {
-        "role": "midi_effect",
-        "instance_id": "Prompt Audit Matrix Sequencer",
-        "command": "update",
-        "load": False,
-        "udp": False,
-        "id": "prompt-audit-matrix-sequencer-update",
-        "patch": _creative_midi_effect_patch(),
-    }
-    instrument = {
-        "role": "instrument",
-        "instance_id": "Prompt Audit Piano Synth",
-        "command": "update",
-        "load": False,
-        "udp": False,
-        "id": "prompt-audit-piano-synth-update",
-        "patch": _creative_instrument_patch(),
-    }
-    values = {
-        "role": "audio_effect",
-        "instance_id": "Prompt Audit Reactive Field",
-        "command": "set",
-        "load": False,
-        "udp": False,
-        "id": "prompt-audit-reactive-field-values",
-        "values": [
-            {"id": "step_pattern", "value": [1, 0, 1, 1, 0, 1, 0, 1], "message": "list"},
-            {"id": "gesture_payload", "value": {"x": 0.31, "y": 0.72, "pressure": 0.44}, "message": "symbol"},
-        ],
-    }
+    audio_effect, midi_effect, instrument, values = _generated_m4l_prompt_params()
     calls = [
         _call(client, "agent_m4l_cleanup", {"delete": False, "name_prefix": "AgentM4L_", "limit": 32}, "dry_run_stale_generated_m4l_cleanup"),
         _local_m4l_preflight(audio_effect, "preflight_audio_effect_native_web_reactive_patch"),
@@ -286,6 +248,50 @@ def _scenario_generated_m4l_device(client: AbletonBridgeClient) -> dict[str, Any
         _call(client, "agent_m4l_device", values, "write_list_and_object_ui_values"),
     ]
     return _scenario_result("generated_m4l_creative_devices", "Make custom Max for Live devices with creative UI", calls)
+
+
+def _generated_m4l_prompt_params() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+    return (
+        {
+            "role": "audio_effect",
+            "instance_id": "Prompt Audit Reactive Field",
+            "command": "update",
+            "load": False,
+            "udp": False,
+            "id": "prompt-audit-reactive-field-update",
+            "patch": _creative_audio_effect_patch(),
+        },
+        {
+            "role": "midi_effect",
+            "instance_id": "Prompt Audit Matrix Sequencer",
+            "command": "update",
+            "load": False,
+            "udp": False,
+            "id": "prompt-audit-matrix-sequencer-update",
+            "patch": _creative_midi_effect_patch(),
+        },
+        {
+            "role": "instrument",
+            "instance_id": "Prompt Audit Piano Synth",
+            "command": "update",
+            "load": False,
+            "udp": False,
+            "id": "prompt-audit-piano-synth-update",
+            "patch": _creative_instrument_patch(),
+        },
+        {
+            "role": "audio_effect",
+            "instance_id": "Prompt Audit Reactive Field",
+            "command": "set",
+            "load": False,
+            "udp": False,
+            "id": "prompt-audit-reactive-field-values",
+            "values": [
+                {"id": "step_pattern", "value": [1, 0, 1, 1, 0, 1, 0, 1], "message": "list"},
+                {"id": "gesture_payload", "value": {"x": 0.31, "y": 0.72, "pressure": 0.44}, "message": "symbol"},
+            ],
+        },
+    )
 
 
 def _creative_audio_effect_patch() -> dict[str, Any]:
@@ -849,13 +855,54 @@ def run_prompt_audit(client: AbletonBridgeClient | None = None, *, include_optio
     return (0 if output["ok"] else 1), output
 
 
+def run_generated_m4l_local_preflight() -> tuple[int, dict[str, Any]]:
+    audio_effect, midi_effect, instrument, _values = _generated_m4l_prompt_params()
+    scenarios = [
+        (audio_effect, "preflight_audio_effect_native_web_reactive_patch"),
+        (midi_effect, "preflight_midi_effect_keyboard_matrix_patch"),
+        (instrument, "preflight_instrument_piano_web_patch"),
+    ]
+    calls = []
+    errors = []
+    for params, name in scenarios:
+        try:
+            calls.append(_local_m4l_preflight(params, name))
+        except Exception as exc:
+            errors.append({"name": name, "error": str(exc)})
+    check = _scenario_result(
+        "generated_m4l_creative_devices_local_preflight",
+        "Preflight custom Max for Live devices with creative UI without touching Live",
+        calls,
+    )
+    if errors:
+        check["ok"] = False
+        check["errors"] = errors
+    output = {
+        "ok": not errors,
+        "destructive": False,
+        "checks": [check],
+        "summary": {
+            "total": 1,
+            "passed": 0 if errors else 1,
+            "failed": 1 if errors else 0,
+            "hard_failed": 1 if errors else 0,
+        },
+    }
+    return (0 if output["ok"] else 1), output
+
+
 def main() -> int:
     if not require_debug_cli("ableton-live-mcp prompt-audit"):
         return 2
     parser = argparse.ArgumentParser(description="Run destructive real-prompt Ableton Live MCP workflow audits.")
     parser.add_argument("--yes", action="store_true", help="Required: acknowledge that this modifies the open Live set.")
     parser.add_argument("--no-optional", action="store_true", help="Skip library/plugin-dependent optional scenarios.")
+    parser.add_argument("--local-generated-m4l", action="store_true", help="Run non-destructive local generated-M4L creative preflight checks.")
     args = parser.parse_args()
+    if args.local_generated_m4l:
+        code, output = run_generated_m4l_local_preflight()
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return code
     if not args.yes:
         print("Refusing to run destructive prompt audit without --yes.", file=sys.stderr)
         return 2
