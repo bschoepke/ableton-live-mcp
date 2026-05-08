@@ -78,6 +78,7 @@ def test_initialize_includes_general_model_instructions():
     assert "start with path" in instructions
     assert "Idle sockets auto-retry" in instructions
     assert "sent-call timeouts fail closed" in instructions
+    assert "compact_result" in instructions
     assert "jweb/jbrowser aliases" in instructions
     assert "agent-settable UI" in instructions
     assert "webui_read diagnostics" in instructions
@@ -1108,6 +1109,134 @@ def test_agent_m4l_device_tool_can_return_compact_status_alias(tmp_path):
     assert "gain" not in status.get("state", {})
 
 
+def test_agent_m4l_device_tool_can_return_compact_result(tmp_path):
+    class ResultBridge(FakeBridge):
+        def request(self, method, params):
+            self.calls.append((method, params))
+            devices = [
+                {
+                    "id": index,
+                    "name": f"Device {index}",
+                    "class_name": "MxDeviceInstrument",
+                    "parameters": [{"name": "P", "value": 0.5}],
+                    "chains": [{"name": "Nested"}],
+                }
+                for index in range(10)
+            ]
+            return {
+                "method": method,
+                "params": params,
+                "sent": True,
+                "command": "update",
+                "role": "instrument",
+                "instance_id": "Compact_Result",
+                "device_name": "AgentM4L_instrument_Compact_Result",
+                "command_id": "cmd1",
+                "command_file": str(tmp_path / "command.json"),
+                "status_file": str(tmp_path / "status.json"),
+                "loaded": True,
+                "track": {
+                    "id": 123,
+                    "name": "Track 2",
+                    "devices": devices + [{"truncated": True}],
+                    "clips": [{"name": "Clip"}],
+                    "arrangement_clips": [{"name": "Arrangement Clip"}],
+                },
+            }
+
+    bridge = ResultBridge()
+    mcp = make_server(bridge)
+    response = mcp.handle({
+        "jsonrpc": "2.0",
+        "id": 64,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "instrument",
+            "instance_id": "Compact Result",
+            "build": False,
+            "target_track": {"path": "live_set tracks 1"},
+            "patch": {"objects": []},
+            "compact_result": True,
+        }},
+    })
+
+    forwarded = bridge.calls[0][1]
+    result = response["result"]["structuredContent"]
+    assert "compact_result" not in forwarded
+    assert "params" not in result
+    assert result["loaded"] is True
+    assert result["track"]["name"] == "Track 2"
+    assert result["track"]["device_count"] == 10
+    assert len(result["track"]["devices"]) == 8
+    assert result["track"]["devices"][0]["parameter_count"] == 1
+    assert result["track"]["devices"][0]["chain_count"] == 1
+    assert "parameters" not in result["track"]["devices"][0]
+    assert result["track"]["devices_truncated"] is True
+    assert result["track"]["clip_count"] == 1
+    assert result["track"]["arrangement_clip_preview_count"] == 1
+
+
+def test_agent_m4l_device_tool_result_detail_summary_alias_is_server_side(tmp_path):
+    class ResultBridge(FakeBridge):
+        def request(self, method, params):
+            self.calls.append((method, params))
+            return {
+                "method": method,
+                "params": params,
+                "command": "status",
+                "track": {"name": "Track 1", "devices": [{"name": "Device", "parameters": [1, 2]}]},
+            }
+
+    bridge = ResultBridge()
+    mcp = make_server(bridge)
+    response = mcp.handle({
+        "jsonrpc": "2.0",
+        "id": 65,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "instance_id": "Alias",
+            "build": False,
+            "target_track": {"path": "live_set tracks 0"},
+            "command": "status",
+            "result_detail": "summary",
+        }},
+    })
+
+    forwarded = bridge.calls[0][1]
+    result = response["result"]["structuredContent"]
+    assert "result_detail" not in forwarded
+    assert "params" not in result
+    assert result["track"]["devices"] == [{"name": "Device", "parameter_count": 2}]
+
+
+def test_agent_m4l_device_tool_compact_result_preserves_direct_fast_path(tmp_path):
+    bridge = FakeBridge()
+    command_file = tmp_path / "command.json"
+    response = make_server(bridge).handle({
+        "jsonrpc": "2.0",
+        "id": 66,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "instance_id": "Direct Compact",
+            "command": "set",
+            "values": [{"id": "gain", "value": 0.25}],
+            "command_file": str(command_file),
+            "udp": False,
+            "compact_result": True,
+        }},
+    })
+
+    payload = json.loads(command_file.read_text(encoding="utf-8"))
+    result = response["result"]["structuredContent"]
+    assert bridge.calls == []
+    assert result["direct"] is True
+    assert result["command_file_written"] is True
+    assert "compact_result" not in payload
+    assert payload["values"] == [{"id": "gain", "value": 0.25}]
+
+
 def test_agent_m4l_status_timeout_defaults_longer_for_webui():
     assert agent_m4l_status_timeout(None, False) == 2.0
     assert agent_m4l_status_timeout(None, True) == 9.0
@@ -1542,6 +1671,7 @@ def test_tool_list_stays_compact():
     assert "jweb/jbrowser web UI" in m4l["description"]
     assert "wait_status" in m4l["description"]
     assert "compact_status" in m4l["description"]
+    assert "compact_result" in m4l["description"]
     assert "web diag" in m4l["description"]
     transport = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_transport")
     assert "continue" in transport["description"]

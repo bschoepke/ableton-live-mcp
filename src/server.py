@@ -39,13 +39,13 @@ ABLETON_MCP_INSTRUCTIONS = (
     "find_similar_sounds requires Live 12+ analysis data. "
     "AgentAudioTap: prefer master tap + solo target; start with path. "
     "Idle sockets auto-retry; sent-call timeouts fail closed; check status before retry; fresh AMXD loads retry. "
-    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status and require matching command_id/last_reload_command_id. Supports preflight, file updates, UDP hints, set/status skip build, midiin+midiparse, rect-driven sizing, ui_bindings, agent-settable UI, webui_read diagnostics, set_silent/batches/list values, audio buses, jweb/jbrowser aliases. In stressed sets, no web ack means reload/simplify or validate a fresh host. "
+    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status/compact_result and require matching command_id/last_reload_command_id. Supports preflight, file updates, UDP hints, set/status skip build, midiin+midiparse, rect-driven sizing, ui_bindings, agent-settable UI, webui_read diagnostics, set_silent/batches/list values, audio buses, jweb/jbrowser aliases. In stressed sets, no web ack means reload/simplify or validate a fresh host. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args are JSON numbers; Simpler.sample is not generally settable; use ids from summaries, not raw _live_ptr values. "
     "Hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
 AGENT_M4L_TOOL_DESCRIPTION = (
     "Custom M4L build/load/hot-reload: arbitrary native UI, jweb/jbrowser web UI/mixed; "
-    "wait_status/compact_status, file commands, bounds, ui_bindings, web diag, set/status fast paths."
+    "wait_status/compact_status/compact_result, file commands, bounds, ui_bindings, web diag, set/status fast paths."
 )
 AGENT_AUDIO_TAP_DESCRIPTION = "Command AgentAudioTap capture: use start with path, then stop/status; file command reliable, UDP optional."
 AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap on master or target; optionally solo target track and reset transport."
@@ -261,6 +261,8 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         wait_status = bool(params.pop("wait_status", False))
         status_detail = str(params.pop("status_detail", "full") or "full").lower()
         compact_status = bool(params.pop("compact_status", False))
+        result_detail = str(params.pop("result_detail", "full") or "full").lower()
+        compact_result = bool(params.pop("compact_result", False)) or result_detail in ("summary", "compact")
         status_timeout_arg = params.pop("status_timeout", None)
         status_poll_interval = float(params.pop("status_poll_interval", 0.05))
         load_retry_timeout_arg = params.pop("load_retry_timeout", None)
@@ -359,7 +361,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         if webui is not None:
             response_webui = webui["webui"] if set(webui) == {"webui"} else webui
             result["webui"] = summarize_agent_m4l_webui(response_webui)
-        return result
+        return summarize_agent_m4l_result(result) if compact_result else result
 
     server.add_tool(Tool("live_agent_m4l_device", AGENT_M4L_TOOL_DESCRIPTION, loose_schema(), agent_m4l_device))
     server.add_tool(Tool("live_transport", "Transport status/play/continue/stop with optional seek.", schema({
@@ -805,6 +807,89 @@ def summarize_agent_m4l_webui(webui: Any) -> Any:
     if isinstance(controls, list):
         result["controls"] = len(controls)
     return result
+
+
+def summarize_agent_m4l_result(result: dict[str, Any]) -> dict[str, Any]:
+    keep = (
+        "method",
+        "sent",
+        "command",
+        "role",
+        "instance_id",
+        "device_name",
+        "command_id",
+        "command_file",
+        "command_file_written",
+        "status_file",
+        "port",
+        "loaded",
+        "udp_bytes",
+        "udp_skipped",
+        "triggered",
+        "load_error",
+        "load_retry_attempts",
+        "direct",
+        "preflight_only",
+        "device_width",
+        "device_height",
+        "built",
+        "preflight",
+        "status",
+        "webui",
+    )
+    summary = {key: result[key] for key in keep if key in result}
+    if "track" in result:
+        summary["track"] = summarize_agent_m4l_track(result.get("track"))
+    return summary
+
+
+def summarize_agent_m4l_track(track: Any) -> Any:
+    if not isinstance(track, dict):
+        return compact_agent_m4l_status_value(track)
+    keep = (
+        "id",
+        "path",
+        "name",
+        "index",
+        "is_foldable",
+        "mute",
+        "solo",
+        "arm",
+        "implicit_arm",
+        "can_be_armed",
+        "clip_slots_scanned",
+        "clip_slots_truncated",
+        "arrangement_clip_count",
+    )
+    summary = {key: track[key] for key in keep if key in track}
+    devices = track.get("devices")
+    if isinstance(devices, list):
+        concrete_devices = [device for device in devices if not (isinstance(device, dict) and device.get("truncated"))]
+        summary["device_count"] = len(concrete_devices)
+        summary["devices"] = [summarize_agent_m4l_device(device) for device in concrete_devices[:8]]
+        if len(concrete_devices) > 8 or any(isinstance(device, dict) and device.get("truncated") for device in devices):
+            summary["devices_truncated"] = True
+    clips = track.get("clips")
+    if isinstance(clips, list):
+        summary["clip_count"] = len(clips)
+    arrangement_clips = track.get("arrangement_clips")
+    if isinstance(arrangement_clips, list):
+        summary["arrangement_clip_preview_count"] = len(arrangement_clips)
+    return summary
+
+
+def summarize_agent_m4l_device(device: Any) -> Any:
+    if not isinstance(device, dict):
+        return compact_agent_m4l_status_value(device)
+    keep = ("id", "path", "name", "class_name", "can_have_chains")
+    summary = {key: device[key] for key in keep if key in device}
+    parameters = device.get("parameters")
+    if isinstance(parameters, list):
+        summary["parameter_count"] = len(parameters)
+    chains = device.get("chains")
+    if isinstance(chains, list):
+        summary["chain_count"] = len(chains)
+    return summary
 
 
 def _should_retry_agent_m4l_load(params: dict[str, Any], result: dict[str, Any]) -> bool:
