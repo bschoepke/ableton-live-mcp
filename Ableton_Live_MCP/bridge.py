@@ -269,7 +269,8 @@ class AbletonLiveMCP(ControlSurface):
     def _rpc_agent_m4l_device(self, params):
         instance_id = self._agent_m4l_slug(params.get("instance_id") or params.get("name") or "device")
         role = self._agent_m4l_role(params.get("role"))
-        device_name = str(params.get("device_name") or ("AgentM4L_%s_%s" % (role, instance_id)))
+        device_slug = self._agent_m4l_slug(params.get("name")) if params.get("name") else instance_id
+        device_name = str(params.get("device_name") or ("AgentM4L_%s_%s" % (role, device_slug)))
         command_file = str(params.get("command_file") or _temp_file("agent_m4l_%s.json" % instance_id))
         status_file = str(params.get("status_file") or _temp_file("agent_m4l_%s_status.json" % instance_id))
         command = params.get("command") or ("set" if params.get("values") or params.get("parameters") else ("update" if params.get("patch") or params.get("spec") or params.get("webui") or params.get("webuis") else "status"))

@@ -17,14 +17,14 @@ __version__ = "0.1.0"
 ABLETON_AGENT_GUIDE = "General Live object-model bridge; examples are heuristics, not limits."
 ABLETON_MCP_INSTRUCTIONS = (
     "General Live object-model bridge, not a limited recipe API. "
-    "Prefer installed browser content, Packs, user assets, samples, presets, devices, and indexed third-party audio plugins before generated assets unless asked. "
-    "Discover with live_browser_capabilities/live_browser_roots/live_browser_search, including roots:['plugins']; SKU, Packs, folders, and plugin indexing vary. "
+    "Prefer installed content, Packs, user assets, samples, presets, devices, and indexed third-party audio plugins before generated assets unless asked. "
+    "Discover with live_browser_capabilities/live_browser_roots/live_browser_search incl roots:['plugins']; SKU, Packs, folders, plugin indexing vary. "
     "For existing sets, start with live_set_summary; pass expected_set_signature to destructive edits. "
-    "For speed, prefer compact live_exec summaries, live_batch, property lists, child limits, max_items, and max_depth. "
+    "For speed, prefer compact live_exec, live_batch, property lists, child limits, max_items, max_depth. "
     "For clip work, prefer JSON-safe helpers before hand-coding C++ signatures. "
     "find_similar_sounds requires Live 12+ analysis data. "
     "For AgentAudioTap, prefer master tap + solo target; start with path. "
-    "Idle sockets auto-retry; set per-call timeout for slow Live work. "
+    "Idle sockets auto-retry; fresh AMXD loads retry client-side; set timeouts for slow Live work. "
     "M4L: live_agent_m4l_device hot-reloads native/web UI; file authoritative, UDP hint; set/status skip build; use wait_status, midiin+midiparse, presentation_rect/ui_bindings, audio buses, jweb/jbrowser aliases. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via browser or create audio clips; use ids from bridge summaries, not raw _live_ptr values. "
     "These are hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
@@ -237,15 +237,36 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         wait_status = bool(params.pop("wait_status", False))
         status_timeout = float(params.pop("status_timeout", 2.0))
         status_poll_interval = float(params.pop("status_poll_interval", 0.05))
+        load_retry_timeout_arg = params.pop("load_retry_timeout", None)
+        load_retry_interval = float(params.pop("load_retry_interval", 0.25))
         previous_status_mtime = _file_mtime(str(params.get("status_file") or ""))
+
+        def remember_webui(webui_key: str, rendered: Any) -> None:
+            nonlocal webui
+            if webui is None:
+                webui = {}
+            webui[webui_key] = rendered
+
+        instance_id = str(params.get("instance_id") or params.get("name") or "device")
         for webui_key in ("webui", "webuis"):
             if params.get(webui_key):
-                instance_id = str(params.get("instance_id") or params.get("name") or "device")
                 rendered = materialize_agent_m4l_webui(instance_id, params[webui_key])
                 params[webui_key] = rendered
-                if webui is None:
-                    webui = {}
-                webui[webui_key] = rendered
+                remember_webui(webui_key, rendered)
+        for patch_key in ("patch", "spec"):
+            patch = params.get(patch_key)
+            if not isinstance(patch, dict):
+                continue
+            rendered_patch = None
+            for webui_key in ("webui", "webuis"):
+                if patch.get(webui_key):
+                    rendered = materialize_agent_m4l_webui(instance_id, patch[webui_key])
+                    if rendered_patch is None:
+                        rendered_patch = dict(patch)
+                    rendered_patch[webui_key] = rendered
+                    remember_webui(webui_key, rendered)
+            if rendered_patch is not None:
+                params[patch_key] = rendered_patch
         if webui is not None:
             if params.get("patch"):
                 params["patch"] = dict(params["patch"])
@@ -264,6 +285,9 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
             params["status_file"] = built["status_file"]
             previous_status_mtime = _file_mtime(params["status_file"])
         result = bridge.request("agent_m4l_device", params)
+        load_retry_timeout = float(load_retry_timeout_arg) if load_retry_timeout_arg is not None else (6.0 if built is not None else 0.0)
+        if load_retry_timeout > 0 and _should_retry_agent_m4l_load(params, result):
+            result = retry_agent_m4l_load(bridge, params, result, load_retry_timeout, load_retry_interval)
         if wait_status:
             result["status"] = wait_agent_m4l_status(
                 str(result.get("status_file") or params.get("status_file") or ""),
@@ -416,6 +440,51 @@ def summarize_agent_m4l_webui(webui: Any) -> Any:
     controls = webui.get("controls")
     if isinstance(controls, list):
         result["controls"] = len(controls)
+    return result
+
+
+def _should_retry_agent_m4l_load(params: dict[str, Any], result: dict[str, Any]) -> bool:
+    if params.get("load") is False:
+        return False
+    if not (params.get("target_track") or params.get("ref")):
+        return False
+    return result.get("loaded") is False and bool(result.get("load_error"))
+
+
+def retry_agent_m4l_load(bridge: AbletonBridgeClient, params: dict[str, Any], result: dict[str, Any], timeout: float, interval: float) -> dict[str, Any]:
+    deadline = time.time() + timeout
+    attempts = 0
+    retry_params = {
+        "role": params.get("role"),
+        "instance_id": params.get("instance_id"),
+        "device_name": params.get("device_name"),
+        "target_track": params.get("target_track"),
+        "ref": params.get("ref"),
+        "device_index": params.get("device_index"),
+        "load": True,
+        "command": "status",
+        "command_file": params.get("command_file"),
+        "status_file": params.get("status_file"),
+        "write_command_file": False,
+        "udp": False,
+        "id": result.get("command_id"),
+        "timeout": params.get("timeout"),
+    }
+    retry_params = {key: value for key, value in retry_params.items() if value is not None}
+    while time.time() < deadline:
+        attempts += 1
+        retry = bridge.request("agent_m4l_device", retry_params)
+        if retry.get("loaded"):
+            result["loaded"] = True
+            result["track"] = retry.get("track")
+            result.pop("load_error", None)
+            break
+        if retry.get("load_error"):
+            result["load_error"] = retry["load_error"]
+        if interval <= 0:
+            break
+        time.sleep(interval)
+    result["load_retry_attempts"] = attempts
     return result
 
 

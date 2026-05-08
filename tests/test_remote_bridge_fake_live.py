@@ -931,6 +931,27 @@ def test_agent_m4l_device_name_match_requires_matching_role_when_available(monke
     assert target.devices[1].class_name == "MxDeviceAudioEffect"
 
 
+def test_agent_m4l_device_name_uses_title_when_instance_is_stable(monkeypatch):
+    bridge, _song, app = make_bridge(monkeypatch)
+    device_name = "AgentM4L_instrument_Orbit_Glass_Synth"
+    item = FakeBrowserItem(device_name, loadable=True, device=True)
+    bridge._find_browser_item_named = lambda name: item if name == device_name else None
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "instrument",
+        "instance_id": "orbit_glass_synth_001",
+        "name": "Orbit Glass Synth",
+        "target_track": {"path": "live_set tracks 1"},
+        "patch": {"objects": []},
+        "udp": False,
+        "id": "orbit1",
+    })
+
+    assert result["device_name"] == device_name
+    assert result["loaded"] is True
+    assert app.browser.loaded == [device_name]
+
+
 def test_agent_m4l_device_reports_load_error_without_dropping_command(monkeypatch):
     bridge, song, app = make_bridge(monkeypatch)
     app.browser.user_library = FakeBrowserItem("User Library", folder=True, children=[])

@@ -433,6 +433,61 @@ def test_agent_m4l_device_tool_builds_and_forwards(monkeypatch, tmp_path):
     assert response["result"]["structuredContent"]["webui"]["html_path"].endswith("index.html")
 
 
+def test_agent_m4l_device_tool_retries_fresh_build_load(monkeypatch, tmp_path):
+    import agent_m4l
+
+    monkeypatch.setattr(agent_m4l, "GENERATED_DIR", tmp_path)
+    monkeypatch.setattr(agent_m4l, "WEBUI_DIR", tmp_path / "webui")
+
+    class RetryBridge(FakeBridge):
+        def request(self, method, params):
+            self.calls.append((method, params))
+            if len(self.calls) == 1:
+                return {
+                    "method": method,
+                    "loaded": False,
+                    "load_error": "Device AgentM4L_instrument_Orbit_Glass_Synth not found.",
+                    "command_id": "load1",
+                    "status_file": params["status_file"],
+                }
+            assert params["write_command_file"] is False
+            assert params["udp"] is False
+            assert params["id"] == "load1"
+            assert params["device_name"] == "AgentM4L_instrument_Orbit_Glass_Synth"
+            assert "patch" not in params
+            return {
+                "method": method,
+                "loaded": True,
+                "command_id": "load1",
+                "status_file": params["status_file"],
+                "track": {"devices": [{"name": params["device_name"]}]},
+            }
+
+    bridge = RetryBridge()
+    server = make_server(bridge)
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 48,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "instrument",
+            "instance_id": "orbit_glass_synth_001",
+            "name": "Orbit Glass Synth",
+            "target_track": {"path": "live_set tracks 4"},
+            "patch": {"objects": []},
+            "install": False,
+            "load_retry_timeout": 1.0,
+            "load_retry_interval": 0.0,
+        }},
+    })
+
+    result = response["result"]["structuredContent"]
+    assert len(bridge.calls) == 2
+    assert result["loaded"] is True
+    assert result["load_retry_attempts"] == 1
+    assert "load_error" not in result
+
+
 def test_agent_m4l_device_tool_forwards_value_updates_without_build():
     bridge = FakeBridge()
     server = make_server(bridge)
@@ -497,6 +552,40 @@ def test_agent_m4l_device_tool_materializes_webui_arrays(monkeypatch, tmp_path):
     assert forwarded["webuis"][1]["html_path"] == str(existing)
     assert forwarded["patch"]["webuis"] == forwarded["webuis"]
     assert response["result"]["structuredContent"]["webui"]["webuis"][0]["url"].startswith("file://")
+
+
+def test_agent_m4l_device_tool_materializes_patch_webui(monkeypatch, tmp_path):
+    import agent_m4l
+
+    monkeypatch.setattr(agent_m4l, "GENERATED_DIR", tmp_path)
+    monkeypatch.setattr(agent_m4l, "WEBUI_DIR", tmp_path / "webui")
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {
+        "role": "instrument",
+        "instance_id": "Nested Panel",
+        "patch": {
+            "objects": [],
+            "webui": {
+                "object": "jbrowser~",
+                "title": "Nested",
+                "presentation_rect": [0, 0, 220, 120],
+                "controls": [{"id": "tone", "label": "Tone", "value": 0.5}],
+            },
+        },
+        "install": False,
+    }
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 49,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": args},
+    })
+
+    forwarded = bridge.calls[0][1]
+    assert forwarded["patch"]["webui"]["object"] == "jbrowser~"
+    assert forwarded["patch"]["webui"]["html_path"].endswith("Nested_Panel/index.html")
+    assert response["result"]["structuredContent"]["webui"]["html_path"].endswith("Nested_Panel/index.html")
 
 
 def test_agent_m4l_device_tool_waits_for_status_without_forwarding_wait_args(tmp_path):
