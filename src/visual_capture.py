@@ -103,6 +103,7 @@ def capture_ableton_window(
         "backend": backend_used,
         "window": window_result(window),
         "postprocess": postprocess,
+        **({"warning": "blank_capture"} if postprocess.get("content", {}).get("blank") else {}),
     }
 
 
@@ -405,6 +406,7 @@ def postprocess_capture(
             image.thumbnail(max_size, resampling)
         if image.mode not in ("RGB", "RGBA"):
             image = image.convert("RGBA")
+        content = image_content_stats(image)
         image.save(output, format="PNG")
         return {
             "source_size": source_size,
@@ -412,6 +414,7 @@ def postprocess_capture(
             "crop_box": list(box) if box is not None else None,
             "region": normalize_region_name(region) if region else None,
             "max_size": list(max_size) if max_size is not None else None,
+            "content": content,
         }
 
 
@@ -483,6 +486,24 @@ def normalized_max_size(max_width: int | None, max_height: int | None) -> tuple[
 
 def clamp_int(value: int, lower: int, upper: int) -> int:
     return max(lower, min(upper, int(value)))
+
+
+def image_content_stats(image: Any, threshold: int = 8) -> dict[str, Any]:
+    grayscale = image.convert("L")
+    width, height = grayscale.size
+    total = max(1, width * height)
+    histogram = grayscale.histogram()
+    nonblack = sum(histogram[threshold + 1:])
+    mean_luma = sum(index * count for index, count in enumerate(histogram)) / total
+    mask = grayscale.point(lambda pixel: 255 if pixel > threshold else 0)
+    bbox = mask.getbbox()
+    nonblack_fraction = nonblack / total
+    return {
+        "mean_luma": round(mean_luma, 3),
+        "nonblack_fraction": round(nonblack_fraction, 6),
+        "bbox": list(bbox) if bbox else None,
+        "blank": bool(mean_luma < 2.0 or nonblack_fraction < 0.001),
+    }
 
 
 def default_capture_path() -> Path:

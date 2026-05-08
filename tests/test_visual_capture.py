@@ -135,7 +135,22 @@ def test_postprocess_capture_crops_and_downscales(tmp_path):
     assert result["source_size"] == [200, 100]
     assert result["crop_box"] == [0, 50, 200, 100]
     assert result["size"][0] <= 50
+    assert result["content"]["blank"] is True
     assert output.stat().st_size > 0
+
+
+def test_image_content_stats_detects_nonblank_capture():
+    Image = pytest.importorskip("PIL.Image")
+    image = Image.new("RGB", (40, 20), "black")
+    for x in range(10, 30):
+        for y in range(5, 15):
+            image.putpixel((x, y), (220, 220, 220))
+
+    stats = visual_capture.image_content_stats(image)
+
+    assert stats["blank"] is False
+    assert stats["bbox"] == [10, 5, 30, 15]
+    assert stats["nonblack_fraction"] > 0.1
 
 
 def test_default_selection_prefers_largest_verified_ableton_window(monkeypatch):
