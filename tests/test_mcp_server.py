@@ -1540,6 +1540,25 @@ def test_wait_agent_m4l_status_requires_matching_command_id(tmp_path):
 
     assert result["command_id"] == "new"
     assert result["webuis"] == 1
+    assert result["host_runtime_status"] == "missing"
+
+
+def test_wait_agent_m4l_status_preserves_host_runtime_version(tmp_path):
+    status_file = tmp_path / "status.json"
+    before = 1.0
+    status_file.write_text(json.dumps({
+        "event": "reload",
+        "command_id": "new",
+        "host_runtime_version": "web-clear-guard-1",
+    }), encoding="utf-8")
+
+    result = wait_agent_m4l_status(str(status_file), before, "new", 0.2, 0.01, "reload")
+    compact = summarize_agent_m4l_status(result)
+
+    assert result["host_runtime_version"] == "web-clear-guard-1"
+    assert result["host_runtime_status"] == "reported"
+    assert compact["host_runtime_version"] == "web-clear-guard-1"
+    assert compact["host_runtime_status"] == "reported"
 
 
 def test_wait_agent_m4l_status_accepts_reload_seen_before_web_ack(tmp_path):

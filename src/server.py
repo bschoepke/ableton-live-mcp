@@ -1290,9 +1290,13 @@ def _agent_m4l_status_if_ready(path: str, previous_mtime: float | None, command_
 
 
 def annotate_agent_m4l_status(status: dict[str, Any], command_id: str, expected_event: str | None) -> dict[str, Any]:
-    if not _agent_m4l_reload_seen(status, command_id, expected_event):
-        return status
     result = dict(status)
+    if result.get("host_runtime_version"):
+        result.setdefault("host_runtime_status", "reported")
+    else:
+        result.setdefault("host_runtime_status", "missing")
+    if not _agent_m4l_reload_seen(status, command_id, expected_event):
+        return result
     result["reload_seen"] = True
     if str(status.get("event") or "") == "error" and str(status.get("reason") or "") == "webui_read_exhausted":
         result["webui_status"] = "read_exhausted"
@@ -1316,7 +1320,7 @@ def _read_agent_m4l_status(path: str) -> tuple[dict[str, Any] | None, str | None
 
 def summarize_agent_m4l_status(status: dict[str, Any]) -> dict[str, Any]:
     summary: dict[str, Any] = {}
-    for key in ("event", "command_id", "last_reload_command_id", "dynamic_objects", "webuis", "device_width", "device_height", "id", "reason", "attempt", "attempts", "message", "reload_seen", "webui_status", "changed", "source", "target", "timed_out", "expected_command_id", "expected_event", "mismatch", "timeout_reason", "error", "path", "last_status_age_seconds", "status_file_updated_after_command", "state_keys"):
+    for key in ("event", "command_id", "last_reload_command_id", "host_runtime_version", "host_runtime_status", "dynamic_objects", "webuis", "device_width", "device_height", "id", "reason", "attempt", "attempts", "message", "reload_seen", "webui_status", "changed", "source", "target", "timed_out", "expected_command_id", "expected_event", "mismatch", "timeout_reason", "error", "path", "last_status_age_seconds", "status_file_updated_after_command", "state_keys"):
         if key in status:
             summary[key] = status.get(key)
     last_status = status.get("last_status")
