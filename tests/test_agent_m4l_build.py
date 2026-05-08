@@ -88,6 +88,15 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert patch["patcher"]["amxdtype"] == 1768515945
 
 
+def test_agent_m4l_host_plumbing_does_not_widen_device_bounds():
+    for role in ("instrument", "audio_effect", "midi_effect"):
+        patch = make_host_patch(role, "Compact", device_width=280, device_height=160)
+        declared_width = patch["patcher"]["devicewidth"]
+        for box in patch["patcher"]["boxes"]:
+            rect = box["box"].get("patching_rect") or [0, 0, 0, 0]
+            assert rect[0] + rect[2] <= declared_width
+
+
 def test_agent_m4l_infers_device_bounds_from_presentation_bounds():
     assert infer_device_width() == 420
     assert infer_device_height() == 170

@@ -264,12 +264,19 @@ def build_amxd(source: Path, output: Path, role: str | None = None) -> None:
     output.write_bytes(data)
 
 
+HOST_BOX_WIDTH = 72.0
+HOST_BOX_HEIGHT = 22.0
+HOST_COL_0 = 8.0
+HOST_COL_1 = 96.0
+HOST_COL_2 = 184.0
+
+
 def _box(box_id: str, maxclass: str, text: str | None, x: float, y: float, **extra: Any) -> dict[str, Any]:
     box: dict[str, Any] = {
         "id": box_id,
         "maxclass": maxclass,
         "varname": box_id,
-        "patching_rect": [x, y, 140.0, 22.0],
+        "patching_rect": [x, y, HOST_BOX_WIDTH, HOST_BOX_HEIGHT],
     }
     if text is not None:
         box["text"] = text
@@ -294,38 +301,38 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
         max_arg(status_file(instance_id)),
     )
     boxes = [
-        _box("comment-title", "comment", "Agent M4L Dynamic Host: %s" % name, 20.0, 20.0),
-        _box("js", "newobj", js_text, 20.0, 58.0),
-        _box("udp", "newobj", "udpreceive %d" % udp_port(instance_id), 220.0, 20.0),
-        _box("poll-loadbang", "newobj", "loadbang", 220.0, 58.0),
-        _box("poll-start", "message", "1", 220.0, 96.0),
-        _box("poll-metro", "newobj", "qmetro %d @active 1" % FALLBACK_POLL_INTERVAL_MS, 220.0, 134.0),
-        _box("poll-live-device", "newobj", "live.thisdevice", 340.0, 58.0),
-        _box("poll-defer", "newobj", "deferlow", 340.0, 96.0),
-        _box("poll-delay", "newobj", "delay 100", 340.0, 134.0),
-        _box("self-path-message", "message", "path this_device", 520.0, 58.0),
-        _box("self-path", "newobj", "live.path this_device", 520.0, 96.0),
-        _box("self-prepend", "newobj", "prepend __self_device", 520.0, 134.0),
-        _box("trigger-path-message", "message", "path this_device parameters 1", 680.0, 58.0),
-        _box("trigger-path", "newobj", "live.path this_device parameters 1", 680.0, 96.0),
-        _box("trigger-observer", "newobj", "live.observer value", 680.0, 134.0),
-        _box("trigger-prepend", "newobj", "prepend __command_trigger", 680.0, 172.0),
-        _box("command-filewatch", "newobj", "filewatch %s" % max_arg(command_file(instance_id)), 860.0, 58.0),
-        _box("command-filewatch-init", "newobj", "trigger b b", 860.0, 96.0),
-        _box("command-filewatch-path", "message", max_arg(command_file(instance_id)), 860.0, 134.0),
-        _box("command-filewatch-start", "message", "1", 1010.0, 134.0),
-        _box("command-filewatch-prepend", "newobj", "prepend __filewatch", 860.0, 172.0),
+        _box("comment-title", "comment", "Agent M4L Dynamic Host: %s" % name, HOST_COL_0, 20.0),
+        _box("js", "newobj", js_text, HOST_COL_0, 48.0),
+        _box("udp", "newobj", "udpreceive %d" % udp_port(instance_id), HOST_COL_1, 20.0),
+        _box("poll-loadbang", "newobj", "loadbang", HOST_COL_1, 48.0),
+        _box("poll-start", "message", "1", HOST_COL_1, 76.0),
+        _box("poll-metro", "newobj", "qmetro %d @active 1" % FALLBACK_POLL_INTERVAL_MS, HOST_COL_1, 104.0),
+        _box("poll-live-device", "newobj", "live.thisdevice", HOST_COL_2, 48.0),
+        _box("poll-defer", "newobj", "deferlow", HOST_COL_2, 76.0),
+        _box("poll-delay", "newobj", "delay 100", HOST_COL_2, 104.0),
+        _box("self-path-message", "message", "path this_device", HOST_COL_0, 132.0),
+        _box("self-path", "newobj", "live.path this_device", HOST_COL_0, 160.0),
+        _box("self-prepend", "newobj", "prepend __self_device", HOST_COL_0, 188.0),
+        _box("trigger-path-message", "message", "path this_device parameters 1", HOST_COL_1, 132.0),
+        _box("trigger-path", "newobj", "live.path this_device parameters 1", HOST_COL_1, 160.0),
+        _box("trigger-observer", "newobj", "live.observer value", HOST_COL_1, 188.0),
+        _box("trigger-prepend", "newobj", "prepend __command_trigger", HOST_COL_1, 216.0),
+        _box("command-filewatch", "newobj", "filewatch %s" % max_arg(command_file(instance_id)), HOST_COL_2, 132.0),
+        _box("command-filewatch-init", "newobj", "trigger b b", HOST_COL_2, 160.0),
+        _box("command-filewatch-path", "message", max_arg(command_file(instance_id)), HOST_COL_2, 188.0),
+        _box("command-filewatch-start", "message", "1", HOST_COL_2, 216.0),
+        _box("command-filewatch-prepend", "newobj", "prepend __filewatch", HOST_COL_2, 244.0),
         _box(
             "command-trigger",
             "live.numbox",
             None,
-            340.0,
-            172.0,
+            HOST_COL_0,
+            216.0,
             parameter_enable=1,
             parameter_shortname="Agent Poll",
             parameter_longname="Agent M4L Poll",
         ),
-        _box("script", "newobj", "thispatcher", 420.0, 20.0),
+        _box("script", "newobj", "thispatcher", HOST_COL_2, 20.0),
     ]
     lines = [
         _line("udp", 0, "js", 0),
@@ -364,17 +371,17 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
     audio_buses = audio_bus_names(instance_id)
     if preset["io"] == "audio_effect":
         boxes += [
-            _box("plugin", "newobj", "plugin~", 20.0, 150.0),
-            _box("audio-in-l", "newobj", "send~ %s" % audio_buses["input_left"], 20.0, 190.0),
-            _box("audio-in-r", "newobj", "send~ %s" % audio_buses["input_right"], 120.0, 190.0),
-            _box("audio-out-l", "newobj", "receive~ %s" % audio_buses["output_left"], 20.0, 220.0),
-            _box("audio-out-r", "newobj", "receive~ %s" % audio_buses["output_right"], 120.0, 220.0),
-            _box("plugout", "newobj", "plugout~ 1 2", 20.0, 250.0),
-            _box("signal-wake-clock", "newobj", "phasor~ %d" % SIGNAL_WAKE_RATE_HZ, 220.0, 280.0),
-            _box("signal-wake-threshold", "newobj", ">~ 0.5", 320.0, 280.0),
-            _box("signal-wake-edge", "newobj", "edge~", 420.0, 280.0),
-            _box("signal-wake-prepend", "newobj", "prepend __signal_wake", 520.0, 280.0),
-            _box("signal-wake-sink", "newobj", "*~ 0.", 660.0, 280.0),
+            _box("plugin", "newobj", "plugin~", HOST_COL_0, 280.0),
+            _box("audio-in-l", "newobj", "send~ %s" % audio_buses["input_left"], HOST_COL_0, 308.0),
+            _box("audio-in-r", "newobj", "send~ %s" % audio_buses["input_right"], HOST_COL_1, 308.0),
+            _box("audio-out-l", "newobj", "receive~ %s" % audio_buses["output_left"], HOST_COL_0, 336.0),
+            _box("audio-out-r", "newobj", "receive~ %s" % audio_buses["output_right"], HOST_COL_1, 336.0),
+            _box("plugout", "newobj", "plugout~ 1 2", HOST_COL_0, 364.0),
+            _box("signal-wake-clock", "newobj", "phasor~ %d" % SIGNAL_WAKE_RATE_HZ, HOST_COL_0, 392.0),
+            _box("signal-wake-threshold", "newobj", ">~ 0.5", HOST_COL_1, 392.0),
+            _box("signal-wake-edge", "newobj", "edge~", HOST_COL_2, 392.0),
+            _box("signal-wake-prepend", "newobj", "prepend __signal_wake", HOST_COL_0, 420.0),
+            _box("signal-wake-sink", "newobj", "*~ 0.", HOST_COL_1, 420.0),
         ]
         lines += [
             _line("plugin", 0, "audio-in-l", 0),
@@ -390,17 +397,17 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
         ]
     elif preset["io"] == "instrument":
         boxes += [
-            _box("midiin", "newobj", "midiin", 20.0, 150.0),
-            _box("midi-wake-prepend", "newobj", "prepend __midi_wake", 20.0, 180.0),
-            _box("midiout", "newobj", "midiout", 20.0, 250.0),
-            _box("audio-out-l", "newobj", "receive~ %s" % audio_buses["output_left"], 220.0, 220.0),
-            _box("audio-out-r", "newobj", "receive~ %s" % audio_buses["output_right"], 320.0, 220.0),
-            _box("plugout", "newobj", "plugout~ 1 2", 220.0, 250.0),
-            _box("signal-wake-clock", "newobj", "phasor~ %d" % SIGNAL_WAKE_RATE_HZ, 420.0, 220.0),
-            _box("signal-wake-threshold", "newobj", ">~ 0.5", 520.0, 220.0),
-            _box("signal-wake-edge", "newobj", "edge~", 620.0, 220.0),
-            _box("signal-wake-prepend", "newobj", "prepend __signal_wake", 720.0, 220.0),
-            _box("signal-wake-sink", "newobj", "*~ 0.", 860.0, 220.0),
+            _box("midiin", "newobj", "midiin", HOST_COL_0, 280.0),
+            _box("midi-wake-prepend", "newobj", "prepend __midi_wake", HOST_COL_0, 308.0),
+            _box("midiout", "newobj", "midiout", HOST_COL_0, 336.0),
+            _box("audio-out-l", "newobj", "receive~ %s" % audio_buses["output_left"], HOST_COL_1, 280.0),
+            _box("audio-out-r", "newobj", "receive~ %s" % audio_buses["output_right"], HOST_COL_2, 280.0),
+            _box("plugout", "newobj", "plugout~ 1 2", HOST_COL_1, 308.0),
+            _box("signal-wake-clock", "newobj", "phasor~ %d" % SIGNAL_WAKE_RATE_HZ, HOST_COL_0, 364.0),
+            _box("signal-wake-threshold", "newobj", ">~ 0.5", HOST_COL_1, 364.0),
+            _box("signal-wake-edge", "newobj", "edge~", HOST_COL_2, 364.0),
+            _box("signal-wake-prepend", "newobj", "prepend __signal_wake", HOST_COL_0, 392.0),
+            _box("signal-wake-sink", "newobj", "*~ 0.", HOST_COL_1, 392.0),
         ]
         lines += [
             _line("audio-out-l", 0, "plugout", 0),
@@ -416,9 +423,9 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
         ]
     else:
         boxes += [
-            _box("midiin", "newobj", "midiin", 20.0, 150.0),
-            _box("midi-wake-prepend", "newobj", "prepend __midi_wake", 20.0, 180.0),
-            _box("midiout", "newobj", "midiout", 20.0, 250.0),
+            _box("midiin", "newobj", "midiin", HOST_COL_0, 280.0),
+            _box("midi-wake-prepend", "newobj", "prepend __midi_wake", HOST_COL_0, 308.0),
+            _box("midiout", "newobj", "midiout", HOST_COL_0, 336.0),
         ]
         lines += [
             _line("midiin", 0, "midi-wake-prepend", 0),
