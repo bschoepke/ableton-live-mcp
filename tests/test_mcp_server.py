@@ -2163,9 +2163,11 @@ def test_prompt_audit_runs_expected_bridge_methods(monkeypatch, tmp_path):
     bridge = PromptBridge()
     code, output = run_prompt_audit(bridge)
     methods = [method for method, _params in bridge.calls]
+    audit = [check for check in output["checks"] if check["name"] == "generated_m4l_creative_devices"][0]
     assert code == 0
     assert output["ok"] is True
     assert output["destructive"] is True
+    assert sum(1 for call in audit["calls"] if call["method"] == "local_m4l_preflight") == 3
     assert {"batch", "exec", "set_summary", "get", "clip_notes", "clip_update_notes", "clip_envelope", "clip_warp_markers", "track_create_audio_clip", "browser_search", "browser_load", "agent_m4l_device"} <= set(methods)
     agent_m4l_calls = [params for method, params in bridge.calls if method == "agent_m4l_device"]
     assert len(agent_m4l_calls) == 4

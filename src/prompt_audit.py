@@ -16,6 +16,7 @@ from typing import Any
 import agent_m4l
 from bridge import AbletonBridgeClient, AbletonBridgeError
 from debug import require_debug_cli
+from server import preflight_agent_m4l
 
 
 Scenario = Callable[[AbletonBridgeClient], dict[str, Any]]
@@ -32,6 +33,21 @@ def _call(client: AbletonBridgeClient, method: str, params: dict[str, Any], name
     return {
         "name": name,
         "method": method,
+        "ms": round(elapsed_ms, 3),
+        "bytes": _response_size(result),
+        "result": result,
+    }
+
+
+def _local_m4l_preflight(params: dict[str, Any], name: str) -> dict[str, Any]:
+    start = time.perf_counter()
+    result = preflight_agent_m4l(dict(params))
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    if not result.get("ok"):
+        raise RuntimeError("%s failed: %s" % (name, json.dumps(result.get("errors") or [], separators=(",", ":"))))
+    return {
+        "name": name,
+        "method": "local_m4l_preflight",
         "ms": round(elapsed_ms, 3),
         "bytes": _response_size(result),
         "result": result,
@@ -186,46 +202,53 @@ def _scenario_audio_vocal_import(client: AbletonBridgeClient) -> dict[str, Any]:
 
 
 def _scenario_generated_m4l_device(client: AbletonBridgeClient) -> dict[str, Any]:
+    audio_effect = {
+        "role": "audio_effect",
+        "instance_id": "Prompt Audit Reactive Field",
+        "command": "update",
+        "load": False,
+        "udp": False,
+        "id": "prompt-audit-reactive-field-update",
+        "patch": _creative_audio_effect_patch(),
+    }
+    midi_effect = {
+        "role": "midi_effect",
+        "instance_id": "Prompt Audit Matrix Sequencer",
+        "command": "update",
+        "load": False,
+        "udp": False,
+        "id": "prompt-audit-matrix-sequencer-update",
+        "patch": _creative_midi_effect_patch(),
+    }
+    instrument = {
+        "role": "instrument",
+        "instance_id": "Prompt Audit Piano Synth",
+        "command": "update",
+        "load": False,
+        "udp": False,
+        "id": "prompt-audit-piano-synth-update",
+        "patch": _creative_instrument_patch(),
+    }
+    values = {
+        "role": "audio_effect",
+        "instance_id": "Prompt Audit Reactive Field",
+        "command": "set",
+        "load": False,
+        "udp": False,
+        "id": "prompt-audit-reactive-field-values",
+        "values": [
+            {"id": "step_pattern", "value": [1, 0, 1, 1, 0, 1, 0, 1], "message": "list"},
+            {"id": "gesture_payload", "value": {"x": 0.31, "y": 0.72, "pressure": 0.44}, "message": "symbol"},
+        ],
+    }
     calls = [
-        _call(client, "agent_m4l_device", {
-            "role": "audio_effect",
-            "instance_id": "Prompt Audit Reactive Field",
-            "command": "update",
-            "load": False,
-            "udp": False,
-            "id": "prompt-audit-reactive-field-update",
-            "patch": _creative_audio_effect_patch(),
-        }, "write_audio_effect_native_web_reactive_patch"),
-        _call(client, "agent_m4l_device", {
-            "role": "midi_effect",
-            "instance_id": "Prompt Audit Matrix Sequencer",
-            "command": "update",
-            "load": False,
-            "udp": False,
-            "id": "prompt-audit-matrix-sequencer-update",
-            "patch": _creative_midi_effect_patch(),
-        }, "write_midi_effect_keyboard_matrix_patch"),
-        _call(client, "agent_m4l_device", {
-            "role": "instrument",
-            "instance_id": "Prompt Audit Piano Synth",
-            "command": "update",
-            "load": False,
-            "udp": False,
-            "id": "prompt-audit-piano-synth-update",
-            "patch": _creative_instrument_patch(),
-        }, "write_instrument_piano_web_patch"),
-        _call(client, "agent_m4l_device", {
-            "role": "audio_effect",
-            "instance_id": "Prompt Audit Reactive Field",
-            "command": "set",
-            "load": False,
-            "udp": False,
-            "id": "prompt-audit-reactive-field-values",
-            "values": [
-                {"id": "step_pattern", "value": [1, 0, 1, 1, 0, 1, 0, 1], "message": "list"},
-                {"id": "gesture_payload", "value": {"x": 0.31, "y": 0.72, "pressure": 0.44}, "message": "symbol"},
-            ],
-        }, "write_list_and_object_ui_values"),
+        _local_m4l_preflight(audio_effect, "preflight_audio_effect_native_web_reactive_patch"),
+        _call(client, "agent_m4l_device", audio_effect, "write_audio_effect_native_web_reactive_patch"),
+        _local_m4l_preflight(midi_effect, "preflight_midi_effect_keyboard_matrix_patch"),
+        _call(client, "agent_m4l_device", midi_effect, "write_midi_effect_keyboard_matrix_patch"),
+        _local_m4l_preflight(instrument, "preflight_instrument_piano_web_patch"),
+        _call(client, "agent_m4l_device", instrument, "write_instrument_piano_web_patch"),
+        _call(client, "agent_m4l_device", values, "write_list_and_object_ui_values"),
     ]
     return _scenario_result("generated_m4l_creative_devices", "Make custom Max for Live devices with creative UI", calls)
 
