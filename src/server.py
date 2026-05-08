@@ -22,7 +22,7 @@ AGENT_M4L_MAX_UDP_BYTES = 8192
 AGENT_M4L_DEFAULT_STATUS_TIMEOUT = 2.0
 AGENT_M4L_WEB_STATUS_TIMEOUT = 9.0
 AGENT_M4L_LIVE_DEVICE_WIDTH_ADVISORY = 960
-AGENT_M4L_LIVE_DEVICE_HEIGHT_ADVISORY = 240
+AGENT_M4L_LIVE_DEVICE_HEIGHT_ADVISORY = 180
 AGENT_M4L_RECOVERY_PATCH_KEYS = (
     "objects", "connections", "ui_bindings", "bindings", "webui", "webuis",
     "device_width", "devicewidth", "width", "device_height", "deviceheight", "height",

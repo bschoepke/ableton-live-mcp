@@ -718,7 +718,7 @@ def test_agent_m4l_preflight_warns_on_tall_device_height(tmp_path):
 
     preflight = response["result"]["structuredContent"]["preflight"]
     assert preflight["ok"] is True
-    assert {"code": "tall_device_height_visual_capture_required", "device_height": 320, "advisory_height": 240} in preflight["warnings"]
+    assert {"code": "tall_device_height_visual_capture_required", "device_height": 320, "advisory_height": 180} in preflight["warnings"]
 
 
 def test_agent_m4l_preflight_warns_on_wide_device_width(tmp_path):
