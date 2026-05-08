@@ -276,6 +276,7 @@ def _scenario_generated_m4l_device(client: AbletonBridgeClient) -> dict[str, Any
         ],
     }
     calls = [
+        _call(client, "agent_m4l_cleanup", {"delete": False, "name_prefix": "AgentM4L_", "limit": 32}, "dry_run_stale_generated_m4l_cleanup"),
         _local_m4l_preflight(audio_effect, "preflight_audio_effect_native_web_reactive_patch"),
         _call(client, "agent_m4l_device", audio_effect, "write_audio_effect_native_web_reactive_patch"),
         _local_m4l_preflight(midi_effect, "preflight_midi_effect_keyboard_matrix_patch"),

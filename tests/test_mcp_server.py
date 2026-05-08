@@ -2968,6 +2968,8 @@ def test_prompt_audit_runs_expected_bridge_methods(monkeypatch, tmp_path):
                 return {"ok": True}
             if method == "agent_m4l_device":
                 return {"command": params.get("command"), "command_file_written": True, "loaded": False}
+            if method == "agent_m4l_cleanup":
+                return {"delete": params.get("delete"), "matched_count": 0, "deleted_count": 0}
             if method == "set_summary":
                 return {"tracks": [
                     {"index": 0, "name": "Audit Automation", "clips": [{"id": 201, "name": "MCP Prompt Audit Automation"}], "arrangement_clips": []},
@@ -2990,7 +2992,9 @@ def test_prompt_audit_runs_expected_bridge_methods(monkeypatch, tmp_path):
     assert output["ok"] is True
     assert output["destructive"] is True
     assert sum(1 for call in audit["calls"] if call["method"] == "local_m4l_preflight") == 3
-    assert {"batch", "exec", "set_summary", "get", "clip_notes", "clip_add_notes", "clip_duplicate_to_arrangement", "clip_update_notes", "clip_envelope", "clip_warp_markers", "track_create_audio_clip", "browser_search", "browser_load", "agent_m4l_device"} <= set(methods)
+    assert {"batch", "exec", "set_summary", "get", "clip_notes", "clip_add_notes", "clip_duplicate_to_arrangement", "clip_update_notes", "clip_envelope", "clip_warp_markers", "track_create_audio_clip", "browser_search", "browser_load", "agent_m4l_device", "agent_m4l_cleanup"} <= set(methods)
+    cleanup_calls = [params for method, params in bridge.calls if method == "agent_m4l_cleanup"]
+    assert cleanup_calls == [{"delete": False, "name_prefix": "AgentM4L_", "limit": 32}]
     agent_m4l_calls = [params for method, params in bridge.calls if method == "agent_m4l_device"]
     assert len(agent_m4l_calls) == 4
     assert {call["role"] for call in agent_m4l_calls[:3]} == {"audio_effect", "midi_effect", "instrument"}
