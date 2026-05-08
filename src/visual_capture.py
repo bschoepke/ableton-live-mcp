@@ -115,6 +115,7 @@ def blank_capture_guidance() -> dict[str, str]:
         "warning": "blank_capture",
         "validation_blocker": "blank_capture_invalid",
         "next_action": "unlock_or_wake_display_before_visual_e2e",
+        "permission_hint": "On macOS, if Screen Recording permission was just granted, restart the terminal or MCP client before retrying capture.",
     }
 
 

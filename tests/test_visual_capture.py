@@ -241,6 +241,7 @@ def test_capture_blank_full_window_includes_validation_blocker(monkeypatch, tmp_
 
     assert result["warning"] == "blank_capture"
     assert result["validation_blocker"] == "blank_capture_invalid"
+    assert "restart the terminal" in result["permission_hint"]
 
 
 def test_capture_blank_result_includes_validation_blocker(monkeypatch, tmp_path):
@@ -268,6 +269,7 @@ def test_capture_blank_result_includes_validation_blocker(monkeypatch, tmp_path)
     assert result["warning"] == "blank_capture"
     assert result["validation_blocker"] == "blank_capture_invalid"
     assert result["next_action"] == "unlock_or_wake_display_before_visual_e2e"
+    assert "Screen Recording permission" in result["permission_hint"]
 
 
 def test_image_content_stats_detects_nonblank_capture():
