@@ -912,6 +912,9 @@ def summarize_agent_m4l_status(status: dict[str, Any]) -> dict[str, Any]:
 
 
 def agent_m4l_status_mismatch(status: dict[str, Any], command_id: str, expected_event: str | None) -> str:
+    transient = agent_m4l_transient_status_reason(status, command_id, expected_event)
+    if transient:
+        return transient
     if command_id:
         status_command_id = str(status.get("command_id") or "")
         if status_command_id != command_id and not _agent_m4l_reload_seen(status, command_id, expected_event):
@@ -924,6 +927,8 @@ def agent_m4l_status_mismatch(status: dict[str, Any], command_id: str, expected_
 
 
 def _agent_m4l_status_matches(status: dict[str, Any], command_id: str, expected_event: str | None) -> bool:
+    if agent_m4l_transient_status_reason(status, command_id, expected_event):
+        return False
     if command_id:
         status_command_id = str(status.get("command_id") or "")
         if status_command_id != command_id and not _agent_m4l_reload_seen(status, command_id, expected_event):
@@ -933,6 +938,23 @@ def _agent_m4l_status_matches(status: dict[str, Any], command_id: str, expected_
         if status_event != expected_event and not _agent_m4l_reload_seen(status, command_id, expected_event):
             return False
     return True
+
+
+def agent_m4l_transient_status_reason(status: dict[str, Any], command_id: str, expected_event: str | None) -> str:
+    if expected_event != "reload" or not command_id:
+        return ""
+    if str(status.get("event") or "") != "webui_read":
+        return ""
+    if str(status.get("last_reload_command_id") or "") != command_id:
+        return ""
+    state = status.get("state")
+    if isinstance(state, dict):
+        try:
+            if int(float(state.get("web_read_pending") or 0)) > 0:
+                return "webui_read_pending"
+        except (TypeError, ValueError):
+            return ""
+    return ""
 
 
 def _agent_m4l_reload_seen(status: dict[str, Any], command_id: str, expected_event: str | None) -> bool:
