@@ -18,6 +18,8 @@ __version__ = "0.1.0"
 
 ABLETON_AGENT_GUIDE = "General Live object-model bridge; examples are heuristics, not limits."
 AGENT_M4L_MAX_UDP_BYTES = 8192
+AGENT_M4L_DEFAULT_STATUS_TIMEOUT = 2.0
+AGENT_M4L_WEB_STATUS_TIMEOUT = 9.0
 AGENT_M4L_RECOVERY_PATCH_KEYS = (
     "objects", "connections", "ui_bindings", "bindings", "webui", "webuis",
     "device_width", "devicewidth", "width", "device_height", "deviceheight", "height",
@@ -250,7 +252,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         webui = None
         params = dict(args)
         wait_status = bool(params.pop("wait_status", False))
-        status_timeout = float(params.pop("status_timeout", 2.0))
+        status_timeout_arg = params.pop("status_timeout", None)
         status_poll_interval = float(params.pop("status_poll_interval", 0.05))
         load_retry_timeout_arg = params.pop("load_retry_timeout", None)
         load_retry_interval = float(params.pop("load_retry_interval", 0.25))
@@ -312,6 +314,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
             if load_retry_timeout > 0 and _should_retry_agent_m4l_load(params, result):
                 result = retry_agent_m4l_load(bridge, params, result, load_retry_timeout, load_retry_interval)
         if wait_status:
+            status_timeout = agent_m4l_status_timeout(status_timeout_arg, webui is not None)
             result["status"] = wait_agent_m4l_status(
                 str(result.get("status_file") or params.get("status_file") or ""),
                 previous_status_mtime,
@@ -424,6 +427,12 @@ def should_build_agent_m4l(params: dict[str, Any]) -> bool:
     if str(params.get("command") or "").lower() in ("set", "status", "clear"):
         return False
     return True
+
+
+def agent_m4l_status_timeout(value: Any, has_webui: bool) -> float:
+    if value is not None:
+        return float(value)
+    return AGENT_M4L_WEB_STATUS_TIMEOUT if has_webui else AGENT_M4L_DEFAULT_STATUS_TIMEOUT
 
 
 def infer_agent_m4l_bounds(params: dict[str, Any]) -> dict[str, int]:

@@ -11,7 +11,7 @@ from benchmark import run_benchmark
 from bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig, effective_main_thread_timeout
 from install_remote_script import install_remote_script, main as install_remote_script_main, remote_script_root, remote_script_status
 from prompt_audit import run_prompt_audit
-from server import expected_agent_m4l_status_event, make_server, should_build_agent_m4l, wait_agent_m4l_status
+from server import agent_m4l_status_timeout, expected_agent_m4l_status_event, make_server, should_build_agent_m4l, wait_agent_m4l_status
 from validate import main as validate_main
 from similar_sounds import encode_feature
 from smoke import run_smoke
@@ -782,6 +782,12 @@ def test_agent_m4l_device_tool_waits_for_status_without_forwarding_wait_args(tmp
     assert "status_timeout" not in forwarded
     assert response["result"]["structuredContent"]["status"]["event"] == "set"
     assert response["result"]["structuredContent"]["status"]["dynamic_objects"] == 4
+
+
+def test_agent_m4l_status_timeout_defaults_longer_for_webui():
+    assert agent_m4l_status_timeout(None, False) == 2.0
+    assert agent_m4l_status_timeout(None, True) == 9.0
+    assert agent_m4l_status_timeout(0.25, True) == 0.25
 
 
 def test_wait_agent_m4l_status_requires_matching_command_id(tmp_path):
