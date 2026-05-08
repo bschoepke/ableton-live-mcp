@@ -137,14 +137,14 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     }, ["ref", "child"]), forward("children")))
     server.add_tool(Tool("live_device_parameters", "Compact Device parameter metadata.", schema({
         "ref": ref,
-        "query": {"type": "string", "description": "Terms matched against parameter names."},
+        "query": {"type": "string"},
         "limit": {"type": "integer", "minimum": 0},
         **response_controls,
     }, ["ref"]), forward("device_parameters")))
     server.add_tool(Tool("live_parameter_set", "Set one DeviceParameter value with min/max and quantized validation.", schema({
         "ref": ref,
         "value": {"type": "number"},
-        "coerce": {"type": "boolean", "description": "Clamp to min/max and round quantized values instead of rejecting."},
+        "coerce": {"type": "boolean"},
         **mutation_controls,
     }, ["ref", "value"]), forward("parameter_set")))
     server.add_tool(Tool("live_clip_notes", "List MIDI notes from a clip compactly.", schema({
@@ -388,14 +388,14 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     server.add_tool(Tool("live_agent_m4l_device", AGENT_M4L_TOOL_DESCRIPTION, loose_schema(), agent_m4l_device))
     server.add_tool(Tool("live_agent_m4l_cleanup", AGENT_M4L_CLEANUP_DESCRIPTION, loose_schema(), forward("agent_m4l_cleanup")))
     server.add_tool(Tool("live_transport", "Transport status/play/continue/stop with optional seek.", schema({
-        "action": {"type": "string", "description": "status/play/continue/stop."},
-        "time": {"type": "number", "description": "Seek time."},
+        "action": {"type": "string"},
+        "time": {"type": "number"},
         "timeout": response_controls["timeout"],
         **strict_timeout_control,
     }), forward("transport")))
     server.add_tool(Tool("live_batch", "Batch ops.", schema({
         "operations": {"type": "array", "items": {"type": "object", "properties": {
-            "method": {"type": "string", "description": "Bridge method."},
+            "method": {"type": "string"},
             "params": {"type": "object"},
         }, "required": ["method"], "additionalProperties": False}},
         "continue_on_error": {"type": "boolean"},
@@ -407,24 +407,24 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     browser_item_ref = {
         "type": "object",
         "properties": {
-            "id": {"type": "integer", "description": "Browser item id."},
-            "uri": {"type": "string", "description": "Stable BrowserItem uri."},
-            "path": {"type": "string", "description": "Browser path fallback."},
+            "id": {"type": "integer"},
+            "uri": {"type": "string"},
+            "path": {"type": "string"},
         },
         "additionalProperties": False,
     }
     server.add_tool(Tool("live_browser_roots", "List app.browser roots.", schema({}), forward("browser_roots")))
     server.add_tool(Tool("live_browser_capabilities", "Browser roots/filter types/semantic API exposure.", schema({}), forward("browser_capabilities")))
     server.add_tool(Tool("live_browser_search", "Bounded browser search.", schema({
-        "query": {"type": "string", "description": "Search terms."},
-        "roots": {"type": "array", "items": {"type": "string"}, "description": "Roots: instruments, drums, samples, plugins, etc."},
-        "limit": {"type": "integer", "minimum": 1, "description": "Max matches."},
-        "max_depth": {"type": "integer", "minimum": 0, "description": "Max depth."},
-        "max_visited": {"type": "integer", "minimum": 1, "description": "Max visited."},
+        "query": {"type": "string"},
+        "roots": {"type": "array", "items": {"type": "string"}, "description": "incl plugins"},
+        "limit": {"type": "integer", "minimum": 1},
+        "max_depth": {"type": "integer", "minimum": 0},
+        "max_visited": {"type": "integer", "minimum": 1},
         "loadable_only": {"type": "boolean"},
         "include_folders": {"type": "boolean"},
         "stop_on_limit": {"type": "boolean"},
-        "stop_score": {"type": "integer", "description": "0 exact, 1 query in name, 3 path."},
+        "stop_score": {"type": "integer"},
         "match_all_terms": {"type": "boolean"},
     }), forward("browser_search")))
     server.add_tool(Tool("live_browser_load", "Load BrowserItem.", schema({
