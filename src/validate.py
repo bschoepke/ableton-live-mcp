@@ -176,6 +176,7 @@ def mcp_tool_schema_status() -> dict:
         },
         "live_transport": {
             "properties": ["action", "time", "timeout", "strict_timeout"],
+            "enums": {"action": ["play", "continue", "stop", "status"]},
         },
         "live_ping": {
             "properties": ["timeout"],

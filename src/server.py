@@ -90,7 +90,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     }
 
     timeout_control = {"timeout": {"type": "number"}}
-    server.add_tool(Tool("live_ping", "Bridge health/version.", schema(timeout_control), forward("ping")))
+    server.add_tool(Tool("live_ping", "Bridge health.", schema(timeout_control), forward("ping")))
     server.add_tool(Tool("live_bridge_status", "Socket-thread status; no Live API/main-thread scheduling.", schema(timeout_control), forward("bridge_status")))
     response_controls = {
         "detail": {"type": "boolean"},
@@ -397,8 +397,8 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
 
     server.add_tool(Tool("live_agent_m4l_device", AGENT_M4L_TOOL_DESCRIPTION, loose_schema(), agent_m4l_device))
     server.add_tool(Tool("live_agent_m4l_cleanup", AGENT_M4L_CLEANUP_DESCRIPTION, loose_schema(), forward("agent_m4l_cleanup")))
-    server.add_tool(Tool("live_transport", "Transport status/play/continue/stop with optional seek.", schema({
-        "action": {"type": "string"},
+    server.add_tool(Tool("live_transport", "Transport status/play/continue/stop; seek.", schema({
+        "action": {"type": "string", "enum": ["play", "continue", "stop", "status"]},
         "time": {"type": "number"},
         "timeout": response_controls["timeout"],
         **strict_timeout_control,

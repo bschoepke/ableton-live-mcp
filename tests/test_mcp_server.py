@@ -375,6 +375,20 @@ def test_agent_audio_tap_setup_and_transport_tools_forward_to_bridge():
     assert response["result"]["structuredContent"]["method"] == "transport"
 
 
+def test_transport_tool_rejects_unknown_action_before_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 331,
+        "method": "tools/call",
+        "params": {"name": "live_transport", "arguments": {"action": "restart"}},
+    })
+
+    assert response["error"]["message"] == "arguments.action must be one of: play, continue, stop, status"
+    assert bridge.calls == []
+
+
 def test_parameter_set_tool_forwards_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)
@@ -2105,6 +2119,7 @@ def test_tool_list_stays_compact():
     transport = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_transport")
     assert "continue" in transport["description"]
     assert {"action", "time", "timeout", "strict_timeout"} <= set(transport["inputSchema"]["properties"])
+    assert transport["inputSchema"]["properties"]["action"]["enum"] == ["play", "continue", "stop", "status"]
     tap = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_agent_audio_tap")
     assert {"command", "path", "id", "udp"} <= set(tap["inputSchema"]["properties"])
     assert tap["inputSchema"]["required"] == ["command"]
