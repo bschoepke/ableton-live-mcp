@@ -15,7 +15,7 @@ from benchmark import run_benchmark
 from bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig, effective_main_thread_timeout
 from install_remote_script import install_remote_script, main as install_remote_script_main, remote_script_root, remote_script_status
 from prompt_audit import run_prompt_audit
-from server import agent_m4l_status_timeout, expected_agent_m4l_status_event, make_server, should_build_agent_m4l, summarize_agent_m4l_status, wait_agent_m4l_status
+from server import agent_m4l_status_timeout, agent_m4l_status_timeout_reason, expected_agent_m4l_status_event, make_server, should_build_agent_m4l, summarize_agent_m4l_status, wait_agent_m4l_status
 from validate import main as validate_main
 from similar_sounds import encode_feature
 from smoke import run_smoke
@@ -90,7 +90,7 @@ def test_initialize_includes_general_model_instructions():
     assert "webui_read diagnostics" in instructions
     assert "throttled fallback wakes" in instructions
     assert "load:false/set/status skip build" in instructions
-    assert "stale status=no host ack" in instructions
+    assert "host_not_woken=no ack" in instructions
     assert "Agent must visually verify M4L device UI" in instructions
     assert "Ableton-window-only" in instructions
     assert "never capture arbitrary apps/windows" in instructions
@@ -1658,6 +1658,7 @@ def test_wait_agent_m4l_status_timeout_includes_compact_last_status(tmp_path):
     assert result["mismatch"] == "command_id_mismatch"
     assert result["last_status_age_seconds"] >= 4
     assert result["status_file_updated_after_command"] is True
+    assert result["timeout_reason"] == "stale_or_other_command"
     assert result["last_status"]["command_id"] == "old"
     assert result["last_status"]["dynamic_objects"] == 8
     assert result["last_status"]["device_width"] == 900
@@ -1686,6 +1687,7 @@ def test_compact_agent_m4l_status_preserves_timeout_diagnostics():
         "expected_command_id": "new",
         "expected_event": "status",
         "mismatch": "command_id_mismatch",
+        "timeout_reason": "host_not_woken",
         "last_status_age_seconds": 8.25,
         "status_file_updated_after_command": False,
         "last_status": {
@@ -1701,11 +1703,20 @@ def test_compact_agent_m4l_status_preserves_timeout_diagnostics():
     assert status["expected_command_id"] == "new"
     assert status["expected_event"] == "status"
     assert status["mismatch"] == "command_id_mismatch"
+    assert status["timeout_reason"] == "host_not_woken"
     assert status["last_status_age_seconds"] == 8.25
     assert status["status_file_updated_after_command"] is False
     assert status["last_status"]["command_id"] == "old"
     assert status["last_status"]["dynamic_objects"] == 76
     assert status["last_status"]["state"]["web_read_pending"] == 5
+
+
+def test_agent_m4l_status_timeout_reason_classifies_common_cases():
+    assert agent_m4l_status_timeout_reason({"mismatch": "missing_status_file"}) == "missing_status_file"
+    assert agent_m4l_status_timeout_reason({"mismatch": "command_id_mismatch", "status_file_updated_after_command": False}) == "host_not_woken"
+    assert agent_m4l_status_timeout_reason({"mismatch": "command_id_mismatch", "status_file_updated_after_command": True}) == "stale_or_other_command"
+    assert agent_m4l_status_timeout_reason({"mismatch": "webui_read_pending"}) == "webui_read_pending"
+    assert agent_m4l_status_timeout_reason({"error": "bad json"}) == "status_unreadable"
 
 
 def test_compact_agent_m4l_status_recursively_compacts_raw_last_status():

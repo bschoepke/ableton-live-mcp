@@ -42,7 +42,7 @@ ABLETON_MCP_INSTRUCTIONS = (
     "AgentAudioTap: master tap + solo target; start with path. "
     "Idle sockets auto-retry; sent-call timeouts fail closed; use live_bridge_status before retry. "
     "Agent must visually verify M4L device UI via live_visual_capture; Ableton-window-only, never capture arbitrary apps/windows; device-detail crop/max; blank_capture invalid; locked/asleep display blocks capture/e2e. "
-    "M4L: hot-reloads arbitrary native/web/mixed UI; wait_status/compact_result, matching command_id required. Supports preflight files, UDP hints, throttled fallback wakes, load:false/set/status skip build, stale status=no host ack, midiin+midiparse, origin-aligned rect/openrect, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batches/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web must prove signal telemetry+nonblank visual delta. No web ack/width shrink: reload/simplify or validate fresh host. "
+    "M4L: hot-reloads arbitrary native/web/mixed UI; wait_status/compact_result, matching command_id required. Supports preflight files, UDP hints, throttled fallback wakes, load:false/set/status skip build, host_not_woken=no ack, midiin+midiparse, origin-aligned rect/openrect, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batches/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web must prove signal telemetry+nonblank visual delta. No web ack/width shrink: reload/simplify or validate fresh host. "
     "Avoid broad dumps. Gotchas: live_eval expression-only; use live_exec for statements; Live numeric args are JSON numbers; Simpler.sample is not generally settable; use ids from summaries. "
     "Hints only; full Live object model remains available through paths, ids, calls, props, children, listeners, eval."
 )
@@ -1253,7 +1253,25 @@ def wait_agent_m4l_status(path: str, previous_mtime: float | None, command_id: s
         result["mismatch"] = "status_file_not_updated"
     if last_error:
         result["error"] = last_error
+    result["timeout_reason"] = agent_m4l_status_timeout_reason(result)
     return result
+
+
+def agent_m4l_status_timeout_reason(status: dict[str, Any]) -> str:
+    mismatch = str(status.get("mismatch") or "")
+    if mismatch == "missing_status_file":
+        return "missing_status_file"
+    if status.get("status_file_updated_after_command") is False:
+        return "host_not_woken"
+    if mismatch in ("webui_read_pending", "webui_not_loaded"):
+        return mismatch
+    if status.get("error"):
+        return "status_unreadable"
+    if mismatch == "command_id_mismatch":
+        return "stale_or_other_command"
+    if mismatch:
+        return mismatch
+    return "no_matching_status"
 
 
 def _agent_m4l_status_if_ready(path: str, previous_mtime: float | None, command_id: str, last_error: str | None = None, expected_event: str | None = None) -> tuple[dict[str, Any] | None, str | None]:
@@ -1296,7 +1314,7 @@ def _read_agent_m4l_status(path: str) -> tuple[dict[str, Any] | None, str | None
 
 def summarize_agent_m4l_status(status: dict[str, Any]) -> dict[str, Any]:
     summary: dict[str, Any] = {}
-    for key in ("event", "command_id", "last_reload_command_id", "dynamic_objects", "webuis", "device_width", "device_height", "id", "reason", "attempt", "attempts", "message", "reload_seen", "webui_status", "changed", "source", "target", "timed_out", "expected_command_id", "expected_event", "mismatch", "error", "path", "last_status_age_seconds", "status_file_updated_after_command", "state_keys"):
+    for key in ("event", "command_id", "last_reload_command_id", "dynamic_objects", "webuis", "device_width", "device_height", "id", "reason", "attempt", "attempts", "message", "reload_seen", "webui_status", "changed", "source", "target", "timed_out", "expected_command_id", "expected_event", "mismatch", "timeout_reason", "error", "path", "last_status_age_seconds", "status_file_updated_after_command", "state_keys"):
         if key in status:
             summary[key] = status.get(key)
     last_status = status.get("last_status")
