@@ -365,12 +365,16 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
 
 def test_agent_m4l_write_webui_generates_jweb_page(tmp_path, monkeypatch):
     monkeypatch.setattr(agent_m4l, "WEBUI_DIR", tmp_path)
+    source_asset = tmp_path / "source" / "three.module.min.js"
+    source_asset.parent.mkdir()
+    source_asset.write_text("export const threeReady = true;", encoding="utf-8")
     result = write_webui("Filter", {
         "title": "Filter",
         "controls": [{"id": "cutoff", "label": "Cutoff", "value": 0.25}],
         "assets": {
             "lib/scene.js": "export const scene = true;",
             "../unsafe name.txt": {"content": "safe"},
+            "assets/three.module.min.js": {"source_path": str(source_asset)},
         },
     })
     html = Path(result["html_path"]).read_text(encoding="utf-8")
@@ -390,6 +394,8 @@ def test_agent_m4l_write_webui_generates_jweb_page(tmp_path, monkeypatch):
     assert Path(result["assets"][0]["path"]).read_text(encoding="utf-8") == "export const scene = true;"
     assert result["assets"][0]["relative_path"] == "lib/scene.js"
     assert result["assets"][1]["relative_path"] == "unsafe_name.txt"
+    assert Path(result["assets"][2]["path"]).read_text(encoding="utf-8") == "export const threeReady = true;"
+    assert result["assets"][2]["relative_path"] == "assets/three.module.min.js"
 
 
 def test_agent_m4l_webui_bootstrap_preserves_custom_html_order():

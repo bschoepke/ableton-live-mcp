@@ -278,10 +278,13 @@ def _creative_audio_effect_patch() -> dict[str, Any]:
                 "title": "Reactive Field",
                 "presentation_rect": [420, 10, 540, 220],
                 "reuse": True,
-                "html": _WEBUI_CANVAS_HTML,
+                "html": _WEBUI_THREE_CANVAS_HTML,
                 "css": _WEBUI_CANVAS_CSS,
-                "js": _WEBUI_REACTIVE_FIELD_JS,
-                "assets": {"scene/field.json": "{\"kind\":\"reactive-field\",\"version\":1}"},
+                "js": _WEBUI_THREE_REACTIVE_FIELD_JS,
+                "assets": {
+                    "assets/three.module.js": {"content": _THREE_AUDIT_MODULE_JS},
+                    "scene/field.json": "{\"kind\":\"three-reactive-field\",\"version\":1}",
+                },
             })
         ],
         "ui_bindings": [
@@ -430,6 +433,22 @@ _WEBUI_CANVAS_HTML = """<!doctype html>
 """
 
 
+_WEBUI_THREE_CANVAS_HTML = """<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent M4L Three Panel</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <script type="module" src="device.js"></script>
+</body>
+</html>
+"""
+
+
 _WEBUI_CANVAS_CSS = """
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #08090d; color: #edf2ff; }
 canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
@@ -459,6 +478,158 @@ window.addEventListener("agentm4lstate", (event) => receiveState(event.detail ||
 window.agentM4L = window.agentM4L || {};
 window.agentM4L.onstate = receiveState;
 resize();
+"""
+
+
+_THREE_AUDIT_MODULE_JS = """
+export class Color {
+  constructor(value) { this.value = value || "#ffffff"; }
+}
+export class Scene {
+  constructor() { this.children = []; this.background = new Color("#05070c"); }
+  add(...items) { this.children.push(...items); }
+}
+export class PerspectiveCamera {
+  constructor() { this.position = { x: 0, y: 0, z: 4 }; this.aspect = 1; }
+  updateProjectionMatrix() {}
+}
+export class IcosahedronGeometry {
+  constructor(radius = 1) { this.radius = radius; }
+}
+export class MeshStandardMaterial {
+  constructor(options = {}) { this.color = new Color(options.color || "#79ffe1"); this.roughness = options.roughness || 0; this.metalness = options.metalness || 0; }
+}
+export class Mesh {
+  constructor(geometry, material) {
+    this.geometry = geometry;
+    this.material = material;
+    this.rotation = { x: 0, y: 0, z: 0 };
+    this.scale = { value: 1, setScalar: (value) => { this.scale.value = value; } };
+  }
+}
+export class DirectionalLight {
+  constructor(color = "#ffffff", intensity = 1) { this.color = new Color(color); this.intensity = intensity; this.position = { set: () => {} }; }
+}
+export class WebGLRenderer {
+  constructor(options = {}) {
+    this.canvas = options.canvas;
+    this.ctx = this.canvas.getContext("2d");
+    this.pixelRatio = 1;
+  }
+  setPixelRatio(value) { this.pixelRatio = Math.max(1, value || 1); }
+  setSize(width, height) {
+    this.canvas.width = Math.max(1, Math.floor(width * this.pixelRatio));
+    this.canvas.height = Math.max(1, Math.floor(height * this.pixelRatio));
+    this.ctx.setTransform(this.pixelRatio, 0, 0, this.pixelRatio, 0, 0);
+  }
+  render(scene) {
+    const width = this.canvas.clientWidth;
+    const height = this.canvas.clientHeight;
+    const ctx = this.ctx;
+    ctx.fillStyle = scene.background && scene.background.value || "#05070c";
+    ctx.fillRect(0, 0, width, height);
+    scene.children.filter((item) => item.geometry).forEach((mesh, index) => {
+      const radius = Math.min(width, height) * 0.18 * (mesh.scale.value || 1);
+      const sides = 12;
+      const cx = width * (0.5 + Math.sin(mesh.rotation.y + index) * 0.06);
+      const cy = height * (0.5 + Math.cos(mesh.rotation.x + index) * 0.08);
+      ctx.fillStyle = mesh.material && mesh.material.color && mesh.material.color.value || "#79ffe1";
+      ctx.beginPath();
+      for (let i = 0; i <= sides; i++) {
+        const angle = (i / sides) * Math.PI * 2 + mesh.rotation.z;
+        const r = radius * (0.76 + 0.24 * Math.sin(angle * 3 + mesh.rotation.x));
+        const x = cx + Math.cos(angle) * r;
+        const y = cy + Math.sin(angle) * r;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
+}
+export const MathUtils = {
+  clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+};
+"""
+
+
+_WEBUI_THREE_REACTIVE_FIELD_JS = """
+import * as THREE from "./assets/three.module.js";
+
+const outlet = (...args) => {
+  if (window.agentM4L && window.agentM4L.outlet) window.agentM4L.outlet(...args);
+  else if (window.max && window.max.outlet) window.max.outlet(...args);
+};
+const canvas = document.getElementById("scene");
+let state = {};
+let pointer = { x: 0.5, y: 0.5, pressure: 0 };
+function receiveState(next) {
+  state = next || {};
+}
+window.addEventListener("agentm4lstate", (event) => receiveState(event.detail || {}));
+window.agentM4L = window.agentM4L || {};
+window.agentM4L.onstate = receiveState;
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#07090f");
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+camera.position.z = 4;
+const core = new THREE.Mesh(
+  new THREE.IcosahedronGeometry(1, 3),
+  new THREE.MeshStandardMaterial({ color: "#79ffe1", roughness: 0.28, metalness: 0.36 })
+);
+const halo = new THREE.Mesh(
+  new THREE.IcosahedronGeometry(1.35, 1),
+  new THREE.MeshStandardMaterial({ color: "#8d7cff", roughness: 0.5, metalness: 0.2 })
+);
+const key = new THREE.DirectionalLight("#ffffff", 1.5);
+key.position.set(2, 3, 4);
+scene.add(core, halo, key);
+
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  camera.aspect = rect.width / Math.max(1, rect.height);
+  camera.updateProjectionMatrix();
+  renderer.setPixelRatio(Math.max(1, window.devicePixelRatio || 1));
+  renderer.setSize(rect.width, rect.height, false);
+}
+function sendGesture(event) {
+  const rect = canvas.getBoundingClientRect();
+  pointer = {
+    x: THREE.MathUtils.clamp((event.clientX - rect.left) / Math.max(1, rect.width), 0, 1),
+    y: THREE.MathUtils.clamp((event.clientY - rect.top) / Math.max(1, rect.height), 0, 1),
+    pressure: event.pressure || 0.5
+  };
+  const pattern = Array.from({ length: 8 }, (_, i) => ((i / 7) < pointer.x || ((i + Math.round(pointer.y * 8)) % 4) === 0) ? 1 : 0);
+  outlet("set_many_silent", JSON.stringify({ values: [
+    { id: "gesture_payload", value: pointer },
+    { id: "step_pattern", value: pattern }
+  ] }));
+}
+function draw(time) {
+  const level = Number(state.level_meter || state.level_value || 0);
+  const drive = Number(state.drive_amount || 0.4);
+  const hue = Math.round(172 + drive * 88 + level * 45);
+  core.rotation.x = time * 0.00045 + pointer.y * Math.PI;
+  core.rotation.y = time * 0.0006 + pointer.x * Math.PI;
+  core.rotation.z = time * 0.00028;
+  halo.rotation.x = -time * 0.0003;
+  halo.rotation.y = time * 0.00035;
+  core.scale.setScalar(1 + level * 1.9 + pointer.pressure * 0.2);
+  halo.scale.setScalar(1.1 + level * 1.2);
+  core.material.color = new THREE.Color(`hsl(${hue}, 88%, ${58 + level * 22}%)`);
+  halo.material.color = new THREE.Color(`hsl(${hue + 74}, 78%, ${48 + level * 20}%)`);
+  renderer.render(scene, camera);
+  requestAnimationFrame(draw);
+}
+window.addEventListener("resize", resize);
+canvas.addEventListener("pointermove", sendGesture);
+canvas.addEventListener("pointerdown", sendGesture);
+resize();
+outlet("web_ready", "reactive_scene");
+outlet("three_ready", "reactive_scene");
+requestAnimationFrame(draw);
 """
 
 

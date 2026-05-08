@@ -616,6 +616,9 @@ def webui_asset_items(assets: Any) -> list[tuple[str, Any]]:
 def asset_data(asset: dict[str, Any]) -> bytes:
     if asset.get("base64") is not None:
         return base64.b64decode(str(asset["base64"]))
+    for key in ("source_path", "file_path"):
+        if asset.get(key) is not None:
+            return Path(str(asset[key])).read_bytes()
     if asset.get("content") is not None:
         return str(asset["content"]).encode("utf-8")
     if asset.get("text") is not None:

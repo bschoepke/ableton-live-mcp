@@ -80,6 +80,7 @@ def test_initialize_includes_general_model_instructions():
     assert "sent-call timeouts fail closed" in instructions
     assert "compact_result" in instructions
     assert "jweb/jbrowser aliases" in instructions
+    assert "web assets/source_path" in instructions
     assert "agent-settable UI" in instructions
     assert "webui_read diagnostics" in instructions
     assert "full Live object model remains available" in instructions
@@ -2355,7 +2356,7 @@ def test_prompt_audit_runs_expected_bridge_methods(monkeypatch, tmp_path):
     assert agent_m4l_calls[0]["patch"]["webuis"][0]["object"] == "jbrowser~"
     assert agent_m4l_calls[0]["patch"]["webuis"][0]["html_path"].endswith("index.html")
     assert "html" not in agent_m4l_calls[0]["patch"]["webuis"][0]
-    assert agent_m4l_calls[0]["patch"]["webuis"][0]["assets"]["relative_paths"] == ["scene/field.json"]
+    assert agent_m4l_calls[0]["patch"]["webuis"][0]["assets"]["relative_paths"] == ["assets/three.module.js", "scene/field.json"]
     assert agent_m4l_calls[0]["patch"]["objects"][3]["text"].startswith("pictslider")
     assert agent_m4l_calls[1]["patch"]["objects"][1]["text"] == "kslider"
     assert agent_m4l_calls[2]["patch"]["webui"]["id"] == "glass_scene"
@@ -2364,5 +2365,9 @@ def test_prompt_audit_runs_expected_bridge_methods(monkeypatch, tmp_path):
     assert agent_m4l_calls[3]["values"][0]["value"] == [1, 0, 1, 1, 0, 1, 0, 1]
     assert agent_m4l_calls[3]["values"][1]["value"]["pressure"] == 0.44
     js = Path(agent_m4l_calls[0]["patch"]["webuis"][0]["js_path"]).read_text(encoding="utf-8")
+    html = Path(agent_m4l_calls[0]["patch"]["webuis"][0]["html_path"]).read_text(encoding="utf-8")
     assert "agentm4lstate" in js
     assert "set_many_silent" in js
+    assert 'import * as THREE from "./assets/three.module.js"' in js
+    assert "three_ready" in js
+    assert 'type="module"' in html
