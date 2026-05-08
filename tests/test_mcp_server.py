@@ -2354,6 +2354,37 @@ def test_bridge_client_stall_cooldown_after_sent_timeout(monkeypatch):
     assert len(created) == 2
 
 
+def test_bridge_status_timeout_message_does_not_claim_cooldown(monkeypatch):
+    created = []
+
+    class FakeSocket:
+        def settimeout(self, _timeout):
+            pass
+
+        def sendall(self, _line):
+            pass
+
+        def recv(self, _size):
+            raise socket.timeout("timed out")
+
+        def close(self):
+            pass
+
+    def connect(*_args, **_kwargs):
+        sock = FakeSocket()
+        created.append(sock)
+        return sock
+
+    monkeypatch.setattr("socket.create_connection", connect)
+    client = AbletonBridgeClient(BridgeConfig(timeout=0.01))
+
+    with pytest.raises(AbletonBridgeError) as err:
+        client.request("bridge_status", {"timeout": 0.01})
+    message = str(err.value)
+    assert "bridge_status" in message
+    assert "client-side stall cooldown" not in message
+
+
 def test_bridge_client_force_probe_bypasses_stall_cooldown(monkeypatch):
     created = []
     now = [100.0]

@@ -140,11 +140,13 @@ class AbletonBridgeClient:
 
     def _timeout_message(self, method: str, params: dict[str, Any]) -> str:
         request_timeout = self._request_timeout(method, params)
-        return (
+        message = (
             f"Ableton bridge request {method!r} timed out after {request_timeout:g}s waiting for a response. "
-            "The request was sent, so it was not retried automatically. "
-            "Further Live API calls will fail fast during a short client-side stall cooldown."
+            "The request was sent, so it was not retried automatically."
         )
+        if method not in NO_MAIN_THREAD_METHODS:
+            message += " Further Live API calls will fail fast during a short client-side stall cooldown."
+        return message
 
     def _raise_if_client_stall(self, method: str, params: dict[str, Any]) -> None:
         if method in NO_MAIN_THREAD_METHODS or params.get("force_main_thread_probe"):
