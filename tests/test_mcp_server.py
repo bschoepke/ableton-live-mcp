@@ -513,7 +513,7 @@ def test_agent_m4l_device_tool_preflight_only_reports_compact_errors(tmp_path):
         "connection_missing_from_or_to",
         "binding_source_missing",
     } <= codes
-    assert payload["preflight"]["counts"] == {"objects": 2, "connections": 2, "webuis": 1, "bindings": 1}
+    assert payload["preflight"]["counts"] == {"objects": 2, "connections": 2, "webuis": 1, "bindings": 1, "values": 0}
 
 
 def test_agent_m4l_device_tool_attaches_preflight_without_forwarding_flag(tmp_path):
@@ -568,6 +568,55 @@ def test_agent_m4l_device_tool_preflight_counts_top_level_webui(tmp_path):
     assert bridge.calls == []
     assert preflight["ok"] is True
     assert preflight["counts"]["webuis"] == 1
+
+
+def test_agent_m4l_device_tool_preflight_set_uses_recovery_patch(tmp_path):
+    bridge = FakeBridge()
+    command_file = tmp_path / "command.json"
+    command_file.write_text(json.dumps({
+        "id": "patch1",
+        "command": "update",
+        "patch": {
+            "objects": [{"id": "gain", "text": "flonum"}, {"id": "macro", "text": "live.dial"}],
+            "ui_bindings": [{"source": "macro", "target": "virtual_amount"}],
+        },
+    }), encoding="utf-8")
+    server = make_server(bridge)
+
+    ok_response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 57,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "instance_id": "Recover Set",
+            "preflight_only": True,
+            "command": "set",
+            "values": [{"id": "virtual_amount", "value": 0.25}],
+            "command_file": str(command_file),
+        }},
+    })
+    ok_preflight = ok_response["result"]["structuredContent"]["preflight"]
+    assert ok_preflight["ok"] is True
+    assert ok_preflight["recovered_patch"] is True
+    assert ok_preflight["counts"]["values"] == 1
+
+    bad_response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 58,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "instance_id": "Recover Set",
+            "preflight_only": True,
+            "command": "set",
+            "values": [{"id": "missing_value", "value": 0.25}],
+            "command_file": str(command_file),
+        }},
+    })
+    bad_preflight = bad_response["result"]["structuredContent"]["preflight"]
+    assert bad_preflight["ok"] is False
+    assert {"code": "value_target_missing", "id": "missing_value"} in bad_preflight["errors"]
 
 
 def test_agent_m4l_device_tool_retries_fresh_build_load(monkeypatch, tmp_path):

@@ -537,6 +537,12 @@ def apply_agent_m4l_width(params: dict[str, Any], device_width: int) -> None:
 def preflight_agent_m4l(params: dict[str, Any]) -> dict[str, Any]:
     role = normalize_role(str(params.get("role") or "audio_effect"))
     patch = params.get("patch") if isinstance(params.get("patch"), dict) else params.get("spec")
+    recovered_patch = False
+    if not isinstance(patch, dict) and params.get("command_file") and agent_m4l_command(params) in ("set", "status"):
+        recovered = agent_m4l_recovery_patch(str(params["command_file"]))
+        if isinstance(recovered, dict):
+            patch = recovered
+            recovered_patch = True
     patch = patch if isinstance(patch, dict) else {}
     objects = [item for item in patch.get("objects") or [] if isinstance(item, dict)]
     webuis = agent_m4l_webui_items(patch.get("webuis") or patch.get("webui"))
@@ -544,6 +550,7 @@ def preflight_agent_m4l(params: dict[str, Any]) -> dict[str, Any]:
         webuis = agent_m4l_webui_items(params.get("webuis") or params.get("webui"))
     bindings = [item for item in (patch.get("ui_bindings") or patch.get("bindings") or []) if isinstance(item, dict)]
     connections = [item for item in (patch.get("connections") or []) if isinstance(item, dict)]
+    values = [item for item in (params.get("values") or params.get("parameters") or []) if isinstance(item, dict)]
     errors: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     ids = set(AGENT_M4L_STATIC_OBJECTS_BY_ROLE.get(role, set()))
@@ -587,6 +594,20 @@ def preflight_agent_m4l(params: dict[str, Any]) -> dict[str, Any]:
             errors.append({"code": "binding_source_missing", "id": source})
         if target and target not in ids:
             warnings.append({"code": "binding_target_is_virtual_or_missing", "id": target})
+    binding_targets = {
+        str(binding.get("target") or binding.get("to") or binding.get("id") or binding.get("param") or binding.get("source") or binding.get("from") or "")
+        for binding in bindings
+        if isinstance(binding, dict)
+    }
+    binding_targets.discard("")
+    if values and not patch:
+        warnings.append({"code": "value_preflight_without_recovery_patch"})
+    for item in values:
+        value_id = str(item.get("id") or "")
+        if not value_id:
+            errors.append({"code": "value_missing_id"})
+        elif patch and value_id not in ids and value_id not in binding_targets:
+            errors.append({"code": "value_target_missing", "id": value_id})
     for key in ("html", "js", "css", "controls"):
         if _agent_m4l_webui_source_key_present(webuis, key):
             warnings.append({"code": "raw_webui_source_in_payload", "key": key})
@@ -604,12 +625,14 @@ def preflight_agent_m4l(params: dict[str, Any]) -> dict[str, Any]:
             "connections": len(connections),
             "webuis": len(webuis),
             "bindings": len(bindings),
+            "values": len(values),
         },
         "bounds": {
             "width": int(params.get("device_width") or 0),
             "height": int(params.get("device_height") or 0),
         },
         "command_bytes": command_bytes,
+        "recovered_patch": recovered_patch,
     }
 
 
