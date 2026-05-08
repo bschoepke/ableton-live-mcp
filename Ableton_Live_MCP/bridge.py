@@ -180,7 +180,7 @@ class AbletonLiveMCP(ControlSurface):
                 done.set()
 
         self.schedule_message(0, invoke)
-        timeout = float(params.get("timeout") or DEFAULT_MAIN_THREAD_TIMEOUT)
+        timeout = self._main_thread_timeout(params)
         if not done.wait(timeout):
             abandoned["value"] = True
             raise RuntimeError("Timed out waiting for Live main thread")
@@ -188,6 +188,12 @@ class AbletonLiveMCP(ControlSurface):
             exc_type, exc, tb = result["error"]
             raise exc.with_traceback(tb)
         return result["value"]
+
+    def _main_thread_timeout(self, params):
+        timeout = float(params.get("timeout") or DEFAULT_MAIN_THREAD_TIMEOUT)
+        if not (params.get("strict_timeout") or params.get("timeout_strict")):
+            timeout = max(timeout, float(DEFAULT_MAIN_THREAD_TIMEOUT))
+        return timeout
 
     def _rpc_ping(self, _params):
         app = Live.Application.get_application()
@@ -986,7 +992,7 @@ class AbletonLiveMCP(ControlSurface):
         results = []
         continue_on_error = bool(params.get("continue_on_error"))
         inherited = {}
-        for name in ("detail", "include_repr", "max_items", "max_depth", "max_string_length", "timeout", "expected_set_signature"):
+        for name in ("detail", "include_repr", "max_items", "max_depth", "max_string_length", "timeout", "strict_timeout", "timeout_strict", "expected_set_signature"):
             if params.get(name) is not None:
                 inherited[name] = params.get(name)
         for index, op in enumerate(params.get("operations") or []):

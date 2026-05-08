@@ -9,6 +9,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+DEFAULT_MAIN_THREAD_TIMEOUT = 30.0
+
 
 class AbletonBridgeError(RuntimeError):
     pass
@@ -89,7 +91,7 @@ class AbletonBridgeClient:
         request_timeout = self.config.timeout
         params = payload.get("params") or {}
         if isinstance(params, dict) and params.get("timeout") is not None:
-            request_timeout = max(request_timeout, float(params["timeout"]) + 1.0)
+            request_timeout = max(request_timeout, effective_main_thread_timeout(params) + 1.0)
         sock.settimeout(request_timeout)
         line = (json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8")
         sock.sendall(line)
@@ -134,3 +136,10 @@ class AbletonBridgeClient:
         if not data:
             raise OSError("No response from Ableton bridge")
         return data.split(b"\n", 1)[0]
+
+
+def effective_main_thread_timeout(params: dict[str, Any]) -> float:
+    timeout = float(params.get("timeout") or DEFAULT_MAIN_THREAD_TIMEOUT)
+    if not (params.get("strict_timeout") or params.get("timeout_strict")):
+        timeout = max(timeout, DEFAULT_MAIN_THREAD_TIMEOUT)
+    return timeout

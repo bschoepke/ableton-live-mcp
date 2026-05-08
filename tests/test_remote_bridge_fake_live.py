@@ -1402,7 +1402,7 @@ def test_run_on_main_abandons_request_that_has_not_started(monkeypatch):
     bridge._rpc_marker = lambda _params: invoked.append(True)
 
     try:
-        bridge._run_on_main("marker", {"timeout": 0.001})
+        bridge._run_on_main("marker", {"timeout": 0.001, "strict_timeout": True})
     except RuntimeError as exc:
         assert "Timed out waiting for Live main thread" in str(exc)
     else:
@@ -1411,6 +1411,14 @@ def test_run_on_main_abandons_request_that_has_not_started(monkeypatch):
     assert invoked == []
     callbacks[0]()
     assert invoked == []
+
+
+def test_run_on_main_clamps_short_non_strict_timeouts(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+
+    assert bridge._main_thread_timeout({"timeout": 0.001}) == 30.0
+    assert bridge._main_thread_timeout({"timeout": 0.001, "strict_timeout": True}) == 0.001
+    assert bridge._main_thread_timeout({"timeout": 45}) == 45.0
 
 
 def test_handle_client_closes_idle_timeout_without_stale_json_error(monkeypatch):

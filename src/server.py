@@ -71,6 +71,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     }
     guarded_response_controls = dict(response_controls)
     guarded_response_controls["expected_set_signature"] = {"type": "string"}
+    strict_timeout_control = {"strict_timeout": {"type": "boolean"}}
     server.add_tool(Tool("live_get", "Resolve object; read selected properties/children.", schema({
         "ref": ref,
         "properties": {"type": "array", "items": {"type": "string"}},
@@ -324,6 +325,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "include_traceback": {"type": "boolean"},
         "expected_set_signature": {"type": "string"},
         **response_controls,
+        **strict_timeout_control,
     }, ["operations"]), forward("batch")))
     browser_item_ref = {
         "type": "object",
@@ -381,6 +383,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "code": {"type": "string"},
         "ref": ref,
         **guarded_response_controls,
+        **strict_timeout_control,
     }, ["code"]), forward("exec")))
     server.add_tool(Tool("live_observe", "Add or remove a listener for an object's property.", schema({
         "ref": ref,

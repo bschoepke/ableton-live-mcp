@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from benchmark import run_benchmark
-from bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig
+from bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig, effective_main_thread_timeout
 from install_remote_script import install_remote_script, remote_script_root
 from prompt_audit import run_prompt_audit
 from server import expected_agent_m4l_status_event, make_server, should_build_agent_m4l, wait_agent_m4l_status
@@ -1125,6 +1125,40 @@ def test_bridge_client_expands_socket_timeout_for_long_live_request(monkeypatch)
 
     assert client.request("exec", {"code": "result = True", "timeout": 45.0}) == {"ok": True}
     assert created[0].timeouts[-1] == 46.0
+
+
+def test_bridge_client_clamps_short_non_strict_timeout_for_socket(monkeypatch):
+    created = []
+
+    class FakeSocket:
+        def __init__(self):
+            self.timeouts = []
+            self.responses = [b'{"jsonrpc":"2.0","id":1,"result":{"ok":true}}\n']
+
+        def settimeout(self, timeout):
+            self.timeouts.append(timeout)
+
+        def sendall(self, _line):
+            pass
+
+        def recv(self, _size):
+            return self.responses.pop(0)
+
+        def close(self):
+            pass
+
+    def connect(*_args, **_kwargs):
+        sock = FakeSocket()
+        created.append(sock)
+        return sock
+
+    monkeypatch.setattr("socket.create_connection", connect)
+    client = AbletonBridgeClient(BridgeConfig(timeout=5.0))
+
+    assert effective_main_thread_timeout({"timeout": 10.0}) == 30.0
+    assert effective_main_thread_timeout({"timeout": 10.0, "strict_timeout": True}) == 10.0
+    assert client.request("transport", {"action": "play", "timeout": 10.0}) == {"ok": True}
+    assert created[0].timeouts[-1] == 31.0
 
 
 def test_bridge_client_reconnects_before_remote_idle_timeout(monkeypatch):
