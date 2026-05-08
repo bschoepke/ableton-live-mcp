@@ -109,17 +109,6 @@ class AbletonLiveMCP(ControlSurface):
                     self.log_message("Ableton_Live_MCP accept error: %s" % traceback.format_exc())
 
     def _handle_client(self, client):
-        acquired = self._handler_slots.acquire(False)
-        if not acquired:
-            try:
-                err = {"jsonrpc": "2.0", "id": None, "error": {"code": -32000, "message": "Too many concurrent Ableton MCP requests"}}
-                client.sendall((json.dumps(err, separators=(",", ":")) + "\n").encode("utf-8"))
-            finally:
-                try:
-                    client.close()
-                except Exception:
-                    pass
-            return
         try:
             client.settimeout(CLIENT_TIMEOUT)
             buffer = b""
@@ -128,7 +117,19 @@ class AbletonLiveMCP(ControlSurface):
                 if not data:
                     break
                 request = json.loads(data.decode("utf-8"))
-                response = self._dispatch(request)
+                acquired = False
+                if request.get("method") == "bridge_status":
+                    response = self._dispatch(request)
+                else:
+                    acquired = self._handler_slots.acquire(False)
+                    if acquired:
+                        try:
+                            response = self._dispatch(request)
+                        finally:
+                            self._handler_slots.release()
+                            acquired = False
+                    else:
+                        response = {"jsonrpc": "2.0", "id": request.get("id"), "error": {"code": -32000, "message": "Too many concurrent Ableton MCP requests"}}
                 client.sendall((json.dumps(response, separators=(",", ":")) + "\n").encode("utf-8"))
         except socket.timeout:
             pass
@@ -143,7 +144,6 @@ class AbletonLiveMCP(ControlSurface):
                 client.close()
             except Exception:
                 pass
-            self._handler_slots.release()
 
     def _read_line(self, client, buffer):
         chunks = [buffer] if buffer else []

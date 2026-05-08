@@ -1853,6 +1853,77 @@ def test_handle_client_closes_idle_timeout_without_stale_json_error(monkeypatch)
     assert sent == []
 
 
+def test_handle_client_serves_bridge_status_when_handler_slots_are_saturated(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    bridge._handler_slots = threading.BoundedSemaphore(1)
+    assert bridge._handler_slots.acquire(False)
+    sent = []
+
+    class StatusSocket:
+        def __init__(self):
+            self.chunks = [
+                b'{"jsonrpc":"2.0","id":7,"method":"bridge_status","params":{}}\n',
+                b"",
+            ]
+
+        def settimeout(self, _timeout):
+            pass
+
+        def recv(self, _size):
+            return self.chunks.pop(0)
+
+        def sendall(self, payload):
+            sent.append(payload)
+
+        def close(self):
+            pass
+
+    try:
+        bridge._handle_client(StatusSocket())
+    finally:
+        bridge._handler_slots.release()
+
+    response = json.loads(sent[0].decode("utf-8"))
+    assert response["id"] == 7
+    assert response["result"]["ok"] is True
+    assert response["result"]["server_thread_responsive"] is True
+
+
+def test_handle_client_rejects_main_thread_request_when_handler_slots_are_saturated(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    bridge._handler_slots = threading.BoundedSemaphore(1)
+    assert bridge._handler_slots.acquire(False)
+    sent = []
+
+    class PingSocket:
+        def __init__(self):
+            self.chunks = [
+                b'{"jsonrpc":"2.0","id":8,"method":"ping","params":{}}\n',
+                b"",
+            ]
+
+        def settimeout(self, _timeout):
+            pass
+
+        def recv(self, _size):
+            return self.chunks.pop(0)
+
+        def sendall(self, payload):
+            sent.append(payload)
+
+        def close(self):
+            pass
+
+    try:
+        bridge._handle_client(PingSocket())
+    finally:
+        bridge._handler_slots.release()
+
+    response = json.loads(sent[0].decode("utf-8"))
+    assert response["id"] == 8
+    assert response["error"]["message"] == "Too many concurrent Ableton MCP requests"
+
+
 def test_exec_returns_result_binding(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     result = bridge._rpc_exec({"code": "song.tempo = 124\nresult = {'tempo': song.tempo}"})
