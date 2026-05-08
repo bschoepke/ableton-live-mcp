@@ -25,7 +25,7 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert "receive~ %s" % buses["output_left"] in texts
     assert "receive~ %s" % buses["output_right"] in texts
     assert "udpreceive %d" % udp_port("Lead") in texts
-    assert "metro 50 @active 1 @defer 1" in texts
+    assert "metro 200 @active 1 @defer 1" in texts
     assert "live.thisdevice" in texts
     assert "live.path this_device" in texts
     assert "path this_device" in texts
@@ -243,6 +243,9 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "arrayfromargs(arguments)" in source
     assert "uiBindings" in source
     assert "LiveAPI" in source
+    assert "directLiveApiObserversEnabled" in source
+    assert "state.live_api_observers_enabled" in source
+    assert "pollTask.interval = FALLBACK_POLL_INTERVAL" in source
     assert "startLiveParameterObservers" in source
     assert "handleLiveParameterChange" in source
     assert "isCommandTriggerName" in source
@@ -266,6 +269,9 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert '"path", "this_device", "parameters", parameterIndex' in source
     assert "live_parameter_box_observers" in source
     assert "var ids = liveApiIds(rawParameters)" in source
+    assert "spec.live_api_observers" in source
+    assert "scheduleLiveParameterObserverRefresh(0)" not in source
+    assert "scheduleLiveParameterObserverRefresh(100);" not in source
     assert "function liveApiList(values)" in source
     assert "values.split(/\\s+/)" in source
     assert "ui_bindings" in source
@@ -273,7 +279,7 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "applyUiBinding" in source
     assert "createDynamicPoller" in source
     assert '"__agent_m4l_poll"' in source
-    assert '["qmetro", 50]' in source
+    assert '["qmetro", FALLBACK_POLL_INTERVAL]' in source
     assert "updateUiBindings" in source
     assert "setUiSourceValue" in source
     assert "binding.source_message" in source

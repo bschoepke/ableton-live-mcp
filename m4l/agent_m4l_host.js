@@ -29,11 +29,13 @@ var selfDeviceId = 0;
 var liveParameterIndexBySource = {};
 var liveParameterSourceByTag = {};
 var nextGeneratedLiveParameterIndex = 2;
+var directLiveApiObserversEnabled = false;
 var statusPadSize = 65536;
 var lastConnectionErrors = [];
 var lastReloadCommandId = "";
 var pendingWebUiReads = [];
 var WEBUI_READ_DELAYS = [100, 250, 500, 1000, 2000, 4000];
+var FALLBACK_POLL_INTERVAL = 200;
 var DEFAULT_DEVICE_WIDTH = 420;
 var MIN_DEVICE_WIDTH = 260;
 var DEVICE_WIDTH_PADDING = 20;
@@ -46,7 +48,6 @@ var currentDeviceHeight = DEFAULT_DEVICE_HEIGHT;
 function loadbang() {
     startStaticPolling();
     start_polling();
-    scheduleLiveParameterObserverRefresh(100);
     report("ready", { role: role, instance_id: instanceId, command_file: commandFile, device_width: currentDeviceWidth, device_height: currentDeviceHeight });
     pollCommandFile();
 }
@@ -77,7 +78,7 @@ function startStaticPolling() {
 function start_polling() {
     if (!pollTask) {
         pollTask = new Task(pollCommandFile, this);
-        pollTask.interval = 50;
+        pollTask.interval = FALLBACK_POLL_INTERVAL;
         pollTask.repeat();
     }
 }
@@ -97,6 +98,9 @@ function pollCommandFile() {
 }
 
 function scheduleLiveParameterObserverRefresh(delay) {
+    if (!directLiveApiObserversEnabled) {
+        return;
+    }
     if (typeof LiveAPI === "undefined") {
         return;
     }
@@ -109,6 +113,11 @@ function scheduleLiveParameterObserverRefresh(delay) {
 }
 
 function startLiveParameterObservers() {
+    if (!directLiveApiObserversEnabled) {
+        liveParameterObservers = [];
+        state.live_parameter_observers = 0;
+        return;
+    }
     if (typeof LiveAPI === "undefined") {
         return;
     }
@@ -147,8 +156,11 @@ function handleSelfDevicePath(atoms) {
     var id = firstLiveApiId(atoms);
     if (id > 0) {
         selfDeviceId = id;
-        startLiveParameterObservers();
-        scheduleLiveParameterObserverRefresh(250);
+        state.live_parameter_device_id = selfDeviceId;
+        if (directLiveApiObserversEnabled) {
+            startLiveParameterObservers();
+            scheduleLiveParameterObserverRefresh(250);
+        }
     }
 }
 
@@ -404,7 +416,6 @@ function msg_string(value) {
 
 function msg_int(value) {
     markCommandWake("int");
-    scheduleLiveParameterObserverRefresh(0);
     pollCommandFile();
     if (pendingWebUiReads.length) {
         readPendingWebUis();
@@ -413,7 +424,6 @@ function msg_int(value) {
 
 function msg_float(value) {
     markCommandWake("float");
-    scheduleLiveParameterObserverRefresh(0);
     pollCommandFile();
     if (pendingWebUiReads.length) {
         readPendingWebUis();
@@ -430,8 +440,6 @@ function list() {
 
 function bang() {
     markCommandWake("bang");
-    startLiveParameterObservers();
-    scheduleLiveParameterObserverRefresh(250);
     pollCommandFile();
     if (pendingWebUiReads.length) {
         readPendingWebUis();
@@ -528,6 +536,12 @@ function applySpec(spec) {
         return;
     }
     var previousState = cloneObject(state);
+    directLiveApiObserversEnabled = !!(spec.live_api_observers || spec.observe_live_parameters || spec.observe_live_api_parameters);
+    state.live_api_observers_enabled = directLiveApiObserversEnabled ? 1 : 0;
+    if (!directLiveApiObserversEnabled) {
+        liveParameterObservers = [];
+        state.live_parameter_observers = 0;
+    }
     configureDeviceBounds(spec);
     clearDynamic(reusableWebIdsForSpec(spec));
     var byId = seedStaticObjects();
@@ -553,9 +567,11 @@ function applySpec(spec) {
     }
     configureUiBindings(spec, objects, byId);
     createDynamicPoller();
-    startLiveParameterObservers();
-    scheduleLiveParameterObserverRefresh(250);
-    scheduleLiveParameterObserverRefresh(1000);
+    if (directLiveApiObserversEnabled) {
+        startLiveParameterObservers();
+        scheduleLiveParameterObserverRefresh(250);
+        scheduleLiveParameterObserverRefresh(1000);
+    }
     var connections = connectPatchlines(spec.connections || [], byId);
     var restored = restoreState(previousState);
     var reapplied = reapplyStateValues();
@@ -966,7 +982,7 @@ function configureUiBindings(spec, objects, byId) {
 
 function createDynamicPoller() {
     var id = "__agent_m4l_poll";
-    var poller = createNamedDefault(id, 20, 300, ["qmetro", 50]);
+    var poller = createNamedDefault(id, 20, 300, ["qmetro", FALLBACK_POLL_INTERVAL]);
     if (!poller) {
         return;
     }
