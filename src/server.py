@@ -880,10 +880,20 @@ def _agent_m4l_status_if_ready(path: str, previous_mtime: float | None, command_
     try:
         status = json.loads(Path(path).read_text(encoding="utf-8").strip())
         if _agent_m4l_status_matches(status, command_id, expected_event):
-            return status, last_error
+            return annotate_agent_m4l_status(status, command_id, expected_event), last_error
     except Exception as exc:
         last_error = str(exc)
     return None, last_error
+
+
+def annotate_agent_m4l_status(status: dict[str, Any], command_id: str, expected_event: str | None) -> dict[str, Any]:
+    if not _agent_m4l_reload_seen(status, command_id, expected_event):
+        return status
+    result = dict(status)
+    result["reload_seen"] = True
+    if str(status.get("event") or "") == "error" and str(status.get("reason") or "") == "webui_read_exhausted":
+        result["webui_status"] = "read_exhausted"
+    return result
 
 
 def _read_agent_m4l_status(path: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -903,7 +913,7 @@ def _read_agent_m4l_status(path: str) -> tuple[dict[str, Any] | None, str | None
 
 def summarize_agent_m4l_status(status: dict[str, Any]) -> dict[str, Any]:
     summary: dict[str, Any] = {}
-    for key in ("event", "command_id", "last_reload_command_id", "dynamic_objects", "webuis", "device_width", "device_height", "id", "reason", "attempt", "attempts", "message"):
+    for key in ("event", "command_id", "last_reload_command_id", "dynamic_objects", "webuis", "device_width", "device_height", "id", "reason", "attempt", "attempts", "message", "reload_seen", "webui_status"):
         if key in status:
             summary[key] = status.get(key)
     state = status.get("state")

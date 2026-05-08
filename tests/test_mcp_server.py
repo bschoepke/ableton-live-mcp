@@ -816,6 +816,29 @@ def test_wait_agent_m4l_status_accepts_reload_seen_before_web_ack(tmp_path):
 
     assert result["event"] == "set"
     assert result["last_reload_command_id"] == "reload1"
+    assert result["reload_seen"] is True
+
+
+def test_wait_agent_m4l_status_marks_terminal_webui_exhaustion(tmp_path):
+    status_file = tmp_path / "status.json"
+    before = 1.0
+    status_file.write_text(json.dumps({
+        "event": "error",
+        "command_id": "reload1",
+        "last_reload_command_id": "reload1",
+        "reason": "webui_read_exhausted",
+        "id": "panel",
+        "attempts": 6,
+        "state": {"web_read_pending": 0, "web_panel_read_exhausted": 1},
+    }), encoding="utf-8")
+
+    result = wait_agent_m4l_status(str(status_file), before, "reload1", 0.2, 0.01, "reload")
+
+    assert result["event"] == "error"
+    assert result["reload_seen"] is True
+    assert result["webui_status"] == "read_exhausted"
+    assert result["reason"] == "webui_read_exhausted"
+    assert result["attempts"] == 6
 
 
 def test_wait_agent_m4l_status_does_not_accept_pending_web_read_as_reload(tmp_path):
