@@ -37,14 +37,14 @@ ABLETON_MCP_INSTRUCTIONS = (
     "General Live bridge; review AGENTS.md for tips as needed. "
     "Prefer devices/plugins unless asked; roots:['plugins']. "
     "Sets: live_set_summary first; expected_set_signature for destructive edits. "
-    "Compact live_exec/live_batch; limit props/children/strings. "
+    "Compact exec/batch; limit props/children/strings. "
     "find_similar_sounds requires Live 12+. "
     "AgentAudioTap: master tap+solo target; start with path. "
-    "Idle sockets auto-retry; sent-call timeouts fail closed; client/RS cooldown+serialize; live_bridge_status timeout=wedged. "
+    "Idle sockets auto-retry; sent-call timeouts fail closed; client/RS cooldown+serialize; live_bridge_status timeout=wedged. Save/recover modals: inspect UI, no retry mutations. "
     "Agent must visually verify M4L device UI via live_visual_capture: Ableton-window-only, never capture arbitrary apps/windows, device-detail crop, blank_capture invalid; locked/asleep display blocks capture/e2e. "
     "M4L: arbitrary native/web/mixed UI hot-reloads; wait_status/compact_result + matching command_id. Reuse hosts/IDs; host_runtime_version; avoid renderer buildup/fps; cleanup dry-run. Supports preflight, sidecar recovery+slim set/status, UDP hints, throttled fallback wakes, load:false/set/status skip build, host_not_woken=no ack, midiin+midiparse, origin-aligned rect/openrect, advisory bounds, ui_bindings, agent-settable UI, telemetry report:false, ack/state throttles, web assets/source_path, webui_read diagnostics, set_silent/batch/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web: prove signal telemetry+visual delta. No web ack/shrink: reload/simplify or fresh host. "
     "Avoid broad dumps. Gotchas: live_eval expr-only; use live_exec; Live nums JSON; Simpler.sample not settable; ids from summaries. "
-    "Hints only; full Live object model remains available: paths/ids/calls/props/children/listeners/eval."
+    "Hints only; full Live object model remains available."
 )
 AGENT_M4L_TOOL_DESCRIPTION = (
     "arbitrary native UI, jweb/jbrowser web UI; wait_status compact_status compact_result, web diag."

@@ -86,6 +86,8 @@ def test_initialize_includes_general_model_instructions():
     assert "sent-call timeouts fail closed" in instructions
     assert "client/RS cooldown" in instructions
     assert "live_bridge_status" in instructions
+    assert "Save/recover modals" in instructions
+    assert "no retry mutations" in instructions
     assert "compact_result" in instructions
     assert "jweb/jbrowser aliases" in instructions
     assert "web assets/source_path" in instructions
