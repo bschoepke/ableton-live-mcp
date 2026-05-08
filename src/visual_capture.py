@@ -85,6 +85,7 @@ def capture_ableton_window(
     backend: str = "auto",
     region: str | None = None,
     crop: Any = None,
+    crop_relative_to_region: bool = False,
     bottom_fraction: float | None = None,
     max_width: int | None = None,
     max_height: int | None = None,
@@ -96,7 +97,7 @@ def capture_ableton_window(
     output = Path(output_path) if output_path else default_capture_path()
     output.parent.mkdir(parents=True, exist_ok=True)
     backend_used = capture_window(window, output, backend)
-    postprocess = postprocess_capture(output, region, crop, bottom_fraction, max_width, max_height)
+    postprocess = postprocess_capture(output, region, crop, crop_relative_to_region, bottom_fraction, max_width, max_height)
     result = {
         "ok": True,
         "path": str(output),
@@ -394,6 +395,7 @@ def postprocess_capture(
     output: Path,
     region: str | None = None,
     crop: Any = None,
+    crop_relative_to_region: bool = False,
     bottom_fraction: float | None = None,
     max_width: int | None = None,
     max_height: int | None = None,
@@ -407,7 +409,7 @@ def postprocess_capture(
         return {"content_error": "Pillow package unavailable; blank detection skipped"}
     with Image.open(output) as image:
         source_size = [int(image.width), int(image.height)]
-        box = capture_region_box((image.width, image.height), region, crop, bottom_fraction)
+        box = capture_region_box((image.width, image.height), region, crop, bottom_fraction, crop_relative_to_region)
         if box is not None:
             image = image.crop(box)
         max_size = normalized_max_size(max_width, max_height)
@@ -434,22 +436,31 @@ def capture_region_box(
     region: str | None = None,
     crop: Any = None,
     bottom_fraction: float | None = None,
+    crop_relative_to_region: bool = False,
 ) -> tuple[int, int, int, int] | None:
     width, height = int(image_size[0]), int(image_size[1])
     if width <= 0 or height <= 0:
         raise RuntimeError("Cannot crop an empty capture")
+    normalized = normalize_region_name(region)
+    region_box = capture_base_region_box(width, height, normalized, bottom_fraction, region)
     if crop is not None:
         x, y, crop_width, crop_height = parse_crop(crop)
         if crop_width <= 0 or crop_height <= 0:
             raise RuntimeError("Crop width and height must be positive")
-        left = clamp_int(x, 0, width)
-        top = clamp_int(y, 0, height)
-        right = clamp_int(x + crop_width, 0, width)
-        bottom = clamp_int(y + crop_height, 0, height)
+        base = region_box if crop_relative_to_region and region_box is not None else (0, 0, width, height)
+        base_left, base_top, base_right, base_bottom = base
+        left = clamp_int(base_left + x, base_left, base_right)
+        top = clamp_int(base_top + y, base_top, base_bottom)
+        right = clamp_int(base_left + x + crop_width, base_left, base_right)
+        bottom = clamp_int(base_top + y + crop_height, base_top, base_bottom)
         if right <= left or bottom <= top:
-            raise RuntimeError("Crop falls outside the captured Ableton Live window")
+            boundary = "region" if crop_relative_to_region and region_box is not None else "captured Ableton Live window"
+            raise RuntimeError("Crop falls outside the %s" % boundary)
         return (left, top, right, bottom)
-    normalized = normalize_region_name(region)
+    return region_box
+
+
+def capture_base_region_box(width: int, height: int, normalized: str | None, bottom_fraction: float | None, raw_region: str | None = None) -> tuple[int, int, int, int] | None:
     if normalized is None:
         return None
     if normalized == "device_detail":
@@ -458,7 +469,7 @@ def capture_region_box(
             raise RuntimeError("bottom_fraction must be greater than 0 and no more than 1")
         top = max(0, min(height - 1, int(round(height * (1 - fraction)))))
         return (0, top, width, height)
-    raise RuntimeError("Unknown Ableton visual capture region: %s" % region)
+    raise RuntimeError("Unknown Ableton visual capture region: %s" % raw_region)
 
 
 def parse_crop(crop: Any) -> tuple[int, int, int, int]:
@@ -535,6 +546,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--backend", default="auto", choices=("auto", "screencapture", "quartz", "windows-capture"))
     parser.add_argument("--region", help="Optional post-capture region. Use 'device-detail' for Live's bottom device view.")
     parser.add_argument("--crop", help="Optional post-capture crop as x,y,width,height inside the Ableton Live window.")
+    parser.add_argument("--crop-relative-to-region", action="store_true", help="Interpret --crop coordinates relative to --region instead of the full Ableton Live window.")
     parser.add_argument("--bottom-fraction", type=float, help="Bottom fraction used by --region device-detail. Defaults to 0.34.")
     parser.add_argument("--max-width", type=int, help="Downscale output to this maximum width.")
     parser.add_argument("--max-height", type=int, help="Downscale output to this maximum height.")
@@ -542,15 +554,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         result = capture_ableton_window(
-            args.output,
-            args.title_contains,
-            args.list,
-            args.backend,
-            args.region,
-            args.crop,
-            args.bottom_fraction,
-            args.max_width,
-            args.max_height,
+            output_path=args.output,
+            title_contains=args.title_contains,
+            list_only=args.list,
+            backend=args.backend,
+            region=args.region,
+            crop=args.crop,
+            crop_relative_to_region=args.crop_relative_to_region,
+            bottom_fraction=args.bottom_fraction,
+            max_width=args.max_width,
+            max_height=args.max_height,
         )
     except Exception as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2, sort_keys=True))

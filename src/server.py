@@ -51,8 +51,8 @@ AGENT_M4L_TOOL_DESCRIPTION = (
     "wait_status/compact_status/compact_result, files, bounds, ui_bindings, web diag, fast paths."
 )
 AGENT_AUDIO_TAP_DESCRIPTION = "Command AgentAudioTap capture: use start with path, then stop/status; file command reliable, UDP optional."
-AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap on master or target; optionally solo target track and reset transport."
-VISUAL_CAPTURE_DESCRIPTION = "Ableton Live window-only PNG; device-detail crop/downscale; refuses arbitrary apps/windows."
+AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap on master/target; optional solo target track/reset transport."
+VISUAL_CAPTURE_DESCRIPTION = "Ableton Live window-only; device-detail crop/downscale; region-relative; no arbitrary apps/windows."
 
 
 def schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -269,6 +269,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         backend=str(args.get("backend") or "auto"),
         region=args.get("region"),
         crop=args.get("crop"),
+        crop_relative_to_region=bool(args.get("crop_relative_to_region", False)),
         bottom_fraction=args.get("bottom_fraction"),
         max_width=args.get("max_width"),
         max_height=args.get("max_height"),

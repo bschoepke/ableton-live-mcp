@@ -120,6 +120,30 @@ def test_explicit_crop_clamps_to_ableton_window_bounds():
         visual_capture.capture_region_box((1000, 900), crop=[1200, 50, 100, 60])
 
 
+def test_region_relative_crop_uses_region_as_origin():
+    assert visual_capture.capture_region_box(
+        (1000, 900),
+        region="device-detail",
+        crop=[10, 20, 200, 50],
+        bottom_fraction=0.25,
+        crop_relative_to_region=True,
+    ) == (10, 695, 210, 745)
+    assert visual_capture.capture_region_box(
+        (1000, 900),
+        region="device-detail",
+        crop=[10, 20, 200, 50],
+        bottom_fraction=0.25,
+    ) == (10, 20, 210, 70)
+    with pytest.raises(RuntimeError, match="outside the region"):
+        visual_capture.capture_region_box(
+            (1000, 900),
+            region="device-detail",
+            crop=[10, 300, 200, 50],
+            bottom_fraction=0.25,
+            crop_relative_to_region=True,
+        )
+
+
 def test_unknown_capture_region_is_rejected():
     with pytest.raises(RuntimeError, match="Unknown Ableton visual capture region"):
         visual_capture.capture_region_box((1000, 900), "browser")
@@ -139,6 +163,23 @@ def test_postprocess_capture_crops_and_downscales(tmp_path):
     assert output.stat().st_size > 0
 
 
+def test_postprocess_capture_supports_region_relative_crop(tmp_path):
+    Image = pytest.importorskip("PIL.Image")
+    output = tmp_path / "live.png"
+    Image.new("RGB", (200, 100), "black").save(output)
+
+    result = visual_capture.postprocess_capture(
+        output,
+        region="device-detail",
+        crop=[10, 5, 40, 20],
+        crop_relative_to_region=True,
+        bottom_fraction=0.5,
+    )
+
+    assert result["crop_box"] == [10, 55, 50, 75]
+    assert result["size"] == [40, 20]
+
+
 def test_postprocess_capture_collects_full_window_content_stats_without_crop(tmp_path):
     Image = pytest.importorskip("PIL.Image")
     output = tmp_path / "live.png"
@@ -154,6 +195,31 @@ def test_postprocess_capture_collects_full_window_content_stats_without_crop(tmp
     assert result["size"] == [40, 20]
     assert result["crop_box"] is None
     assert result["content"]["blank"] is False
+
+
+def test_visual_capture_cli_passes_crop_relative_to_region(monkeypatch, capsys):
+    captured = {}
+
+    def fake_capture(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True, "path": "/tmp/live.png"}
+
+    monkeypatch.setattr(visual_capture, "capture_ableton_window", fake_capture)
+
+    assert visual_capture.main([
+        "--output", "/tmp/live.png",
+        "--region", "device-detail",
+        "--crop", "1,2,3,4",
+        "--crop-relative-to-region",
+        "--bottom-fraction", "0.5",
+        "--max-width", "800",
+        "--max-height", "300",
+    ]) == 0
+    capsys.readouterr()
+    assert captured["crop_relative_to_region"] is True
+    assert captured["bottom_fraction"] == 0.5
+    assert captured["max_width"] == 800
+    assert captured["max_height"] == 300
 
 
 def test_capture_blank_full_window_includes_validation_blocker(monkeypatch, tmp_path):
