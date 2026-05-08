@@ -18,6 +18,7 @@ var uiBindings = {};
 var uiBindingUpdating = false;
 var statusPadSize = 65536;
 var lastConnectionErrors = [];
+var lastReloadCommandId = "";
 var DEFAULT_DEVICE_WIDTH = 420;
 var MIN_DEVICE_WIDTH = 260;
 var DEVICE_WIDTH_PADDING = 20;
@@ -975,6 +976,10 @@ function report(eventName, payload) {
     payload.dynamic_objects = dynamicObjects.length;
     payload.webuis = webObjects.length;
     payload.device_width = currentDeviceWidth;
+    if (eventName === "reload") {
+        lastReloadCommandId = currentCommandId;
+    }
+    payload.last_reload_command_id = lastReloadCommandId;
     payload.bindings = bindingSummaries();
     payload.state = state;
     if (lastConnectionErrors.length) {

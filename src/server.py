@@ -304,6 +304,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
                 str(result.get("command_id") or ""),
                 status_timeout,
                 status_poll_interval,
+                expected_agent_m4l_status_event(str(result.get("command") or agent_m4l_command(params))),
             )
         if built is not None:
             result["built"] = built
@@ -708,15 +709,24 @@ def _file_mtime(path: str) -> float | None:
         return None
 
 
-def wait_agent_m4l_status(path: str, previous_mtime: float | None, command_id: str, timeout: float, poll_interval: float) -> dict[str, Any]:
+def expected_agent_m4l_status_event(command: str) -> str | None:
+    command = str(command or "").lower()
+    if command == "update":
+        return "reload"
+    if command in ("set", "status", "clear"):
+        return command
+    return None
+
+
+def wait_agent_m4l_status(path: str, previous_mtime: float | None, command_id: str, timeout: float, poll_interval: float, expected_event: str | None = None) -> dict[str, Any]:
     deadline = time.time() + timeout
     last_error = None
     while time.time() <= deadline:
-        status, last_error = _agent_m4l_status_if_ready(path, previous_mtime, command_id, last_error)
+        status, last_error = _agent_m4l_status_if_ready(path, previous_mtime, command_id, last_error, expected_event)
         if status is not None:
             return status
         time.sleep(poll_interval)
-    status, last_error = _agent_m4l_status_if_ready(path, previous_mtime, command_id, last_error)
+    status, last_error = _agent_m4l_status_if_ready(path, previous_mtime, command_id, last_error, expected_event)
     if status is not None:
         return status
     result: dict[str, Any] = {"timed_out": True, "path": path}
@@ -725,17 +735,33 @@ def wait_agent_m4l_status(path: str, previous_mtime: float | None, command_id: s
     return result
 
 
-def _agent_m4l_status_if_ready(path: str, previous_mtime: float | None, command_id: str, last_error: str | None = None) -> tuple[dict[str, Any] | None, str | None]:
+def _agent_m4l_status_if_ready(path: str, previous_mtime: float | None, command_id: str, last_error: str | None = None, expected_event: str | None = None) -> tuple[dict[str, Any] | None, str | None]:
     current_mtime = _file_mtime(path)
     if current_mtime is None or (previous_mtime is not None and current_mtime <= previous_mtime):
         return None, last_error
     try:
         status = json.loads(Path(path).read_text(encoding="utf-8").strip())
-        if not status.get("command_id") or not command_id or status.get("command_id") == command_id:
+        if _agent_m4l_status_matches(status, command_id, expected_event):
             return status, last_error
     except Exception as exc:
         last_error = str(exc)
     return None, last_error
+
+
+def _agent_m4l_status_matches(status: dict[str, Any], command_id: str, expected_event: str | None) -> bool:
+    if command_id:
+        status_command_id = str(status.get("command_id") or "")
+        if status_command_id != command_id and not _agent_m4l_reload_seen(status, command_id, expected_event):
+            return False
+    if expected_event:
+        status_event = str(status.get("event") or "")
+        if status_event != expected_event and not _agent_m4l_reload_seen(status, command_id, expected_event):
+            return False
+    return True
+
+
+def _agent_m4l_reload_seen(status: dict[str, Any], command_id: str, expected_event: str | None) -> bool:
+    return expected_event == "reload" and bool(command_id) and str(status.get("last_reload_command_id") or "") == command_id
 
 
 def main() -> None:

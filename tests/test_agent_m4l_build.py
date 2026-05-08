@@ -177,6 +177,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "devicewidth" in source
     assert "openrect" in source
     assert "device_width" in source
+    assert "lastReloadCommandId" in source
+    assert "last_reload_command_id" in source
     assert "ensureRecovered" in source
     assert "readCommandFileJson" in source
     assert "recovery.patch || recovery.spec" in source

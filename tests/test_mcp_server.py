@@ -10,7 +10,7 @@ from benchmark import run_benchmark
 from bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig
 from install_remote_script import install_remote_script, remote_script_root
 from prompt_audit import run_prompt_audit
-from server import make_server, should_build_agent_m4l, wait_agent_m4l_status
+from server import expected_agent_m4l_status_event, make_server, should_build_agent_m4l, wait_agent_m4l_status
 from similar_sounds import encode_feature
 from smoke import run_smoke
 
@@ -695,6 +695,29 @@ def test_wait_agent_m4l_status_requires_matching_command_id(tmp_path):
 
     assert result["command_id"] == "new"
     assert result["webuis"] == 1
+
+
+def test_wait_agent_m4l_status_accepts_reload_seen_before_web_ack(tmp_path):
+    status_file = tmp_path / "status.json"
+    before = 1.0
+    status_file.write_text(json.dumps({
+        "event": "set",
+        "command_id": "reload1",
+        "last_reload_command_id": "reload1",
+        "dynamic_objects": 8,
+    }), encoding="utf-8")
+
+    result = wait_agent_m4l_status(str(status_file), before, "reload1", 0.2, 0.01, "reload")
+
+    assert result["event"] == "set"
+    assert result["last_reload_command_id"] == "reload1"
+
+
+def test_agent_m4l_expected_status_event_tracks_command_intent():
+    assert expected_agent_m4l_status_event("update") == "reload"
+    assert expected_agent_m4l_status_event("set") == "set"
+    assert expected_agent_m4l_status_event("status") == "status"
+    assert expected_agent_m4l_status_event("other") is None
 
 
 def test_agent_m4l_build_default_tracks_command_intent():
