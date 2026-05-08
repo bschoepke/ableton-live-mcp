@@ -38,9 +38,8 @@ ABLETON_MCP_INSTRUCTIONS = (
     "Hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
 AGENT_M4L_TOOL_DESCRIPTION = (
-    "Build/load/hot-reload fully custom Max for Live devices with arbitrary native UI, "
-    "jweb/jbrowser web UI, or mixed UI; supports wait_status, file-backed command updates, "
-    "device bounds, ui_bindings, web diag, and set/status fast paths."
+    "Custom M4L build/load/hot-reload: arbitrary native UI, jweb/jbrowser web UI/mixed; "
+    "wait_status/compact_status, file commands, bounds, ui_bindings, web diag, set/status fast paths."
 )
 AGENT_AUDIO_TAP_DESCRIPTION = "Command AgentAudioTap capture: use start with path, then stop/status; file command reliable, UDP optional."
 AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap on master or target; optionally solo target track and reset transport."

@@ -1211,6 +1211,7 @@ def test_tool_list_stays_compact():
     assert "arbitrary native UI" in m4l["description"]
     assert "jweb/jbrowser web UI" in m4l["description"]
     assert "wait_status" in m4l["description"]
+    assert "compact_status" in m4l["description"]
     assert "web diag" in m4l["description"]
     transport = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_transport")
     assert "continue" in transport["description"]
