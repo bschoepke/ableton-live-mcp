@@ -1448,7 +1448,11 @@ def test_smoke_suite_runs_expected_bridge_methods():
     methods = [method for method, _params in bridge.calls]
     assert code == 0
     assert output["ok"] is True
-    assert {"ping", "get", "children", "eval", "exec", "batch", "browser_roots", "browser_search", "observe", "events"} <= set(methods)
+    assert {"ping", "get", "children", "eval", "exec", "batch", "agent_m4l_device", "browser_roots", "browser_search", "observe", "events"} <= set(methods)
+    agent_m4l_calls = [params for method, params in bridge.calls if method == "agent_m4l_device"]
+    assert agent_m4l_calls[0]["load"] is False
+    assert agent_m4l_calls[0]["udp"] is False
+    assert agent_m4l_calls[0]["patch"]["device_height"] == 130
 
 
 def test_smoke_suite_treats_plugin_search_as_optional():

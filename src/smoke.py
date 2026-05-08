@@ -52,6 +52,20 @@ def run_smoke(client: AbletonBridgeClient | None = None) -> tuple[int, dict[str,
             {"method": "exec", "params": {"code": "result = len(song.tracks)"}},
         ],
     }))
+    checks.append(_call(client, "agent_m4l_command_file_update", "agent_m4l_device", {
+        "role": "audio_effect",
+        "instance_id": "Smoke M4L Direct",
+        "command": "update",
+        "load": False,
+        "udp": False,
+        "id": "smoke-m4l-update",
+        "patch": {
+            "device_width": 280,
+            "device_height": 130,
+            "objects": [{"id": "probe_value", "text": "flonum", "presentation_rect": [12, 12, 80, 22]}],
+            "connections": [],
+        },
+    }))
     checks.append(_call(client, "browser_roots", "browser_roots", {}))
     checks.append(_call(client, "browser_instrument_search", "browser_search", {
         "query": "drum",
