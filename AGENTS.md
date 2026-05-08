@@ -95,6 +95,8 @@ For complex generated specs, run `live_agent_m4l_device` with `preflight_only: t
 
 Native and web UI binding sources must be agent-settable, not only user-settable. When a control has `ui_bind`/`ui_bindings`, validate both directions: move the UI source and confirm the target state changes, then send an agent `set` to the source ID and confirm the host reports `changed: 1`, updates the visible source, and writes the intended target value in status `state`.
 
+If a native source control needs a nonstandard write-back message to stay visually synchronized, set `source_message`/`source_set_message` and optional `source_args` on the binding. Keep this per-binding and data-driven; do not special-case particular UI layouts or control types in the MCP.
+
 For telemetry bindings from output-only Max objects such as meters, analyzers, MIDI parsers, or other probes, set `report: false` and leave the source non-settable, or explicitly use `source_settable: false`. Do not let restored target state write back into signal-rate objects such as `peakamp~`.
 
 Generated devices should not appear as skinny slivers in Live's device rack, and authored panels should not be clipped by a stale default presentation size. Size the device to the authored UI: provide meaningful `presentation_rect` bounds for native objects and web UI panels, or set explicit top-level `device_width`/`devicewidth` and `device_height`/`deviceheight` when the intended design needs more room. The host builder infers Max `devicewidth` and `openrect` bounds from those authored rectangles with padding, and the runtime host reports/applies the intended width/height during hot reloads. This sizing remains data-driven; do not introduce fixed templates or limit agents to preapproved panel layouts.

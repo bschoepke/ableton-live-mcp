@@ -276,6 +276,10 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert '["qmetro", 50]' in source
     assert "updateUiBindings" in source
     assert "setUiSourceValue" in source
+    assert "binding.source_message" in source
+    assert "source_set_message" in source
+    assert "source_args" in source
+    assert "sendObjectValue(obj, objectSpecById[source] || {}, value, null)" in source
     assert "var binding = uiBindings[id]" in source
     assert "setBoundTarget(binding, valueFromUiBinding(binding, value), id)" in source
     assert "source_settable" in source

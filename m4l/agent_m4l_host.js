@@ -1060,6 +1060,8 @@ function normalizeUiBinding(raw, item) {
         source_max: binding.source_max,
         target_min: binding.target_min !== undefined ? binding.target_min : binding.min,
         target_max: binding.target_max !== undefined ? binding.target_max : binding.max,
+        source_message: binding.source_message || binding.sourceMessage || binding.source_set_message || binding.sourceSetMessage,
+        source_args: binding.source_args || binding.sourceArgs,
         scale: !!binding.scale || !!binding.normalized || binding.source_min !== undefined || binding.source_max !== undefined,
         report: binding.report !== false,
         source_settable: binding.source_settable !== undefined ? binding.source_settable !== false : (
@@ -1159,7 +1161,7 @@ function updateUiBindings(id, value, skipSource) {
         var binding = uiBindings[source];
         if (binding.target === id && source !== skipSource) {
             if (canSetUiSource(binding)) {
-                setUiSourceValue(source, sourceValueFromUiBinding(binding, value));
+                setUiSourceValue(source, sourceValueFromUiBinding(binding, value), binding);
             }
         }
     }
@@ -1177,17 +1179,21 @@ function hasUiBindingTarget(id) {
     return false;
 }
 
-function setUiSourceValue(source, value) {
+function setUiSourceValue(source, value, binding) {
     var obj = objectById[source];
     if (!obj) {
         return;
     }
     uiBindingUpdating = true;
     try {
-        obj.message("set", value);
+        if (binding && binding.source_message) {
+            obj.message.apply(obj, [String(binding.source_message)].concat(binding.source_args !== undefined ? asArray(binding.source_args) : messageValueArgs(value)));
+        } else {
+            obj.message("set", value);
+        }
     } catch (err) {
         try {
-            obj.message(value);
+            sendObjectValue(obj, objectSpecById[source] || {}, value, null);
         } catch (err2) {
         }
     }
@@ -1558,7 +1564,7 @@ function setStateValue(id, value, skipSource, command) {
     var binding = uiBindings[id];
     if (binding) {
         if (canSetUiSource(binding)) {
-            setUiSourceValue(id, value);
+            setUiSourceValue(id, value, binding);
         }
         setBoundTarget(binding, valueFromUiBinding(binding, value), id);
         return true;
