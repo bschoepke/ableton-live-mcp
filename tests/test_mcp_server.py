@@ -410,8 +410,11 @@ def test_agent_m4l_device_tool_builds_and_forwards(monkeypatch, tmp_path):
         },
         "webui": {
             "title": "Wobble",
+            "html": "<html><script src=\"device.js\"></script></html>",
+            "js": "window.largeSource = true;",
             "presentation_rect": [0, 0, 320, 160],
             "controls": [{"id": "dial", "label": "Amount", "value": 0.5}],
+            "assets": {"lib/scene.js": "export const scene = true;"},
         },
         "install": False,
     }
@@ -428,6 +431,10 @@ def test_agent_m4l_device_tool_builds_and_forwards(monkeypatch, tmp_path):
     assert forwarded["status_file"] == agent_m4l.status_file("Wobble")
     assert forwarded["patch"]["objects"][0]["presentation_rect"] == [12, 12, 48, 48]
     assert forwarded["patch"]["webui"]["html_path"].endswith("index.html")
+    assert "html" not in forwarded["patch"]["webui"]
+    assert "js" not in forwarded["patch"]["webui"]
+    assert "controls" not in forwarded["patch"]["webui"]
+    assert forwarded["patch"]["webui"]["assets"][0]["relative_path"] == "lib/scene.js"
     assert forwarded["patch"]["device_width"] == 340
     assert forwarded["device_width"] == 340
     assert forwarded["webui"]["url"].startswith("file://")

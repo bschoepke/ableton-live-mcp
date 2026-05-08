@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import argparse
+import base64
 import hashlib
 import re
 import shutil
@@ -351,7 +352,7 @@ def build_pool(role: str, count: int, prefix: str = "slot", install: bool = True
     ]
 
 
-def write_webui(instance_id: str, webui: dict[str, Any]) -> dict[str, str]:
+def write_webui(instance_id: str, webui: dict[str, Any]) -> dict[str, Any]:
     slug = slugify(instance_id)
     directory = WEBUI_DIR / slug
     directory.mkdir(parents=True, exist_ok=True)
@@ -364,12 +365,69 @@ def write_webui(instance_id: str, webui: dict[str, Any]) -> dict[str, str]:
     css_path.write_text(css, encoding="utf-8")
     js_path.write_text(js, encoding="utf-8")
     html_path.write_text(html, encoding="utf-8")
+    assets = write_webui_assets(directory, webui.get("assets"))
     return {
         "html_path": str(html_path),
         "css_path": str(css_path),
         "js_path": str(js_path),
         "url": html_path.resolve().as_uri(),
+        "assets": assets,
     }
+
+
+def write_webui_assets(directory: Path, assets: Any) -> list[dict[str, Any]]:
+    rendered = []
+    for name, asset in webui_asset_items(assets):
+        relative = safe_asset_path(name)
+        path = directory / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(asset, dict):
+            data = asset_data(asset)
+        else:
+            data = str(asset).encode("utf-8")
+        path.write_bytes(data)
+        rendered.append({
+            "path": str(path),
+            "relative_path": relative,
+            "url": path.resolve().as_uri(),
+            "bytes": len(data),
+        })
+    return rendered
+
+
+def webui_asset_items(assets: Any) -> list[tuple[str, Any]]:
+    if isinstance(assets, dict):
+        return [(str(name), asset) for name, asset in assets.items()]
+    if isinstance(assets, list):
+        result = []
+        for index, asset in enumerate(assets):
+            if isinstance(asset, dict):
+                name = asset.get("path") or asset.get("name") or asset.get("filename") or str(index)
+                result.append((str(name), asset))
+        return result
+    return []
+
+
+def asset_data(asset: dict[str, Any]) -> bytes:
+    if asset.get("base64") is not None:
+        return base64.b64decode(str(asset["base64"]))
+    if asset.get("content") is not None:
+        return str(asset["content"]).encode("utf-8")
+    if asset.get("text") is not None:
+        return str(asset["text"]).encode("utf-8")
+    return b""
+
+
+def safe_asset_path(name: str) -> str:
+    parts = []
+    for part in str(name).replace("\\", "/").split("/"):
+        safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", part.strip())
+        safe = re.sub(r"_+", "_", safe).strip("._-")
+        if safe:
+            parts.append(safe[:80])
+    if not parts:
+        raise ValueError("webui asset path must include a filename")
+    return "/".join(parts)
 
 
 def default_webui_html(title: str, controls: list[dict[str, Any]]) -> str:

@@ -186,6 +186,10 @@ def test_agent_m4l_write_webui_generates_jweb_page(tmp_path, monkeypatch):
     result = write_webui("Filter", {
         "title": "Filter",
         "controls": [{"id": "cutoff", "label": "Cutoff", "value": 0.25}],
+        "assets": {
+            "lib/scene.js": "export const scene = true;",
+            "../unsafe name.txt": {"content": "safe"},
+        },
     })
     html = Path(result["html_path"]).read_text(encoding="utf-8")
     js = Path(result["js_path"]).read_text(encoding="utf-8")
@@ -193,6 +197,9 @@ def test_agent_m4l_write_webui_generates_jweb_page(tmp_path, monkeypatch):
     assert "window.max.outlet" in js
     assert "bindInlet(\"state\"" in js
     assert result["url"].startswith("file://")
+    assert Path(result["assets"][0]["path"]).read_text(encoding="utf-8") == "export const scene = true;"
+    assert result["assets"][0]["relative_path"] == "lib/scene.js"
+    assert result["assets"][1]["relative_path"] == "unsafe_name.txt"
 
 
 def test_agent_m4l_build_pool_creates_stable_slots(tmp_path, monkeypatch):

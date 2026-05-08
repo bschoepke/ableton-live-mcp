@@ -464,7 +464,29 @@ def materialize_agent_m4l_webui(instance_id: str, webui: Any) -> Any:
         return webui
     result = dict(webui)
     if _should_write_agent_m4l_webui(result):
-        result.update(write_webui(instance_id, result))
+        rendered = write_webui(instance_id, result)
+        result = materialized_agent_m4l_webui(result, rendered)
+    return result
+
+
+def materialized_agent_m4l_webui(source: dict[str, Any], rendered: dict[str, Any]) -> dict[str, Any]:
+    keep = (
+        "id",
+        "object",
+        "presentation",
+        "presentation_rect",
+        "patching_rect",
+        "attrs",
+        "attributes",
+        "box_attrs",
+        "boxAttrs",
+        "args",
+        "text",
+        "audio_out",
+        "rendermode",
+    )
+    result = {key: source[key] for key in keep if key in source}
+    result.update(rendered)
     return result
 
 
@@ -492,6 +514,7 @@ def summarize_agent_m4l_webui(webui: Any) -> Any:
         "js_path",
         "url",
         "path",
+        "assets",
     )
     result = {key: webui[key] for key in keep if key in webui}
     controls = webui.get("controls")
