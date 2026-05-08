@@ -19,6 +19,12 @@ var loadedWebUis = {};
 var state = {};
 var uiBindings = {};
 var uiBindingUpdating = false;
+var liveParameterObservers = [];
+var liveParameterObserverRefreshTasks = [];
+var selfDeviceId = 0;
+var liveParameterIndexBySource = {};
+var liveParameterSourceByTag = {};
+var nextGeneratedLiveParameterIndex = 2;
 var statusPadSize = 65536;
 var lastConnectionErrors = [];
 var lastReloadCommandId = "";
@@ -32,6 +38,7 @@ var currentDeviceWidth = DEFAULT_DEVICE_WIDTH;
 function loadbang() {
     startStaticPolling();
     start_polling();
+    scheduleLiveParameterObserverRefresh(100);
     report("ready", { role: role, instance_id: instanceId, command_file: commandFile, device_width: currentDeviceWidth });
     pollCommandFile();
 }
@@ -79,6 +86,147 @@ function pollCommandFile() {
     }
 }
 
+function scheduleLiveParameterObserverRefresh(delay) {
+    if (typeof LiveAPI === "undefined") {
+        return;
+    }
+    try {
+        var task = new Task(startLiveParameterObservers, this);
+        liveParameterObserverRefreshTasks.push(task);
+        task.schedule(Number(delay || 0));
+    } catch (err) {
+    }
+}
+
+function startLiveParameterObservers() {
+    if (typeof LiveAPI === "undefined") {
+        return;
+    }
+    liveParameterObservers = [];
+    try {
+        var devicePath = selfDeviceId > 0 ? "id " + selfDeviceId : "this_device";
+        var device = new LiveAPI(null, devicePath);
+        var rawParameters = device.get("parameters");
+        state.live_parameter_raw = shortStatusText(liveApiList(rawParameters).join(" "));
+        state.live_parameter_device_id = selfDeviceId;
+        var ids = liveApiIds(rawParameters);
+        for (var i = 0; i < ids.length; i++) {
+            observeLiveParameter(ids[i]);
+        }
+        state.live_parameter_observers = liveParameterObservers.length;
+    } catch (err) {
+        state.live_parameter_observer_error = shortStatusText(String(err));
+    }
+}
+
+function observeLiveParameter(id) {
+    try {
+        var api = new LiveAPI(null, "id " + id);
+        var name = liveApiText(api.get("name"));
+        if (!name) {
+            return;
+        }
+        api = new LiveAPI(makeLiveParameterObserver(name), "id " + id);
+        api.property = "value";
+        liveParameterObservers.push(api);
+    } catch (err) {
+    }
+}
+
+function handleSelfDevicePath(atoms) {
+    var id = firstLiveApiId(atoms);
+    if (id > 0) {
+        selfDeviceId = id;
+        startLiveParameterObservers();
+        scheduleLiveParameterObserverRefresh(250);
+    }
+}
+
+function makeLiveParameterObserver(name) {
+    return function(args) {
+        handleLiveParameterChange(String(name), args);
+    };
+}
+
+function handleLiveParameterChange(name, args) {
+    var value = liveApiObservedValue(args);
+    if (isCommandTriggerName(name)) {
+        pollCommandFile();
+        if (pendingWebUiReads.length) {
+            readPendingWebUis();
+        }
+        return;
+    }
+    if (uiBindings[name] && !uiBindingUpdating) {
+        applyUiBinding(name, [value]);
+    }
+}
+
+function isCommandTriggerName(name) {
+    return name === "Agent Poll" || name === "Agent M4L Poll" || name === "command-trigger";
+}
+
+function liveApiObservedValue(args) {
+    var values = liveApiList(args);
+    for (var i = 0; i < values.length - 1; i++) {
+        if (String(values[i]) === "value") {
+            return values[i + 1];
+        }
+    }
+    if (values.length > 1) {
+        return values[1];
+    }
+    return values.length ? values[0] : 0;
+}
+
+function liveApiIds(values) {
+    var result = [];
+    var list = liveApiList(values);
+    for (var i = 0; i < list.length; i++) {
+        if (String(list[i]) === "id" && i + 1 < list.length) {
+            result.push(Number(list[i + 1]));
+            i += 1;
+        }
+    }
+    return result;
+}
+
+function firstLiveApiId(values) {
+    var ids = liveApiIds(values);
+    if (ids.length) {
+        return ids[0];
+    }
+    var list = liveApiList(values);
+    for (var i = 0; i < list.length; i++) {
+        var id = Number(list[i]);
+        if (id > 0) {
+            return id;
+        }
+    }
+    return 0;
+}
+
+function liveApiText(values) {
+    var list = liveApiList(values);
+    if (!list.length) {
+        return "";
+    }
+    if (list.length > 1 && String(list[0]) === "name") {
+        return String(list[1]);
+    }
+    return String(list[0]);
+}
+
+function liveApiList(values) {
+    if (values instanceof Array) {
+        return values;
+    }
+    if (typeof values === "string") {
+        return values.split(/\s+/);
+    }
+    return values === undefined || values === null ? [] : [values];
+}
+
 function anything() {
     var atoms = arrayfromargs(arguments);
     if (messagename === "/agent_m4l") {
@@ -97,11 +245,32 @@ function anything() {
         applyValues(valuesFromAtoms(atoms), false);
     } else if (webUiIdByTag[messagename]) {
         handleTaggedWebUiMessage(messagename, atoms);
+    } else if (messagename === "__self_device") {
+        handleSelfDevicePath(atoms);
+    } else if (messagename === "__command_trigger") {
+        handleCommandTrigger();
+    } else if (messagename.indexOf("__live_param_") === 0) {
+        handleLiveParameterObserverMessage(messagename, atoms);
     } else if (messagename === "url" || messagename === "title") {
         handleWebUiLoadMessage(messagename, atoms, "");
     } else {
         applyRaw([messagename].concat(atoms).join(" "));
     }
+}
+
+function handleCommandTrigger() {
+    pollCommandFile();
+    if (pendingWebUiReads.length) {
+        readPendingWebUis();
+    }
+}
+
+function handleLiveParameterObserverMessage(tag, atoms) {
+    var source = liveParameterSourceByTag[tag];
+    if (!source || !uiBindings[source] || uiBindingUpdating) {
+        return;
+    }
+    applyUiBinding(source, atoms);
 }
 
 function handleTaggedWebUiMessage(tag, atoms) {
@@ -167,6 +336,7 @@ function msg_string(value) {
 }
 
 function msg_int(value) {
+    scheduleLiveParameterObserverRefresh(0);
     pollCommandFile();
     if (pendingWebUiReads.length) {
         readPendingWebUis();
@@ -178,6 +348,8 @@ function msg_float(value) {
 }
 
 function bang() {
+    startLiveParameterObservers();
+    scheduleLiveParameterObserverRefresh(250);
     pollCommandFile();
     if (pendingWebUiReads.length) {
         readPendingWebUis();
@@ -273,6 +445,9 @@ function applySpec(spec) {
     clearDynamic();
     var byId = seedStaticObjects();
     createWebUis(spec.webuis || spec.webui, byId);
+    nextGeneratedLiveParameterIndex = 2;
+    liveParameterIndexBySource = {};
+    liveParameterSourceByTag = {};
     var objects = spec.objects || [];
     for (var i = 0; i < objects.length; i++) {
         var item = objects[i];
@@ -286,10 +461,14 @@ function applySpec(spec) {
             objectById[String(item.id)] = obj;
             objectSpecById[String(item.id)] = item;
             byId[String(item.id)] = obj;
+            trackGeneratedLiveParameter(item);
         }
     }
     configureUiBindings(spec, objects, byId);
     createDynamicPoller();
+    startLiveParameterObservers();
+    scheduleLiveParameterObserverRefresh(250);
+    scheduleLiveParameterObserverRefresh(1000);
     var connections = connectPatchlines(spec.connections || [], byId);
     var restored = restoreState(previousState);
     var reapplied = reapplyStateValues();
@@ -575,6 +754,58 @@ function createDynamicPoller() {
     }
 }
 
+function trackGeneratedLiveParameter(item) {
+    if (!item || !item.id || !isGeneratedLiveParameter(item)) {
+        return;
+    }
+    liveParameterIndexBySource[String(item.id)] = nextGeneratedLiveParameterIndex;
+    nextGeneratedLiveParameterIndex += 1;
+}
+
+function isGeneratedLiveParameter(item) {
+    if (item.parameter_enable === 0 || item.parameter_enable === false) {
+        return false;
+    }
+    var attrs = item.box_attrs || item.boxAttrs || {};
+    if (attrs.parameter_enable === 0 || attrs.parameter_enable === false) {
+        return false;
+    }
+    var text = String(item.text || "").toLowerCase();
+    var maxclass = String(item.maxclass || "").toLowerCase();
+    return text.indexOf("live.") === 0 || maxclass.indexOf("live.") === 0;
+}
+
+function createLiveParameterObserverForSource(source) {
+    var parameterIndex = liveParameterIndexBySource[source];
+    if (parameterIndex === undefined) {
+        return;
+    }
+    var tag = "__live_param_" + safeScriptName(source);
+    liveParameterSourceByTag[tag] = source;
+    var base = safeScriptName("__observer_" + source);
+    var msg = createNamedDefault(base + "_path_message", 40, 340 + parameterIndex * 24, ["message", "path", "this_device", "parameters", parameterIndex]);
+    var path = createNamedDefault(base + "_path", 220, 340 + parameterIndex * 24, ["live.path"]);
+    var observer = createNamedDefault(base + "_observer", 340, 340 + parameterIndex * 24, ["live.observer", "value"]);
+    var prepend = createNamedDefault(base + "_prepend", 500, 340 + parameterIndex * 24, ["prepend", tag]);
+    if (!msg || !path || !observer || !prepend) {
+        return;
+    }
+    dynamicObjects.push(msg);
+    dynamicObjects.push(path);
+    dynamicObjects.push(observer);
+    dynamicObjects.push(prepend);
+    try {
+        this.patcher.connect(msg, 0, path, 0);
+        this.patcher.connect(path, 0, observer, 1);
+        this.patcher.connect(observer, 0, prepend, 0);
+        this.patcher.connect(prepend, 0, this.box, 0);
+        msg.message("bang");
+        state.live_parameter_box_observers = countKeys(liveParameterSourceByTag);
+    } catch (err) {
+        lastConnectionErrors.push({ from: base, to: "js", outlet: 0, inlet: 0, reason: String(err) });
+    }
+}
+
 function normalizeUiBinding(raw, item) {
     var binding = raw || {};
     var source = String(binding.source || binding.from || (item && item.id) || "");
@@ -621,6 +852,7 @@ function installUiBinding(binding, byId) {
     } catch (err) {
         report("error", { reason: "ui_binding_connect_failed", source: String(binding.source), detail: String(err) });
     }
+    createLiveParameterObserverForSource(String(binding.source));
 }
 
 function applyUiBinding(source, atoms) {
@@ -1202,6 +1434,9 @@ function clearDynamic() {
     loadedWebUis = {};
     state = {};
     uiBindings = {};
+    liveParameterIndexBySource = {};
+    liveParameterSourceByTag = {};
+    nextGeneratedLiveParameterIndex = 2;
     lastConnectionErrors = [];
 }
 

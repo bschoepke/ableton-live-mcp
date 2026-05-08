@@ -688,7 +688,7 @@ def test_agent_m4l_device_triggers_hidden_poll_parameter(monkeypatch):
     device = FakeDevice()
     device.name = "AgentM4L_instrument_Dynamic_Poller_Probe"
     device.class_name = "MxDeviceInstrument"
-    poll = FakeParameter("Agent Poll", 0.0, 0.0, 1.0)
+    poll = FakeParameter("command-trigger", 0.0, 0.0, 1.0)
     device.parameters.append(poll)
     song.tracks[1].devices.append(device)
     written = {}

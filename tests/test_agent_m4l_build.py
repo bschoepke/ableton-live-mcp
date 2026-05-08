@@ -22,6 +22,12 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert "udpreceive %d" % udp_port("Lead") in texts
     assert "metro 50 @active 1 @defer 1" in texts
     assert "live.thisdevice" in texts
+    assert "live.path" in texts
+    assert "path this_device" in texts
+    assert "prepend __self_device" in texts
+    assert "path this_device parameters 1" in texts
+    assert "live.observer value" in texts
+    assert "prepend __command_trigger" in texts
     assert "deferlow" in texts
     assert "delay 100" in texts
     assert boxes_by_id["command-trigger"]["maxclass"] == "live.numbox"
@@ -29,6 +35,15 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert boxes_by_id["command-trigger"]["parameter_enable"] == 1
     assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["poll-start", 0]}} in lines
     assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["poll-delay", 0]}} in lines
+    assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["self-path-message", 0]}} in lines
+    assert {"patchline": {"source": ["self-path-message", 0], "destination": ["self-path", 0]}} in lines
+    assert {"patchline": {"source": ["self-path", 0], "destination": ["self-prepend", 0]}} in lines
+    assert {"patchline": {"source": ["self-prepend", 0], "destination": ["js", 0]}} in lines
+    assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["trigger-path-message", 0]}} in lines
+    assert {"patchline": {"source": ["trigger-path-message", 0], "destination": ["trigger-path", 0]}} in lines
+    assert {"patchline": {"source": ["trigger-path", 0], "destination": ["trigger-observer", 1]}} in lines
+    assert {"patchline": {"source": ["trigger-observer", 0], "destination": ["trigger-prepend", 0]}} in lines
+    assert {"patchline": {"source": ["trigger-prepend", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["poll-delay", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["command-trigger", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["midiout", 0]}} not in lines
@@ -174,6 +189,24 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert 'if (value === "jbrowser~") {\n        return "jweb";\n    }' in source
     assert "arrayfromargs(arguments)" in source
     assert "uiBindings" in source
+    assert "LiveAPI" in source
+    assert "startLiveParameterObservers" in source
+    assert "handleLiveParameterChange" in source
+    assert "isCommandTriggerName" in source
+    assert "live_parameter_raw" in source
+    assert "handleSelfDevicePath" in source
+    assert "firstLiveApiId" in source
+    assert "live_parameter_device_id" in source
+    assert "handleCommandTrigger" in source
+    assert "handleLiveParameterObserverMessage" in source
+    assert "createLiveParameterObserverForSource" in source
+    assert "trackGeneratedLiveParameter" in source
+    assert '"live.observer", "value"' in source
+    assert '"path", "this_device", "parameters", parameterIndex' in source
+    assert "live_parameter_box_observers" in source
+    assert "var ids = liveApiIds(rawParameters)" in source
+    assert "function liveApiList(values)" in source
+    assert "values.split(/\\s+/)" in source
     assert "ui_bindings" in source
     assert "configureUiBindings" in source
     assert "applyUiBinding" in source

@@ -488,9 +488,10 @@ class AbletonLiveMCP(ControlSurface):
         return None
 
     def _trigger_agent_m4l_poll(self, device):
+        poll_names = ("Agent Poll", "Agent M4L Poll", "command-trigger")
         for parameter in getattr(device, "parameters", []):
             name = str(getattr(parameter, "name", ""))
-            if name not in ("Agent Poll", "Agent M4L Poll"):
+            if name not in poll_names:
                 continue
             try:
                 current = float(getattr(parameter, "value", 0.0) or 0.0)
