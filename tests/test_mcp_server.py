@@ -72,11 +72,12 @@ def test_initialize_includes_general_model_instructions():
     server = make_server(FakeBridge())
     response = server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
     instructions = response["result"]["instructions"]
-    assert "third-party audio plugins" in instructions
+    assert "devices/plugins unless asked" in instructions
     assert "roots:['plugins']" in instructions
     assert "find_similar_sounds requires Live 12+" in instructions
     assert "start with path" in instructions
     assert "Idle sockets auto-retry" in instructions
+    assert "sent-call timeouts fail closed" in instructions
     assert "jweb/jbrowser aliases" in instructions
     assert "agent-settable UI" in instructions
     assert "webui_read diagnostics" in instructions

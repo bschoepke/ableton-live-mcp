@@ -26,13 +26,13 @@ AGENT_M4L_RECOVERY_PATCH_KEYS = (
 )
 ABLETON_MCP_INSTRUCTIONS = (
     "General Live bridge; not a limited recipe API. "
-    "Prefer installed content/Packs/user assets/samples/presets/devices and indexed third-party audio plugins unless asked. "
+    "Prefer installed Packs/user assets/samples/presets/devices/plugins unless asked. "
     "Discover with live_browser_capabilities/live_browser_roots/live_browser_search roots:['plugins']; SKU/indexing vary. "
     "Existing sets: start with live_set_summary; use expected_set_signature for destructive edits. "
     "Prefer compact live_exec/live_batch, property lists, child limits, and JSON-safe clip helpers. "
     "find_similar_sounds requires Live 12+ analysis data. "
     "AgentAudioTap: prefer master tap + solo target; start with path. "
-    "Idle sockets auto-retry; fresh AMXD loads retry. "
+    "Idle sockets auto-retry; sent-call timeouts fail closed; check status before retry; fresh AMXD loads retry. "
     "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status and require matching command_id/last_reload_command_id. Supports file-backed updates, UDP hints, set/status skip build, midiin+midiparse, rect-driven devicewidth/openrect sizing, ui_bindings, agent-settable UI, webui_read diagnostics, set_silent/batches, audio buses, jweb/jbrowser aliases. In stressed sets, no web ack means reload/simplify or validate a fresh host. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args are JSON numbers; Simpler.sample is not generally settable; use ids from summaries, not raw _live_ptr values. "
     "Hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
