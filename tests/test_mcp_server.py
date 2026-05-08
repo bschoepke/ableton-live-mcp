@@ -8,9 +8,10 @@ import pytest
 
 from benchmark import run_benchmark
 from bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig, effective_main_thread_timeout
-from install_remote_script import install_remote_script, remote_script_root
+from install_remote_script import install_remote_script, remote_script_root, remote_script_status
 from prompt_audit import run_prompt_audit
 from server import expected_agent_m4l_status_event, make_server, should_build_agent_m4l, wait_agent_m4l_status
+from validate import main as validate_main
 from similar_sounds import encode_feature
 from smoke import run_smoke
 
@@ -1269,6 +1270,33 @@ def test_remote_script_installer_copies_default_script(tmp_path):
 def test_remote_script_installer_rejects_unknown_script(tmp_path):
     with pytest.raises(ValueError):
         install_remote_script("Unknown", tmp_path)
+
+
+def test_remote_script_status_detects_stale_install(tmp_path):
+    target = install_remote_script("Ableton_Live_MCP", tmp_path)
+    current = remote_script_status(target_dir=tmp_path)
+    assert current["installed"] is True
+    assert current["current"] is True
+    assert current["missing"] == []
+    assert current["mismatched"] == []
+
+    (target / "bridge.py").write_text("# stale\n", encoding="utf-8")
+    stale = remote_script_status(target_dir=tmp_path)
+    assert stale["installed"] is True
+    assert stale["current"] is False
+    assert stale["mismatched"] == ["bridge.py"]
+
+
+def test_validate_can_check_remote_script_without_live(tmp_path, capsys):
+    assert validate_main(["--skip-live", "--target-dir", str(tmp_path)]) == 1
+    missing_output = capsys.readouterr()
+    assert "missing or stale" in missing_output.err
+    assert '"current": false' in missing_output.out
+
+    install_remote_script("Ableton_Live_MCP", tmp_path)
+    assert validate_main(["--skip-live", "--target-dir", str(tmp_path)]) == 0
+    current_output = capsys.readouterr()
+    assert '"current": true' in current_output.out
 
 
 def test_remote_script_resources_available_from_source_checkout():

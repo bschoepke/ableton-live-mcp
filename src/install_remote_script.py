@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 from ableton_paths import remote_scripts_dir
 
@@ -51,6 +53,44 @@ def install_remote_script(name: str = DEFAULT_REMOTE_SCRIPT, target_dir: Path | 
     target_base.mkdir(parents=True, exist_ok=True)
     shutil.copytree(str(source), str(target), ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"))
     return target
+
+
+def remote_script_status(name: str = DEFAULT_REMOTE_SCRIPT, target_dir: Path | None = None) -> dict[str, Any]:
+    if name != DEFAULT_REMOTE_SCRIPT:
+        raise ValueError("Unknown Remote Script %r. Expected: %s" % (name, DEFAULT_REMOTE_SCRIPT))
+    source = remote_script_root() / name
+    target = (target_dir or default_install_dir()) / name
+    source_hashes = _file_hashes(source)
+    target_hashes = _file_hashes(target) if target.is_dir() else {}
+    missing = sorted(path for path in source_hashes if path not in target_hashes)
+    mismatched = sorted(path for path, digest in source_hashes.items() if target_hashes.get(path) not in (None, digest))
+    current = bool(target.is_dir()) and not missing and not mismatched
+    return {
+        "name": name,
+        "source": str(source),
+        "target": str(target),
+        "installed": target.is_dir(),
+        "current": current,
+        "files_checked": len(source_hashes),
+        "missing": missing,
+        "mismatched": mismatched,
+    }
+
+
+def _file_hashes(root: Path) -> dict[str, str]:
+    if not root.is_dir():
+        return {}
+    hashes = {}
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or _ignored_file(path):
+            continue
+        relative = path.relative_to(root).as_posix()
+        hashes[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return hashes
+
+
+def _ignored_file(path: Path) -> bool:
+    return "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}
 
 
 def main(argv: list[str] | None = None) -> int:
