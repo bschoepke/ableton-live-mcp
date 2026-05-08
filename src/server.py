@@ -57,7 +57,8 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "additionalProperties": False,
     }
 
-    server.add_tool(Tool("live_ping", "Check bridge health/version.", schema({}), forward("ping")))
+    timeout_control = {"timeout": {"type": "number", "description": "Seconds to wait for Live's main thread."}}
+    server.add_tool(Tool("live_ping", "Check bridge health/version.", schema(timeout_control), forward("ping")))
     response_controls = {
         "detail": {"type": "boolean"},
         "max_items": {"type": "integer"},

@@ -101,6 +101,21 @@ def test_tool_call_forwards_arguments_to_bridge():
     assert "\n" not in content
 
 
+def test_ping_tool_accepts_timeout_for_stressed_live_sets():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {"timeout": 45}
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 201,
+        "method": "tools/call",
+        "params": {"name": "live_ping", "arguments": args},
+    })
+
+    assert bridge.calls == [("ping", args)]
+    assert response["result"]["structuredContent"]["method"] == "ping"
+
+
 def test_tool_call_validates_arguments_before_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)
