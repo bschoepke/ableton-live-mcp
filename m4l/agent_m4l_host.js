@@ -886,7 +886,9 @@ function readPendingWebUis() {
         try {
             var request = webUiReadRequest(reads[i]);
             state["web_" + key + "_read_message"] = request.message;
+            state["web_" + key + "_last_read_attempt"] = reads[i].attempt + 1;
             reads[i].obj.message(request.message, request.path);
+            report("webui_read", { id: id, attempt: reads[i].attempt + 1, message: request.message });
         } catch (err) {
             report("error", { reason: "webui_load_failed", id: id, detail: String(err) });
         }

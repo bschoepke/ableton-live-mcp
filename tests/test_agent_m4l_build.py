@@ -212,6 +212,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "due_time: nowMs() + delay" in source
     assert "scheduleNextPendingWebRead" in source
     assert "web_read_pending" in source
+    assert '"webui_read"' in source
+    assert '"_last_read_attempt"' in source
     assert "webui_read_exhausted" in source
     assert "webUiReadRequest" in source
     assert '"readfile" && read.fallback_path' in source
