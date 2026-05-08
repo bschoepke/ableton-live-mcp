@@ -194,6 +194,9 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "applyValues([{ id: String(atoms[0]), value: atoms[1] }], false)" in source
     assert "sendNumericValue" in source
     assert "function bang()" in source
+    assert "startStaticPolling" in source
+    assert 'getNamed("poll-metro")' in source
+    assert 'metro.message("active", 1)' in source
     assert 'pollCommandFile();' in source
     assert "if (pendingWebUiReads.length)" in source
     assert "shouldSendToggleValue" in source

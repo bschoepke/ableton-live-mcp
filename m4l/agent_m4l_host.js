@@ -30,8 +30,25 @@ var DEVICE_WIDTH_PADDING = 20;
 var currentDeviceWidth = DEFAULT_DEVICE_WIDTH;
 
 function loadbang() {
+    startStaticPolling();
     start_polling();
     report("ready", { role: role, instance_id: instanceId, command_file: commandFile, device_width: currentDeviceWidth });
+    pollCommandFile();
+}
+
+function startStaticPolling() {
+    var metro = getNamed("poll-metro");
+    if (!metro) {
+        return;
+    }
+    try {
+        metro.message("active", 1);
+    } catch (errActive) {
+    }
+    try {
+        metro.message(1);
+    } catch (errStart) {
+    }
 }
 
 function start_polling() {
