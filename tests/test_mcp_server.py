@@ -1543,6 +1543,18 @@ def test_wait_agent_m4l_status_requires_matching_command_id(tmp_path):
     assert result["host_runtime_status"] == "missing"
 
 
+def test_wait_agent_m4l_status_tolerates_stale_trailing_json(tmp_path):
+    status_file = tmp_path / "status.json"
+    before = 1.0
+    status_file.write_text('{"event":"set","command_id":"new","changed":1}{"event":"set","command_id":"old"}', encoding="utf-8")
+
+    result = wait_agent_m4l_status(str(status_file), before, "new", 0.2, 0.01, "set")
+
+    assert result["event"] == "set"
+    assert result["command_id"] == "new"
+    assert result["changed"] == 1
+
+
 def test_wait_agent_m4l_status_preserves_host_runtime_version(tmp_path):
     status_file = tmp_path / "status.json"
     before = 1.0

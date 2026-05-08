@@ -1281,7 +1281,7 @@ def _agent_m4l_status_if_ready(path: str, previous_mtime: float | None, command_
     if current_mtime is None or (previous_mtime is not None and current_mtime <= previous_mtime):
         return None, last_error
     try:
-        status = json.loads(Path(path).read_text(encoding="utf-8").strip())
+        status = parse_agent_m4l_status_text(Path(path).read_text(encoding="utf-8"))
         if _agent_m4l_status_matches(status, command_id, expected_event):
             return annotate_agent_m4l_status(status, command_id, expected_event), last_error
     except Exception as exc:
@@ -1308,14 +1308,18 @@ def _read_agent_m4l_status(path: str) -> tuple[dict[str, Any] | None, str | None
         text = Path(path).read_text(encoding="utf-8").strip()
         if not text:
             return None, "empty_status_file"
-        status = json.loads(text)
-        if isinstance(status, dict):
-            return status, None
-        return None, "status_json_not_object"
+        return parse_agent_m4l_status_text(text), None
     except FileNotFoundError:
         return None, None
     except Exception as exc:
         return None, str(exc)
+
+
+def parse_agent_m4l_status_text(text: str) -> dict[str, Any]:
+    status, _end = json.JSONDecoder().raw_decode(str(text).lstrip())
+    if not isinstance(status, dict):
+        raise ValueError("status_json_not_object")
+    return status
 
 
 def summarize_agent_m4l_status(status: dict[str, Any]) -> dict[str, Any]:
