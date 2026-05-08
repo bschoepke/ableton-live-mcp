@@ -398,13 +398,13 @@ def postprocess_capture(
     max_width: int | None = None,
     max_height: int | None = None,
 ) -> dict[str, Any]:
-    needs_image = bool(region or crop or max_width or max_height)
-    if not needs_image:
-        return {}
+    needs_write = bool(region or crop or max_width or max_height)
     try:
         from PIL import Image
     except ImportError as exc:
-        raise RuntimeError("Ableton visual capture crop/downscale requires the Pillow package") from exc
+        if needs_write:
+            raise RuntimeError("Ableton visual capture crop/downscale requires the Pillow package") from exc
+        return {"content_error": "Pillow package unavailable; blank detection skipped"}
     with Image.open(output) as image:
         source_size = [int(image.width), int(image.height)]
         box = capture_region_box((image.width, image.height), region, crop, bottom_fraction)
@@ -417,7 +417,8 @@ def postprocess_capture(
         if image.mode not in ("RGB", "RGBA"):
             image = image.convert("RGBA")
         content = image_content_stats(image)
-        image.save(output, format="PNG")
+        if needs_write or image.format != "PNG":
+            image.save(output, format="PNG")
         return {
             "source_size": source_size,
             "size": [int(image.width), int(image.height)],

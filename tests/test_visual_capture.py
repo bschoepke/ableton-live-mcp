@@ -139,6 +139,44 @@ def test_postprocess_capture_crops_and_downscales(tmp_path):
     assert output.stat().st_size > 0
 
 
+def test_postprocess_capture_collects_full_window_content_stats_without_crop(tmp_path):
+    Image = pytest.importorskip("PIL.Image")
+    output = tmp_path / "live.png"
+    image = Image.new("RGB", (40, 20), "black")
+    for x in range(10, 30):
+        for y in range(5, 15):
+            image.putpixel((x, y), (240, 240, 240))
+    image.save(output)
+
+    result = visual_capture.postprocess_capture(output)
+
+    assert result["source_size"] == [40, 20]
+    assert result["size"] == [40, 20]
+    assert result["crop_box"] is None
+    assert result["content"]["blank"] is False
+
+
+def test_capture_blank_full_window_includes_validation_blocker(monkeypatch, tmp_path):
+    Image = pytest.importorskip("PIL.Image")
+    monkeypatch.setattr(visual_capture, "list_platform_windows", lambda: [
+        WindowInfo(
+            platform="Darwin",
+            id=100,
+            title="vibe-m4l",
+            owner="Live",
+            process_path="/Applications/Ableton Live Suite.app/Contents/MacOS/Live",
+            bundle_id="com.ableton.live",
+            bounds={"x": 0, "y": 33, "width": 1200, "height": 800},
+        )
+    ])
+    monkeypatch.setattr(visual_capture, "capture_window", lambda _window, output, _backend: Image.new("RGB", (200, 100), "black").save(output) or "fake")
+
+    result = visual_capture.capture_ableton_window(output_path=tmp_path / "live.png")
+
+    assert result["warning"] == "blank_capture"
+    assert result["validation_blocker"] == "blank_capture_invalid"
+
+
 def test_capture_blank_result_includes_validation_blocker(monkeypatch, tmp_path):
     Image = pytest.importorskip("PIL.Image")
     monkeypatch.setattr(visual_capture, "list_platform_windows", lambda: [
