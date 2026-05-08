@@ -252,6 +252,8 @@ function anything() {
         handleSelfDevicePath(atoms);
     } else if (messagename === "__command_trigger") {
         handleCommandTrigger();
+    } else if (messagename === "__filewatch") {
+        handleFilewatchWake(atoms);
     } else if (messagename.indexOf("__live_param_") === 0) {
         handleLiveParameterObserverMessage(messagename, atoms);
     } else if (messagename === "url" || messagename === "title") {
@@ -269,6 +271,19 @@ function handleCommandTrigger() {
     pollCommandFile();
     if (pendingWebUiReads.length) {
         readPendingWebUis();
+    }
+}
+
+function handleFilewatchWake(atoms) {
+    state.filewatch_bangs = (state.filewatch_bangs || 0) + 1;
+    state.filewatch_last = shortStatusText((atoms && atoms.length ? atoms : ["bang"]).join(" "));
+    var before = lastCommandId;
+    pollCommandFile();
+    if (pendingWebUiReads.length) {
+        readPendingWebUis();
+    }
+    if (before === lastCommandId) {
+        report("filewatch", { filewatch_bangs: state.filewatch_bangs });
     }
 }
 
