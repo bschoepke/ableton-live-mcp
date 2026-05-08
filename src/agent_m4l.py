@@ -314,12 +314,16 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
             _box("audio-out-r", "newobj", "receive~ %s" % audio_buses["output_right"], 120.0, 220.0),
             _box("plugout", "newobj", "plugout~ 1 2", 20.0, 250.0),
             _box("audio-wake", "newobj", "snapshot~ 100", 220.0, 280.0),
+            _box("audio-wake-start", "message", "start", 360.0, 280.0),
         ]
         lines += [
             _line("plugin", 0, "audio-in-l", 0),
             _line("plugin", 1, "audio-in-r", 0),
             _line("audio-out-l", 0, "plugout", 0),
             _line("audio-out-r", 0, "plugout", 1),
+            _line("poll-loadbang", 0, "audio-wake-start", 0),
+            _line("poll-live-device", 0, "audio-wake-start", 0),
+            _line("audio-wake-start", 0, "audio-wake", 0),
             _line("plugin", 0, "audio-wake", 0),
             _line("audio-wake", 0, "js", 0),
         ]
@@ -331,10 +335,14 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
             _box("audio-out-r", "newobj", "receive~ %s" % audio_buses["output_right"], 320.0, 220.0),
             _box("plugout", "newobj", "plugout~ 1 2", 220.0, 250.0),
             _box("audio-wake", "newobj", "snapshot~ 100", 420.0, 220.0),
+            _box("audio-wake-start", "message", "start", 560.0, 220.0),
         ]
         lines += [
             _line("audio-out-l", 0, "plugout", 0),
             _line("audio-out-r", 0, "plugout", 1),
+            _line("poll-loadbang", 0, "audio-wake-start", 0),
+            _line("poll-live-device", 0, "audio-wake-start", 0),
+            _line("audio-wake-start", 0, "audio-wake", 0),
             _line("audio-out-l", 0, "audio-wake", 0),
             _line("audio-wake", 0, "js", 0),
             _line("midiin", 0, "js", 0),

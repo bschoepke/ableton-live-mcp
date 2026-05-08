@@ -17,6 +17,7 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert "midiin" in texts
     assert "plugout~ 1 2" in texts
     assert "snapshot~ 100" in texts
+    assert "start" in texts
     buses = audio_bus_names("Lead")
     assert "receive~ %s" % buses["output_left"] in texts
     assert "receive~ %s" % buses["output_right"] in texts
@@ -59,6 +60,9 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert {"patchline": {"source": ["command-filewatch-prepend", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["poll-delay", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["command-trigger", 0], "destination": ["js", 0]}} in lines
+    assert {"patchline": {"source": ["poll-loadbang", 0], "destination": ["audio-wake-start", 0]}} in lines
+    assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["audio-wake-start", 0]}} in lines
+    assert {"patchline": {"source": ["audio-wake-start", 0], "destination": ["audio-wake", 0]}} in lines
     assert {"patchline": {"source": ["audio-wake", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["midiout", 0]}} not in lines
@@ -91,6 +95,8 @@ def test_agent_m4l_host_does_not_impose_fixed_pass_through():
     assert {"patchline": {"source": ["plugin", 1], "destination": ["plugout", 1]}} not in audio_lines
     assert {"patchline": {"source": ["plugin", 0], "destination": ["audio-in-l", 0]}} in audio_lines
     assert {"patchline": {"source": ["audio-out-l", 0], "destination": ["plugout", 0]}} in audio_lines
+    assert {"patchline": {"source": ["poll-loadbang", 0], "destination": ["audio-wake-start", 0]}} in audio_lines
+    assert {"patchline": {"source": ["audio-wake-start", 0], "destination": ["audio-wake", 0]}} in audio_lines
     assert {"patchline": {"source": ["plugin", 0], "destination": ["audio-wake", 0]}} in audio_lines
     assert {"patchline": {"source": ["audio-wake", 0], "destination": ["js", 0]}} in audio_lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["js", 0]}} in midi_lines
