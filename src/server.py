@@ -786,6 +786,22 @@ def wait_agent_m4l_status(path: str, previous_mtime: float | None, command_id: s
     if status is not None:
         return status
     result: dict[str, Any] = {"timed_out": True, "path": path}
+    if command_id:
+        result["expected_command_id"] = command_id
+    if expected_event:
+        result["expected_event"] = expected_event
+    last_status, read_error = _read_agent_m4l_status(path)
+    if last_status is not None:
+        result["last_status"] = summarize_agent_m4l_status(last_status)
+        mismatch = agent_m4l_status_mismatch(last_status, command_id, expected_event)
+        if mismatch:
+            result["mismatch"] = mismatch
+    elif read_error:
+        result["error"] = read_error
+    elif _file_mtime(path) is None:
+        result["mismatch"] = "missing_status_file"
+    else:
+        result["mismatch"] = "status_file_not_updated"
     if last_error:
         result["error"] = last_error
     return result
@@ -802,6 +818,52 @@ def _agent_m4l_status_if_ready(path: str, previous_mtime: float | None, command_
     except Exception as exc:
         last_error = str(exc)
     return None, last_error
+
+
+def _read_agent_m4l_status(path: str) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        text = Path(path).read_text(encoding="utf-8").strip()
+        if not text:
+            return None, "empty_status_file"
+        status = json.loads(text)
+        if isinstance(status, dict):
+            return status, None
+        return None, "status_json_not_object"
+    except FileNotFoundError:
+        return None, None
+    except Exception as exc:
+        return None, str(exc)
+
+
+def summarize_agent_m4l_status(status: dict[str, Any]) -> dict[str, Any]:
+    summary: dict[str, Any] = {}
+    for key in ("event", "command_id", "last_reload_command_id", "dynamic_objects", "webuis", "device_width"):
+        if key in status:
+            summary[key] = status.get(key)
+    state = status.get("state")
+    if isinstance(state, dict):
+        summary["state_keys"] = sorted(str(key) for key in state.keys())[:40]
+        focused = {
+            str(key): value for key, value in state.items()
+            if str(key).startswith(("web_", "command_wake", "filewatch", "live_parameter"))
+        }
+        if focused:
+            summary["state"] = focused
+    if status.get("connection_errors"):
+        summary["connection_errors"] = status.get("connection_errors")
+    return summary
+
+
+def agent_m4l_status_mismatch(status: dict[str, Any], command_id: str, expected_event: str | None) -> str:
+    if command_id:
+        status_command_id = str(status.get("command_id") or "")
+        if status_command_id != command_id and not _agent_m4l_reload_seen(status, command_id, expected_event):
+            return "command_id_mismatch"
+    if expected_event:
+        status_event = str(status.get("event") or "")
+        if status_event != expected_event and not _agent_m4l_reload_seen(status, command_id, expected_event):
+            return "event_mismatch"
+    return ""
 
 
 def _agent_m4l_status_matches(status: dict[str, Any], command_id: str, expected_event: str | None) -> bool:

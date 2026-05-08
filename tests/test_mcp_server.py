@@ -783,6 +783,35 @@ def test_wait_agent_m4l_status_accepts_reload_seen_before_web_ack(tmp_path):
     assert result["last_reload_command_id"] == "reload1"
 
 
+def test_wait_agent_m4l_status_timeout_includes_compact_last_status(tmp_path):
+    status_file = tmp_path / "status.json"
+    status_file.write_text(json.dumps({
+        "event": "set",
+        "command_id": "old",
+        "last_reload_command_id": "old_reload",
+        "dynamic_objects": 8,
+        "webuis": 1,
+        "state": {
+            "command_wake_source": "float",
+            "command_wake_count": 1,
+            "web_ready": None,
+            "level_value": 0.5,
+        },
+    }), encoding="utf-8")
+
+    result = wait_agent_m4l_status(str(status_file), status_file.stat().st_mtime - 1.0, "new", 0.01, 0.01, "set")
+
+    assert result["timed_out"] is True
+    assert result["expected_command_id"] == "new"
+    assert result["expected_event"] == "set"
+    assert result["mismatch"] == "command_id_mismatch"
+    assert result["last_status"]["command_id"] == "old"
+    assert result["last_status"]["dynamic_objects"] == 8
+    assert result["last_status"]["state"]["command_wake_source"] == "float"
+    assert result["last_status"]["state"]["web_ready"] is None
+    assert "level_value" not in result["last_status"].get("state", {})
+
+
 def test_agent_m4l_expected_status_event_tracks_command_intent():
     assert expected_agent_m4l_status_event("update") == "reload"
     assert expected_agent_m4l_status_event("set") == "set"
