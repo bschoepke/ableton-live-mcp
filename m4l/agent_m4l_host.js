@@ -68,7 +68,7 @@ var pendingWebStatePush = 0;
 var MAX_DEFERRED_RAW_COMMANDS = 8;
 var COMMAND_ACK_PROTECT_MS = 10000;
 var UI_BINDING_REPORT_MIN_INTERVAL = 250;
-var WEB_STATE_PUSH_MIN_INTERVAL = 100;
+var WEB_STATE_PUSH_MIN_INTERVAL = 250;
 var HOST_RUNTIME_VERSION = "web-clear-guard-1";
 
 function loadbang() {
