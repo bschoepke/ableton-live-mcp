@@ -267,6 +267,35 @@ def test_agent_audio_tap_tool_forwards_to_bridge():
     assert response["result"]["structuredContent"]["method"] == "agent_audio_tap"
 
 
+def test_agent_audio_tap_tool_requires_command_before_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 321,
+        "method": "tools/call",
+        "params": {"name": "live_agent_audio_tap", "arguments": {"path": "/tmp/agent-tap.wav"}},
+    })
+
+    assert response["error"]["message"] == "arguments.command is required"
+    assert bridge.calls == []
+
+
+def test_agent_audio_tap_tool_accepts_stop_command_without_path():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {"command": "stop"}
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 322,
+        "method": "tools/call",
+        "params": {"name": "live_agent_audio_tap", "arguments": args},
+    })
+
+    assert bridge.calls == [("agent_audio_tap", args)]
+    assert response["result"]["structuredContent"]["method"] == "agent_audio_tap"
+
+
 def test_agent_audio_tap_setup_and_transport_tools_forward_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)
@@ -2026,6 +2055,9 @@ def test_tool_list_stays_compact():
     assert "continue" in transport["description"]
     assert {"action", "time", "timeout", "strict_timeout"} <= set(transport["inputSchema"]["properties"])
     tap = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_agent_audio_tap")
+    assert {"command", "path", "id", "udp"} <= set(tap["inputSchema"]["properties"])
+    assert tap["inputSchema"]["required"] == ["command"]
+    assert "stop" in tap["inputSchema"]["properties"]["command"]["enum"]
     assert "start with path" in tap["description"]
     assert "UDP optional" in tap["description"]
     tap_setup = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_agent_audio_tap_setup")

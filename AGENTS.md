@@ -77,7 +77,7 @@ This repo includes `m4l/AgentAudioTap.amxd`, a Max for Live audio effect that le
 .venv/bin/python scripts/build_agent_audio_tap.py --install
 ```
 
-For validation captures, prefer one atomic `live_agent_audio_tap` `start` command with `path`, then a later `stop`. Avoid separate `open` then `start` command-file writes unless you also add an acknowledgement wait; otherwise the tap can poll only the later `start` and Max may log `sfrecord~: start requested without preceding open`.
+For validation captures, call `live_agent_audio_tap` with a `command` field. Prefer one atomic `{"command": "start", "path": "..."}` command, then a later `{"command": "stop"}`. Avoid separate `open` then `start` command-file writes unless you also add an acknowledgement wait; otherwise the tap can poll only the later `start` and Max may log `sfrecord~: start requested without preceding open`.
 
 Before using AgentAudioTap WAVs as pass/fail evidence, sanity-check the measurement path by changing the target track volume or solo/mute state and confirming the capture or Live meters respond. If a capture ignores an obvious source change, rebuild/reload the tap and use Live's `output_meter_left/right` as the validation signal until the tap path is trustworthy again.
 

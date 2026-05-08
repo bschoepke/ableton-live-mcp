@@ -50,9 +50,19 @@ AGENT_M4L_TOOL_DESCRIPTION = (
     "arbitrary native UI, jweb/jbrowser web UI; wait_status compact_status compact_result, web diag."
 )
 AGENT_M4L_CLEANUP_DESCRIPTION = "Dry-run/delete AgentM4L; ask before delete."
-AGENT_AUDIO_TAP_DESCRIPTION = "AgentAudioTap: start with path; stop/status; UDP optional."
+AGENT_AUDIO_TAP_DESCRIPTION = "AgentAudioTap: command open/start/stop/status; start with path; UDP optional."
 AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap; optional solo target track/reset."
 VISUAL_CAPTURE_DESCRIPTION = "Ableton Live window-only; device-detail crop/downscale; region-rel; no arbitrary apps/windows."
+AGENT_AUDIO_TAP_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "command": {"type": "string", "enum": ["open", "start", "stop", "status"]},
+        "path": {"type": "string"},
+        "id": {"type": "string"},
+        "udp": {"type": "boolean"},
+    },
+    "required": ["command"],
+}
 
 
 def schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -141,7 +151,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "limit": {"type": "integer", "minimum": 0},
         **response_controls,
     }, ["ref"]), forward("device_parameters")))
-    server.add_tool(Tool("live_parameter_set", "Set one DeviceParameter value with min/max and quantized validation.", schema({
+    server.add_tool(Tool("live_parameter_set", "Set DeviceParameter value.", schema({
         "ref": ref,
         "value": {"type": "number"},
         "coerce": {"type": "boolean"},
@@ -260,7 +270,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "device_index": {"type": "integer"},
         **mutation_controls,
     }, ["ref", "device_name"]), forward("track_insert_device")))
-    server.add_tool(Tool("live_agent_audio_tap", AGENT_AUDIO_TAP_DESCRIPTION, loose_schema(), forward("agent_audio_tap")))
+    server.add_tool(Tool("live_agent_audio_tap", AGENT_AUDIO_TAP_DESCRIPTION, AGENT_AUDIO_TAP_SCHEMA, forward("agent_audio_tap")))
     server.add_tool(Tool("live_agent_audio_tap_setup", AGENT_AUDIO_TAP_SETUP_DESCRIPTION, loose_schema(), forward("agent_audio_tap_setup")))
     server.add_tool(Tool("live_visual_capture", VISUAL_CAPTURE_DESCRIPTION, loose_schema(), lambda args: capture_ableton_window(
         output_path=args.get("output_path"),
@@ -443,13 +453,13 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "include_self": {"type": "boolean"},
         "db_path": {"type": "string"},
     }), find_similar_sounds))
-    server.add_tool(Tool("live_eval", "Evaluate Live Python expression; use live_exec for statements.", schema({
+    server.add_tool(Tool("live_eval", "Eval expression; use live_exec.", schema({
         "expr": {"type": "string"},
         "ref": ref,
         "allow_legacy_note_api": {"type": "boolean"},
         **response_controls,
     }, ["expr"]), forward("eval")))
-    server.add_tool(Tool("live_exec", "Execute Live Python statements; set result for compact return.", schema({
+    server.add_tool(Tool("live_exec", "Run Live Python statements.", schema({
         "code": {"type": "string"},
         "ref": ref,
         "allow_legacy_note_api": {"type": "boolean"},
