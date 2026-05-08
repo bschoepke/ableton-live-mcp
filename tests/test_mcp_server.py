@@ -1471,14 +1471,25 @@ def test_smoke_suite_treats_plugin_search_as_optional():
 
 def test_benchmark_records_latency_and_payload_size():
     class BenchBridge:
+        def __init__(self):
+            self.calls = []
+
         def request(self, method, params):
+            self.calls.append((method, params))
             return {"method": method, "params": params}
 
-    code, output = run_benchmark(BenchBridge(), iterations=1, include_browser=False)
+    bridge = BenchBridge()
+    code, output = run_benchmark(bridge, iterations=1, include_browser=False)
+    methods = [method for method, _params in bridge.calls]
     assert code == 0
     assert output["ok"] is True
     assert output["summary"]["max_median_ms"] is not None
     assert output["summary"]["max_median_bytes"] > 0
+    assert "agent_m4l_device" in methods
+    agent_m4l_calls = [params for method, params in bridge.calls if method == "agent_m4l_device"]
+    assert agent_m4l_calls[0]["load"] is False
+    assert agent_m4l_calls[0]["udp"] is False
+    assert agent_m4l_calls[0]["patch"]["device_height"] == 130
 
 
 def test_benchmark_skips_optional_failures():
