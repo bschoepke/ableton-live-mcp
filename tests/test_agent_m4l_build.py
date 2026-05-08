@@ -27,7 +27,7 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert "receive~ %s" % buses["output_left"] in texts
     assert "receive~ %s" % buses["output_right"] in texts
     assert "udpreceive %d" % udp_port("Lead") in texts
-    assert "metro 1500 @active 1 @defer 1" in texts
+    assert "metro 500 @active 1 @defer 1" in texts
     assert "live.thisdevice" in texts
     assert "live.path this_device" in texts
     assert "path this_device" in texts
