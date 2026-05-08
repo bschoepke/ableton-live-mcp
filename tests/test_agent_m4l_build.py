@@ -27,7 +27,7 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert "receive~ %s" % buses["output_left"] in texts
     assert "receive~ %s" % buses["output_right"] in texts
     assert "udpreceive %d" % udp_port("Lead") in texts
-    assert "metro 500 @active 1 @defer 1" in texts
+    assert "qmetro 500 @active 1" in texts
     assert "live.thisdevice" in texts
     assert "live.path this_device" in texts
     assert "path this_device" in texts
@@ -273,6 +273,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "__signal_wake" in source
     assert "handleMidiWake" in source
     assert "__midi_wake" in source
+    assert "handleWebTick" in source
+    assert "agent_web_tick" in source
     assert "ACTIVITY_WAKE_MIN_INTERVAL" in source
     assert "handleActivityWake" in source
     assert "command_wake_skipped" in source
@@ -347,6 +349,7 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert 'handleActivityWake("bang")' in source
     assert 'handleActivityWake("signal")' in source
     assert 'handleActivityWake("midi")' in source
+    assert 'handleActivityWake("web")' in source
     assert 'handleActivityWake("list")' in source
     assert "startStaticPolling" in source
     assert 'getNamed("poll-metro")' in source
@@ -413,6 +416,7 @@ def test_agent_m4l_write_webui_generates_jweb_page(tmp_path, monkeypatch):
     assert "web_ready" in html
     assert "web_dom_ready" in html
     assert "web_error" in html
+    assert "agent_web_tick" in html
     assert "agentM4L.outlet" in html
     assert "setTimeout(flush" in html
     assert 'data-param="cutoff"' in html

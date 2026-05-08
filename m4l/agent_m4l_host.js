@@ -305,6 +305,8 @@ function anything() {
         handleWebUiReadyMessage(atoms, "");
     } else if (messagename === "web_error" || messagename === "webError") {
         handleWebUiErrorMessage(atoms, "");
+    } else if (messagename === "web_tick" || messagename === "agent_web_tick") {
+        handleWebTick();
     } else {
         applyRaw([messagename].concat(atoms).join(" "));
     }
@@ -340,6 +342,10 @@ function handleSignalWake() {
 
 function handleMidiWake() {
     handleActivityWake("midi");
+}
+
+function handleWebTick() {
+    handleActivityWake("web");
 }
 
 function handleLiveParameterObserverMessage(tag, atoms) {

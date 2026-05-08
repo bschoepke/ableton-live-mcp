@@ -299,7 +299,7 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
         _box("udp", "newobj", "udpreceive %d" % udp_port(instance_id), 220.0, 20.0),
         _box("poll-loadbang", "newobj", "loadbang", 220.0, 58.0),
         _box("poll-start", "message", "1", 220.0, 96.0),
-        _box("poll-metro", "newobj", "metro %d @active 1 @defer 1" % FALLBACK_POLL_INTERVAL_MS, 220.0, 134.0),
+        _box("poll-metro", "newobj", "qmetro %d @active 1" % FALLBACK_POLL_INTERVAL_MS, 220.0, 134.0),
         _box("poll-live-device", "newobj", "live.thisdevice", 340.0, 58.0),
         _box("poll-defer", "newobj", "deferlow", 340.0, 96.0),
         _box("poll-delay", "newobj", "delay 100", 340.0, 134.0),
@@ -838,6 +838,7 @@ AGENT_M4L_WEBUI_BOOTSTRAP_JS = (
     "window.agentM4L.outlet=o;"
     "o('web_ready',Date.now()%1000000000);"
     "document.addEventListener('DOMContentLoaded',function(){o('web_dom_ready',Date.now()%1000000000)});"
+    "function tick(){send(['agent_web_tick',Date.now()%1000000000]);setTimeout(tick,1000)}setTimeout(tick,1000);"
     "window.addEventListener('error',function(e){o('web_error',String(e&&e.message||e&&e.error||'error').slice(0,240))});"
     "window.addEventListener('unhandledrejection',function(e){o('web_error',String(e&&e.reason||'unhandledrejection').slice(0,240))});"
     "})();"
