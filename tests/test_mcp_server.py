@@ -1911,7 +1911,7 @@ def test_validate_checks_agent_m4l_host_companion_js(tmp_path, monkeypatch, caps
     monkeypatch.setattr(validate.agent_m4l, "ROLE_PRESETS", {"audio_effect": {}})
     monkeypatch.setattr(validate.agent_m4l, "install_folder", lambda _role: install)
 
-    status = validate.agent_m4l_host_status()
+    status = validate.agent_m4l.agent_m4l_host_status()
     assert status["current"] is False
     assert status["stale"] == [str(generated / "agent_m4l_host.js")]
     assert status["missing"] == [str(install / "agent_m4l_host.js")]
@@ -2042,6 +2042,7 @@ def test_debug_commands_are_not_published_console_scripts():
     assert 'ableton-live-mcp = "server:main"' in pyproject
     assert 'ableton-live-mcp-validate = "validate:main"' in pyproject
     assert 'ableton-live-mcp-install-remote-script = "install_remote_script:main"' in pyproject
+    assert 'ableton-live-mcp-sync-m4l-host = "agent_m4l:sync_host_main"' in pyproject
     assert "ableton-live-mcp-smoke =" not in pyproject
     assert "ableton-live-mcp-benchmark =" not in pyproject
     assert "ableton-live-mcp-prompt-audit =" not in pyproject

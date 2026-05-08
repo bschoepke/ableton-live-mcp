@@ -21,6 +21,7 @@ ableton-live-mcp = "server:main"
 ableton-live-mcp-validate = "validate:main"
 ableton-live-mcp-install-remote-script = "install_remote_script:main"
 ableton-live-mcp-build-m4l-device = "agent_m4l:main"
+ableton-live-mcp-sync-m4l-host = "agent_m4l:sync_host_main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -409,6 +409,38 @@ def test_agent_m4l_build_pool_creates_stable_slots(tmp_path, monkeypatch):
     ]
 
 
+def test_agent_m4l_sync_host_js_updates_existing_targets(tmp_path, monkeypatch):
+    source = tmp_path / "source" / "agent_m4l_host.js"
+    source.parent.mkdir()
+    source.write_text("current host\n", encoding="utf-8")
+    generated = tmp_path / "generated"
+    generated.mkdir()
+    (generated / "AgentM4L_audio_effect_Test.amxd").write_text("device", encoding="utf-8")
+    (generated / "agent_m4l_host.js").write_text("stale host\n", encoding="utf-8")
+    install = tmp_path / "install" / "audio"
+    install.mkdir(parents=True)
+    (install / "AgentM4L_audio_effect_Test.amxd").write_text("device", encoding="utf-8")
+
+    monkeypatch.setattr(agent_m4l, "HOST_JS", source)
+    monkeypatch.setattr(agent_m4l, "GENERATED_DIR", generated)
+    monkeypatch.setattr(agent_m4l, "ROLE_PRESETS", {"audio_effect": {}})
+    monkeypatch.setattr(agent_m4l, "install_folder", lambda _role: install)
+
+    before = agent_m4l.agent_m4l_host_status()
+    assert before["current"] is False
+    assert before["targets_checked"] == 2
+
+    dry_run = agent_m4l.sync_host_js(dry_run=True)
+    assert dry_run["current"] is False
+    assert not (install / "agent_m4l_host.js").exists()
+
+    synced = agent_m4l.sync_host_js()
+    assert synced["current"] is True
+    assert sorted(Path(path).name for path in synced["copied"]) == ["agent_m4l_host.js", "agent_m4l_host.js"]
+    assert (generated / "agent_m4l_host.js").read_text(encoding="utf-8") == "current host\n"
+    assert (install / "agent_m4l_host.js").read_text(encoding="utf-8") == "current host\n"
+
+
 def test_agent_m4l_role_amxdtype_values_match_live_categories():
     assert make_host_patch("audio_effect", "Fx")["patcher"]["amxdtype"] == 1633771873
     assert make_host_patch("instrument", "Inst")["patcher"]["amxdtype"] == 1768515945

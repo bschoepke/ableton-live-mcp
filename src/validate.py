@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -23,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
 
     results = {
         "remote_script": remote_script_status(target_dir=args.target_dir),
-        "m4l_host": agent_m4l_host_status(),
+        "m4l_host": agent_m4l.agent_m4l_host_status(),
     }
     remote_ok = bool(results["remote_script"].get("current"))
     m4l_host_ok = bool(results["m4l_host"].get("current"))
@@ -95,67 +94,6 @@ def _check_running_remote_script(results: dict) -> tuple[bool, str]:
     if actual != expected:
         return False, "bridge_hash_mismatch"
     return True, ""
-
-
-def agent_m4l_host_status() -> dict:
-    source = Path(agent_m4l.HOST_JS)
-    source_hash = _sha256(source) if source.is_file() else None
-    targets = _agent_m4l_host_targets()
-    checked = []
-    missing = []
-    stale = []
-    for label, path in targets:
-        target_hash = _sha256(path) if path.is_file() else None
-        current = bool(source_hash and target_hash == source_hash)
-        item = {
-            "label": label,
-            "path": str(path),
-            "installed": path.is_file(),
-            "current": current,
-            "target_sha256": target_hash,
-        }
-        checked.append(item)
-        if not path.is_file():
-            missing.append(str(path))
-        elif not current:
-            stale.append(str(path))
-    return {
-        "source": str(source),
-        "source_sha256": source_hash,
-        "current": bool(source_hash) and not missing and not stale,
-        "targets_checked": len(checked),
-        "targets": checked,
-        "missing": missing,
-        "stale": stale,
-    }
-
-
-def _agent_m4l_host_targets() -> list[tuple[str, Path]]:
-    targets: list[tuple[str, Path]] = []
-    generated_dir = Path(agent_m4l.GENERATED_DIR)
-    if _contains_agent_m4l_devices(generated_dir):
-        targets.append(("generated", generated_dir / "agent_m4l_host.js"))
-    for role in agent_m4l.ROLE_PRESETS:
-        folder = agent_m4l.install_folder(role)
-        if _contains_agent_m4l_devices(folder):
-            targets.append((role, folder / "agent_m4l_host.js"))
-    return targets
-
-
-def _contains_agent_m4l_devices(folder: Path) -> bool:
-    try:
-        return folder.is_dir() and any(folder.glob("AgentM4L_*.amxd"))
-    except Exception:
-        return False
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

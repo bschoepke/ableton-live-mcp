@@ -469,6 +469,88 @@ def build_pool(role: str, count: int, prefix: str = "slot", install: bool = True
     ]
 
 
+def agent_m4l_host_targets() -> list[dict[str, Any]]:
+    targets: list[dict[str, Any]] = []
+    if contains_agent_m4l_devices(GENERATED_DIR):
+        targets.append({"label": "generated", "path": GENERATED_DIR / HOST_JS.name})
+    for role in ROLE_PRESETS:
+        folder = install_folder(role)
+        if contains_agent_m4l_devices(folder):
+            targets.append({"label": role, "path": folder / HOST_JS.name})
+    return targets
+
+
+def contains_agent_m4l_devices(folder: Path) -> bool:
+    try:
+        return folder.is_dir() and any(folder.glob("AgentM4L_*.amxd"))
+    except Exception:
+        return False
+
+
+def agent_m4l_host_status() -> dict[str, Any]:
+    source_hash = sha256_file(HOST_JS) if HOST_JS.is_file() else None
+    checked = []
+    missing = []
+    stale = []
+    for target in agent_m4l_host_targets():
+        path = Path(target["path"])
+        target_hash = sha256_file(path) if path.is_file() else None
+        current = bool(source_hash and target_hash == source_hash)
+        item = {
+            "label": str(target["label"]),
+            "path": str(path),
+            "installed": path.is_file(),
+            "current": current,
+            "target_sha256": target_hash,
+        }
+        checked.append(item)
+        if not path.is_file():
+            missing.append(str(path))
+        elif not current:
+            stale.append(str(path))
+    return {
+        "source": str(HOST_JS),
+        "source_sha256": source_hash,
+        "current": bool(source_hash) and not missing and not stale,
+        "targets_checked": len(checked),
+        "targets": checked,
+        "missing": missing,
+        "stale": stale,
+    }
+
+
+def sync_host_js(dry_run: bool = False) -> dict[str, Any]:
+    before = agent_m4l_host_status()
+    copied = []
+    skipped = []
+    if not HOST_JS.is_file():
+        raise FileNotFoundError("Agent M4L host JS is missing: %s" % HOST_JS)
+    source_hash = before.get("source_sha256")
+    for target in before["targets"]:
+        path = Path(str(target["path"]))
+        if target.get("current"):
+            skipped.append(str(path))
+            continue
+        if not dry_run:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(HOST_JS, path)
+        copied.append(str(path))
+    after = before if dry_run else agent_m4l_host_status()
+    after["copied"] = copied
+    after["skipped"] = skipped
+    after["dry_run"] = dry_run
+    after["source_sha256"] = source_hash
+    return after
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def write_webui(instance_id: str, webui: dict[str, Any]) -> dict[str, Any]:
     slug = slugify(instance_id)
     directory = WEBUI_DIR / slug
@@ -696,3 +778,15 @@ def main() -> None:
     print(result["amxd_path"])
     if result["installed_path"]:
         print(result["installed_path"])
+
+
+def sync_host_main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Sync Agent M4L host JS beside generated/installed AgentM4L devices.")
+    parser.add_argument("--dry-run", action="store_true", help="Report stale/missing host JS copies without writing.")
+    args = parser.parse_args(argv)
+    try:
+        print(json.dumps(sync_host_js(dry_run=args.dry_run), indent=2, sort_keys=True))
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, indent=2, sort_keys=True))
+        return 1
+    return 0
