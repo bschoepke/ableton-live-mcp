@@ -396,6 +396,9 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "statusFile" in source
     assert "writeStatus" in source
     assert "statusPadSize" in source
+    assert "payload.state = statusStateSnapshot()" in source
+    assert "STATUS_STATE_KEY_LIMIT" in source
+    assert "function compactStatusValue(value, depth)" in source
     assert 'outlet(2, "status", eventName' in source
     assert "outlet(2, JSON.stringify(payload))" not in source
     assert "command_id" in source

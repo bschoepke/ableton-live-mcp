@@ -49,6 +49,10 @@ var DEVICE_WIDTH_PADDING = 20;
 var DEFAULT_DEVICE_HEIGHT = 170;
 var MIN_DEVICE_HEIGHT = 120;
 var DEVICE_HEIGHT_PADDING = 20;
+var STATUS_STATE_KEY_LIMIT = 80;
+var STATUS_ARRAY_PREVIEW = 12;
+var STATUS_OBJECT_KEY_LIMIT = 12;
+var STATUS_VALUE_DEPTH_LIMIT = 2;
 var currentDeviceWidth = DEFAULT_DEVICE_WIDTH;
 var currentDeviceHeight = DEFAULT_DEVICE_HEIGHT;
 var lastActivityWakeAt = 0;
@@ -1998,7 +2002,7 @@ function report(eventName, payload) {
     }
     payload.last_reload_command_id = lastReloadCommandId;
     payload.bindings = bindingSummaries();
-    payload.state = state;
+    payload.state = statusStateSnapshot();
     if (lastConnectionErrors.length) {
         payload.connection_errors = lastConnectionErrors;
     }
@@ -2020,6 +2024,61 @@ function bindingSummaries() {
         });
     }
     return result;
+}
+
+function statusStateSnapshot() {
+    var result = {};
+    var keys = [];
+    for (var key in state) {
+        if (state.hasOwnProperty(key)) {
+            keys.push(String(key));
+        }
+    }
+    keys.sort();
+    var limit = Math.min(keys.length, STATUS_STATE_KEY_LIMIT);
+    for (var i = 0; i < limit; i++) {
+        result[keys[i]] = compactStatusValue(state[keys[i]], 0);
+    }
+    if (keys.length > STATUS_STATE_KEY_LIMIT) {
+        result._truncated_keys = keys.length - STATUS_STATE_KEY_LIMIT;
+    }
+    return result;
+}
+
+function compactStatusValue(value, depth) {
+    depth = Number(depth || 0);
+    if (typeof value === "string") {
+        return shortStatusText(value);
+    }
+    if (value instanceof Array) {
+        var preview = [];
+        var count = Math.min(value.length, STATUS_ARRAY_PREVIEW);
+        for (var i = 0; i < count; i++) {
+            preview.push(depth >= STATUS_VALUE_DEPTH_LIMIT ? shortStatusText(value[i]) : compactStatusValue(value[i], depth + 1));
+        }
+        if (value.length <= STATUS_ARRAY_PREVIEW && depth < STATUS_VALUE_DEPTH_LIMIT) {
+            return preview;
+        }
+        return { items: value.length, preview: preview };
+    }
+    if (value && typeof value === "object") {
+        var keys = [];
+        for (var key in value) {
+            if (value.hasOwnProperty(key)) {
+                keys.push(String(key));
+            }
+        }
+        keys.sort();
+        if (keys.length <= STATUS_OBJECT_KEY_LIMIT && depth < STATUS_VALUE_DEPTH_LIMIT) {
+            var result = {};
+            for (var j = 0; j < keys.length; j++) {
+                result[keys[j]] = compactStatusValue(value[keys[j]], depth + 1);
+            }
+            return result;
+        }
+        return { key_count: keys.length, keys: keys.slice(0, STATUS_OBJECT_KEY_LIMIT) };
+    }
+    return value;
 }
 
 function statusFilePath() {
