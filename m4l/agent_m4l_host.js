@@ -1059,6 +1059,7 @@ function applyUiBinding(source, atoms) {
     if (binding.report) {
         report("set", { changed: 1, source: source, target: binding.target });
     }
+    drainPendingWebUiReads();
     pushWebState();
 }
 
@@ -1547,6 +1548,7 @@ function applyValues(values, shouldReport) {
     if (shouldReport) {
         report("set", { changed: changed });
     }
+    drainPendingWebUiReads();
     pushWebState();
 }
 
@@ -1596,6 +1598,12 @@ function pushWebState() {
     var raw = JSON.stringify(state);
     for (var i = 0; i < webObjects.length; i++) {
         sendWebState(webObjects[i], raw);
+    }
+}
+
+function drainPendingWebUiReads() {
+    if (pendingWebUiReads.length) {
+        readPendingWebUis();
     }
 }
 

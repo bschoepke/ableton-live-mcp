@@ -273,6 +273,7 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "restoreState" in source
     assert "reapplyStateValues" in source
     assert "restored_state" in source
+    assert "drainPendingWebUiReads" in source
     assert "sendWebState(webObjects[i], raw)" in source
     assert "webStateDispatchScript" in source
     assert "window.agentM4L.state=s" in source
