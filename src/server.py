@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from bridge import AbletonBridgeClient, BridgeConfig
-from agent_m4l import build_device, command_file as agent_m4l_command_file, device_name as agent_m4l_device_name, normalize_role, slugify, status_file as agent_m4l_status_file, udp_port as agent_m4l_udp_port, write_webui
+from agent_m4l import build_device, command_file as agent_m4l_command_file, device_name as agent_m4l_device_name, infer_device_width, normalize_role, slugify, status_file as agent_m4l_status_file, udp_port as agent_m4l_udp_port, write_webui
 from mcp import StdioMcpServer, Tool
 from similar_sounds import find_similar_sounds
 
@@ -21,13 +21,13 @@ ABLETON_MCP_INSTRUCTIONS = (
     "General Live object-model bridge, not a limited recipe API. "
     "Prefer installed content, Packs, user assets, samples, presets, devices, and indexed third-party audio plugins before generated assets unless asked. "
     "Discover with live_browser_capabilities/live_browser_roots/live_browser_search incl roots:['plugins']; SKU, Packs, folders, plugin indexing vary. "
-    "For existing sets, start with live_set_summary; pass expected_set_signature to destructive edits. "
+    "Existing sets: start with live_set_summary; pass expected_set_signature to destructive edits. "
     "For speed, prefer compact live_exec/live_batch, property lists, child limits, max_items, max_depth. "
     "For clip work, prefer JSON-safe helpers before hand-coding C++ signatures. "
     "find_similar_sounds requires Live 12+ analysis data. "
     "For AgentAudioTap, prefer master tap + solo target; start with path. "
-    "Idle sockets auto-retry; fresh AMXD loads retry client-side; timeouts for slow Live work. "
-    "M4L: live_agent_m4l_device hot-reloads native/web UI; file authoritative, per-instance UDP hint; set/status skip build; use wait_status, midiin+midiparse, presentation_rect/ui_bindings, audio buses, jweb/jbrowser aliases. "
+    "Idle sockets auto-retry; fresh AMXD loads retry. "
+    "M4L: live_agent_m4l_device hot-reloads native/web UI; file authoritative, per-instance UDP hint; set/status skip build; use wait_status, midiin+midiparse, presentation_rect/devicewidth/ui_bindings, audio buses, jweb/jbrowser aliases. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via browser or create audio clips; use ids from bridge summaries, not raw _live_ptr values. "
     "These are hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
@@ -274,6 +274,8 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
                 params["patch"] = dict(params["patch"])
                 for webui_key, rendered in webui.items():
                     params["patch"][webui_key] = rendered
+        device_width = infer_agent_m4l_width(params)
+        apply_agent_m4l_width(params, device_width)
         should_build = should_build_agent_m4l(params)
         if should_build:
             built = build_device(
@@ -281,6 +283,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
                 str(params.get("instance_id") or params.get("name") or "device"),
                 params.get("name"),
                 bool(params.get("install", True)),
+                device_width,
             )
             params["device_name"] = built["name"]
             params["instance_id"] = built["instance_id"]
@@ -401,6 +404,54 @@ def should_build_agent_m4l(params: dict[str, Any]) -> bool:
     return True
 
 
+def infer_agent_m4l_width(params: dict[str, Any]) -> int:
+    spec: dict[str, Any] = {}
+    for key in ("device_width", "devicewidth", "width"):
+        if params.get(key) is not None:
+            spec["device_width"] = params[key]
+            break
+    objects: list[Any] = []
+    webuis: list[dict[str, Any]] = []
+    for patch_key in ("patch", "spec"):
+        patch = params.get(patch_key)
+        if not isinstance(patch, dict):
+            continue
+        if "device_width" not in spec:
+            for key in ("device_width", "devicewidth", "width"):
+                if patch.get(key) is not None:
+                    spec["device_width"] = patch[key]
+                    break
+        if isinstance(patch.get("objects"), list):
+            objects.extend(patch["objects"])
+        webuis.extend(agent_m4l_webui_items(patch.get("webuis") or patch.get("webui")))
+    webuis.extend(agent_m4l_webui_items(params.get("webuis") or params.get("webui")))
+    if objects:
+        spec["objects"] = objects
+    if webuis:
+        spec["webuis"] = webuis
+    return infer_device_width(spec)
+
+
+def apply_agent_m4l_width(params: dict[str, Any], device_width: int) -> None:
+    params["device_width"] = device_width
+    for patch_key in ("patch", "spec"):
+        patch = params.get(patch_key)
+        if not isinstance(patch, dict):
+            continue
+        if any(patch.get(key) is not None for key in ("device_width", "devicewidth", "width")):
+            continue
+        params[patch_key] = dict(patch)
+        params[patch_key]["device_width"] = device_width
+
+
+def agent_m4l_webui_items(webui: Any) -> list[dict[str, Any]]:
+    if isinstance(webui, list):
+        return [item for item in webui if isinstance(item, dict)]
+    if isinstance(webui, dict):
+        return [webui]
+    return []
+
+
 def materialize_agent_m4l_webui(instance_id: str, webui: Any) -> Any:
     if isinstance(webui, list):
         rendered = []
@@ -481,6 +532,9 @@ def handle_agent_m4l_direct(params: dict[str, Any]) -> dict[str, Any]:
     if patch is not None and params.get("webuis"):
         patch = dict(patch)
         patch["webuis"] = params.get("webuis")
+    if patch is not None and params.get("device_width") is not None:
+        patch = dict(patch)
+        patch.setdefault("device_width", params.get("device_width"))
     if patch is None and command in ("set", "status"):
         patch = agent_m4l_recovery_patch(command_path)
     values = params.get("values")

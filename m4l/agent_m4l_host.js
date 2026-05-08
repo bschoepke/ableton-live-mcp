@@ -18,10 +18,14 @@ var uiBindings = {};
 var uiBindingUpdating = false;
 var statusPadSize = 65536;
 var lastConnectionErrors = [];
+var DEFAULT_DEVICE_WIDTH = 420;
+var MIN_DEVICE_WIDTH = 260;
+var DEVICE_WIDTH_PADDING = 20;
+var currentDeviceWidth = DEFAULT_DEVICE_WIDTH;
 
 function loadbang() {
     start_polling();
-    report("ready", { role: role, instance_id: instanceId, command_file: commandFile });
+    report("ready", { role: role, instance_id: instanceId, command_file: commandFile, device_width: currentDeviceWidth });
 }
 
 function start_polling() {
@@ -106,7 +110,7 @@ function applyRaw(raw) {
     } else if (command.command === "set") {
         applyValues(command.values || command.parameters || []);
     } else if (command.command === "status") {
-        report("status", { objects: dynamicObjects.length });
+        report("status", { objects: dynamicObjects.length, device_width: currentDeviceWidth });
     } else {
         applySpec(command.patch || command.spec || command);
     }
@@ -162,6 +166,7 @@ function applySpec(spec) {
         report("error", { reason: "missing_objects" });
         return;
     }
+    configureDeviceBounds(spec);
     clearDynamic();
     var byId = seedStaticObjects();
     createWebUis(spec.webuis || spec.webui, byId);
@@ -182,7 +187,7 @@ function applySpec(spec) {
     }
     configureUiBindings(spec, objects, byId);
     var connections = connectPatchlines(spec.connections || [], byId);
-    report("reload", { objects: dynamicObjects.length, connections: connections.connected, connection_errors: connections.errors });
+    report("reload", { objects: dynamicObjects.length, connections: connections.connected, connection_errors: connections.errors, device_width: currentDeviceWidth });
     pushWebState();
 }
 
@@ -208,6 +213,76 @@ function connectPatchlines(connections, byId) {
     }
     lastConnectionErrors = errors;
     return { connected: connected, errors: errors };
+}
+
+function configureDeviceBounds(spec) {
+    var width = inferDeviceWidth(spec, currentDeviceWidth || DEFAULT_DEVICE_WIDTH);
+    currentDeviceWidth = width;
+    setPatcherAttr("devicewidth", [width]);
+    setPatcherAttr("openrect", [0, 0, width, 170]);
+    setPatcherAttr("rect", [80, 80, Math.max(620, width), 360]);
+}
+
+function inferDeviceWidth(spec, fallback) {
+    var explicit = positiveNumber(spec.device_width || spec.devicewidth || spec.width);
+    if (explicit > 0) {
+        return Math.max(MIN_DEVICE_WIDTH, Math.round(explicit));
+    }
+    var width = 0;
+    var objects = spec.objects || [];
+    for (var i = 0; i < objects.length; i++) {
+        width = Math.max(width, rectRight(objects[i].presentation_rect));
+    }
+    var webuis = webuiList(spec.webuis || spec.webui);
+    for (var j = 0; j < webuis.length; j++) {
+        width = Math.max(width, rectRight(webuis[j].presentation_rect));
+    }
+    if (width <= 0) {
+        width = fallback || DEFAULT_DEVICE_WIDTH;
+        return Math.max(MIN_DEVICE_WIDTH, Math.round(width));
+    }
+    return Math.max(MIN_DEVICE_WIDTH, Math.round(width + DEVICE_WIDTH_PADDING));
+}
+
+function positiveNumber(value) {
+    var number = Number(value);
+    return isNaN(number) ? 0 : number;
+}
+
+function rectRight(rect) {
+    if (!(rect instanceof Array) || rect.length < 4) {
+        return 0;
+    }
+    var x = Number(rect[0]);
+    var width = Number(rect[2]);
+    if (isNaN(x) || isNaN(width)) {
+        return 0;
+    }
+    return x + width;
+}
+
+function webuiList(webui) {
+    if (!webui) {
+        return [];
+    }
+    if (webui instanceof Array) {
+        return webui;
+    }
+    return [webui];
+}
+
+function setPatcherAttr(messageName, values) {
+    var args = [String(messageName)].concat(asArray(values));
+    try {
+        this.patcher.setattr.apply(this.patcher, args);
+        return;
+    } catch (errSetAttr) {
+    }
+    try {
+        this.patcher.message.apply(this.patcher, ["setattr"].concat(args));
+        return;
+    } catch (errMessage) {
+    }
 }
 
 function createWebUis(webuiSpec, byId) {
@@ -804,6 +879,7 @@ function report(eventName, payload) {
     payload.instance_id = instanceId;
     payload.dynamic_objects = dynamicObjects.length;
     payload.webuis = webObjects.length;
+    payload.device_width = currentDeviceWidth;
     payload.bindings = bindingSummaries();
     payload.state = state;
     if (lastConnectionErrors.length) {

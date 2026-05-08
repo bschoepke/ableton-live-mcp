@@ -16,6 +16,9 @@ GENERATED_DIR = ROOT / "m4l" / "generated"
 WEBUI_DIR = GENERATED_DIR / "webui"
 UDP_PORT_BASE = 17655
 UDP_PORT_SPAN = 30000
+DEFAULT_DEVICE_WIDTH = 420
+MIN_DEVICE_WIDTH = 260
+DEVICE_WIDTH_PADDING = 20
 
 ROLE_PRESETS = {
     "audio_effect": {
@@ -89,6 +92,46 @@ def audio_bus_names(instance_id: str) -> dict[str, str]:
 def udp_port(instance_id: str) -> int:
     digest = hashlib.sha1(slugify(instance_id).encode("utf-8")).hexdigest()
     return UDP_PORT_BASE + (int(digest[:8], 16) % UDP_PORT_SPAN)
+
+
+def infer_device_width(spec: dict[str, Any] | None = None, fallback: int = DEFAULT_DEVICE_WIDTH) -> int:
+    explicit = _positive_int(spec.get("device_width") or spec.get("devicewidth") or spec.get("width")) if isinstance(spec, dict) else 0
+    if explicit > 0:
+        return max(MIN_DEVICE_WIDTH, explicit)
+    width = 0
+    if isinstance(spec, dict):
+        for item in spec.get("objects") or []:
+            width = max(width, _rect_right(item.get("presentation_rect")))
+        for item in _webui_items(spec.get("webuis") or spec.get("webui")):
+            width = max(width, _rect_right(item.get("presentation_rect")))
+    if width <= 0:
+        width = fallback
+        return max(MIN_DEVICE_WIDTH, int(round(width)))
+    return max(MIN_DEVICE_WIDTH, int(round(width + DEVICE_WIDTH_PADDING)))
+
+
+def _positive_int(value: Any) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _webui_items(webui: Any) -> list[dict[str, Any]]:
+    if isinstance(webui, list):
+        return [item for item in webui if isinstance(item, dict)]
+    if isinstance(webui, dict):
+        return [webui]
+    return []
+
+
+def _rect_right(rect: Any) -> int:
+    if not isinstance(rect, list) or len(rect) < 4:
+        return 0
+    try:
+        return int(float(rect[0]) + float(rect[2]))
+    except (TypeError, ValueError):
+        return 0
 
 
 def max_arg(value: str) -> str:
@@ -183,10 +226,11 @@ def _line(src: str, src_out: int, dst: str, dst_in: int) -> dict[str, Any]:
     return {"patchline": {"source": [src, src_out], "destination": [dst, dst_in]}}
 
 
-def make_host_patch(role: str, instance_id: str, title: str | None = None) -> dict[str, Any]:
+def make_host_patch(role: str, instance_id: str, title: str | None = None, device_width: int | None = None) -> dict[str, Any]:
     role = normalize_role(role)
     name = device_name(role, instance_id, title)
     preset = ROLE_PRESETS[role]
+    device_width = infer_device_width({"device_width": device_width} if device_width else None)
     js_text = "js agent_m4l_host.js %s %s %s %s" % (
         role,
         slugify(instance_id),
@@ -248,9 +292,11 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None) -> di
             "fileversion": 1,
             "appversion": {"major": 8, "minor": 6, "revision": 0, "architecture": "x64"},
             "classnamespace": "box",
-            "rect": [80.0, 80.0, 620.0, 360.0],
+            "rect": [80.0, 80.0, float(max(620, device_width)), 360.0],
+            "openrect": [0.0, 0.0, float(device_width), 170.0],
             "bglocked": 0,
             "openinpresentation": 1,
+            "devicewidth": float(device_width),
             "default_fontsize": 12.0,
             "default_fontface": 0,
             "default_fontname": "Arial",
@@ -264,13 +310,14 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None) -> di
     }
 
 
-def build_device(role: str, instance_id: str, title: str | None = None, install: bool = True) -> dict[str, str]:
+def build_device(role: str, instance_id: str, title: str | None = None, install: bool = True, device_width: int | None = None) -> dict[str, Any]:
     role = normalize_role(role)
     name = device_name(role, instance_id, title)
     patch_path = GENERATED_DIR / ("%s.maxpat" % name)
     amxd_path = GENERATED_DIR / ("%s.amxd" % name)
     patch_path.parent.mkdir(parents=True, exist_ok=True)
-    patch_path.write_text(json.dumps(make_host_patch(role, instance_id, title), indent=2), encoding="utf-8")
+    resolved_width = infer_device_width({"device_width": device_width} if device_width else None)
+    patch_path.write_text(json.dumps(make_host_patch(role, instance_id, title, resolved_width), indent=2), encoding="utf-8")
     build_amxd(patch_path, amxd_path, role)
     shutil.copyfile(HOST_JS, amxd_path.with_name(HOST_JS.name))
     installed_path = ""
@@ -291,10 +338,11 @@ def build_device(role: str, instance_id: str, title: str | None = None, install:
         "status_file": status_file(instance_id),
         "audio_buses": audio_bus_names(instance_id),
         "udp_port": udp_port(instance_id),
+        "device_width": resolved_width,
     }
 
 
-def build_pool(role: str, count: int, prefix: str = "slot", install: bool = True) -> list[dict[str, str]]:
+def build_pool(role: str, count: int, prefix: str = "slot", install: bool = True) -> list[dict[str, Any]]:
     if count < 1:
         raise ValueError("count must be >= 1")
     return [

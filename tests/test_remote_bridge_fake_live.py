@@ -571,6 +571,7 @@ def test_agent_m4l_device_writes_command_sends_udp_and_loads(monkeypatch):
         "target_track": {"path": "live_set tracks 1"},
         "patch": patch,
         "webui": {"html_path": "/tmp/wobble/index.html", "presentation_rect": [0, 0, 320, 160]},
+        "device_width": 340,
         "id": "cmd1",
     })
 
@@ -580,6 +581,7 @@ def test_agent_m4l_device_writes_command_sends_udp_and_loads(monkeypatch):
     assert written["path"] == module._temp_file("agent_m4l_Wobble.json")
     assert '"instance_id":"Wobble"' in written["value"]
     assert '"cycle~ 110"' in written["value"]
+    assert '"device_width":340' in written["value"]
     assert '"webui":{"html_path":"/tmp/wobble/index.html"' in written["value"]
     assert sent[0][1] == ("127.0.0.1", bridge._agent_m4l_port("Wobble"))
     assert b"/agent_m4l" in sent[0][0]

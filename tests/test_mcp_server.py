@@ -428,8 +428,11 @@ def test_agent_m4l_device_tool_builds_and_forwards(monkeypatch, tmp_path):
     assert forwarded["status_file"] == agent_m4l.status_file("Wobble")
     assert forwarded["patch"]["objects"][0]["presentation_rect"] == [12, 12, 48, 48]
     assert forwarded["patch"]["webui"]["html_path"].endswith("index.html")
+    assert forwarded["patch"]["device_width"] == 340
+    assert forwarded["device_width"] == 340
     assert forwarded["webui"]["url"].startswith("file://")
     assert response["result"]["structuredContent"]["built"]["installed_path"] == ""
+    assert response["result"]["structuredContent"]["built"]["device_width"] == 340
     assert response["result"]["structuredContent"]["webui"]["html_path"].endswith("index.html")
 
 
@@ -592,6 +595,8 @@ def test_agent_m4l_device_tool_materializes_webui_arrays(monkeypatch, tmp_path):
     assert forwarded["webuis"][0]["html_path"].endswith("Panel_Test_left/index.html")
     assert forwarded["webuis"][1]["html_path"] == str(existing)
     assert forwarded["patch"]["webuis"] == forwarded["webuis"]
+    assert forwarded["patch"]["device_width"] == 500
+    assert response["result"]["structuredContent"]["built"]["device_width"] == 500
     assert response["result"]["structuredContent"]["webui"]["webuis"][0]["url"].startswith("file://")
 
 
@@ -626,6 +631,8 @@ def test_agent_m4l_device_tool_materializes_patch_webui(monkeypatch, tmp_path):
     forwarded = bridge.calls[0][1]
     assert forwarded["patch"]["webui"]["object"] == "jbrowser~"
     assert forwarded["patch"]["webui"]["html_path"].endswith("Nested_Panel/index.html")
+    assert forwarded["patch"]["device_width"] == 260
+    assert response["result"]["structuredContent"]["built"]["device_width"] == 260
     assert response["result"]["structuredContent"]["webui"]["html_path"].endswith("Nested_Panel/index.html")
 
 

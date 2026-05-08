@@ -284,6 +284,9 @@ class AbletonLiveMCP(ControlSurface):
         if patch is not None and params.get("webuis"):
             patch = dict(patch)
             patch["webuis"] = params.get("webuis")
+        if patch is not None and params.get("device_width") is not None:
+            patch = dict(patch)
+            patch.setdefault("device_width", params.get("device_width"))
         if patch is None and command in ("set", "status"):
             patch = self._agent_m4l_recovery_patch(command_file)
         command_hash = {

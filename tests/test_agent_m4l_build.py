@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import agent_m4l
-from agent_m4l import audio_bus_names, build_amxd, build_pool, command_file, make_host_patch, replace_ptch_chunk, status_file, udp_port, write_webui
+from agent_m4l import audio_bus_names, build_amxd, build_pool, command_file, infer_device_width, make_host_patch, replace_ptch_chunk, status_file, udp_port, write_webui
 
 
 def test_agent_m4l_host_patch_contains_runtime_and_role_io():
@@ -23,7 +23,18 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert {"patchline": {"source": ["midiin", 0], "destination": ["midiout", 0]}} not in lines
     assert "jweb~ @rendermode 1" not in texts
     assert "prepend ui0" not in texts
+    assert patch["patcher"]["devicewidth"] == 420.0
+    assert patch["patcher"]["openrect"] == [0.0, 0.0, 420.0, 170.0]
     assert patch["patcher"]["amxdtype"] == 1768515945
+
+
+def test_agent_m4l_infers_device_width_from_presentation_bounds():
+    assert infer_device_width() == 420
+    assert infer_device_width({"device_width": 760}) == 760
+    assert infer_device_width({
+        "objects": [{"id": "wide_knob", "presentation_rect": [20, 8, 520, 60]}],
+        "webui": {"id": "panel", "presentation_rect": [560, 0, 260, 120]},
+    }) == 840
 
 
 def test_agent_m4l_host_does_not_impose_fixed_pass_through():
@@ -107,6 +118,8 @@ def test_agent_m4l_build_device_installs_companion_js_when_not_installing(tmp_pa
     assert result["name"] == "AgentM4L_midi_effect_Gate_Test"
     assert result["installed_path"] == ""
     assert result["udp_port"] == udp_port("Gate Test")
+    assert result["device_width"] == 420
+    assert patch["patcher"]["devicewidth"] == 420.0
     assert "midiout" in texts
     assert Path(result["amxd_path"]).with_name("agent_m4l_host.js").exists()
 
@@ -150,6 +163,11 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "obj.message(\"bang\")" in source
     assert "connectPatchlines" in source
     assert "connection_errors" in source
+    assert "configureDeviceBounds" in source
+    assert "inferDeviceWidth" in source
+    assert "devicewidth" in source
+    assert "openrect" in source
+    assert "device_width" in source
     assert "ensureRecovered" in source
     assert "readCommandFileJson" in source
     assert "recovery.patch || recovery.spec" in source
