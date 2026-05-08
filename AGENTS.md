@@ -87,6 +87,8 @@ When `live_agent_m4l_device` does not need to build or resolve a Live track/devi
 
 For iterative generated M4L updates, reuse the installed role host. `live_agent_m4l_device` skips rebuilds by default for `set`, `status`, `clear`, and value-only calls; pass `build: true` only when creating/replacing the host AMXD.
 
+Hot reloads should preserve current values for matching generated parameter IDs. When changing a patch/spec, keep stable IDs for controls and controlled objects that should retain state; change IDs deliberately when the new design should reset a value.
+
 A build/install can succeed before Live's browser has indexed the new AMXD. In that case `live_agent_m4l_device` may return `loaded: false` with `load_error` while still returning `built`, `command_file`, and `status_file`. Treat that as a recoverable indexing/load condition: reuse an already loaded compatible host for immediate validation, or retry loading after the browser catches up.
 
 When a fresh generated AMXD is built and loaded in one `live_agent_m4l_device` call, the MCP server should retry the load client-side for a short window instead of sleeping inside Live's Remote Script. Use `load_retry_timeout` and `load_retry_interval` only for browser-indexing delays; value-only `set` calls should continue to skip rebuilds and load retries.

@@ -166,6 +166,7 @@ function applySpec(spec) {
         report("error", { reason: "missing_objects" });
         return;
     }
+    var previousState = cloneObject(state);
     configureDeviceBounds(spec);
     clearDynamic();
     var byId = seedStaticObjects();
@@ -187,7 +188,16 @@ function applySpec(spec) {
     }
     configureUiBindings(spec, objects, byId);
     var connections = connectPatchlines(spec.connections || [], byId);
-    report("reload", { objects: dynamicObjects.length, connections: connections.connected, connection_errors: connections.errors, device_width: currentDeviceWidth });
+    var restored = restoreState(previousState);
+    var reapplied = reapplyStateValues();
+    report("reload", {
+        objects: dynamicObjects.length,
+        connections: connections.connected,
+        connection_errors: connections.errors,
+        device_width: currentDeviceWidth,
+        restored_state: restored,
+        reapplied_state: reapplied
+    });
     pushWebState();
 }
 
@@ -775,22 +785,59 @@ function clamp(value, minimum, maximum) {
     return Math.max(minimum, Math.min(maximum, value));
 }
 
+function restoreState(previousState) {
+    var restored = 0;
+    for (var id in previousState) {
+        if (!previousState.hasOwnProperty(id)) {
+            continue;
+        }
+        if (setStateValue(id, previousState[id], "", null)) {
+            restored += 1;
+        }
+    }
+    return restored;
+}
+
+function reapplyStateValues() {
+    var snapshot = cloneObject(state);
+    var reapplied = 0;
+    for (var id in snapshot) {
+        if (!snapshot.hasOwnProperty(id)) {
+            continue;
+        }
+        if (setStateValue(id, snapshot[id], "", null)) {
+            reapplied += 1;
+        }
+    }
+    return reapplied;
+}
+
+function setStateValue(id, value, skipSource, command) {
+    id = String(id);
+    if (uiBindings[id]) {
+        return false;
+    }
+    var obj = objectById[id];
+    if (!obj && !hasUiBindingTarget(id)) {
+        return false;
+    }
+    if (obj) {
+        sendObjectValue(obj, objectSpecById[id] || {}, value, command || { id: id, value: value });
+    }
+    state[id] = value;
+    updateUiBindings(id, value, skipSource || "");
+    return true;
+}
+
 function applyValues(values) {
     var changed = 0;
     for (var i = 0; i < values.length; i++) {
         var item = values[i];
         var id = String(item.id);
-        var obj = objectById[id];
-        if (!obj && !hasUiBindingTarget(id)) {
-            continue;
-        }
         try {
-            if (obj) {
-                sendObjectValue(obj, objectSpecById[id] || {}, item.value, item);
+            if (setStateValue(id, item.value, "", item)) {
+                changed += 1;
             }
-            state[id] = item.value;
-            updateUiBindings(id, item.value, "");
-            changed += 1;
         } catch (err) {
             report("error", { reason: "set_failed", id: id, detail: String(err) });
         }
