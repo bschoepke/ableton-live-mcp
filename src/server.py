@@ -76,7 +76,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     }
 
     timeout_control = {"timeout": {"type": "number", "description": "Wait seconds."}}
-    server.add_tool(Tool("live_ping", "Check bridge health/version.", schema(timeout_control), forward("ping")))
+    server.add_tool(Tool("live_ping", "Bridge health/version.", schema(timeout_control), forward("ping")))
     response_controls = {
         "detail": {"type": "boolean"},
         "max_items": {"type": "integer"},
@@ -178,6 +178,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "create_clip_length": {"type": "number"},
         "clip_name": {"type": "string"},
         "fire": {"type": "boolean"},
+        "replace_existing_clip": {"type": "boolean"},
         "allow_legacy_note_api": {"type": "boolean"},
         "clear_range": {"type": "object", "properties": {
             "from_pitch": {"type": "integer"},
@@ -248,7 +249,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "name": {"type": "string"},
         **mutation_controls,
     }, ["ref", "file_path", "destination_time"]), forward("track_create_audio_clip")))
-    server.add_tool(Tool("live_track_insert_device", "Insert a named built-in Live device on a track.", schema({
+    server.add_tool(Tool("live_track_insert_device", "Insert built-in Live device.", schema({
         "ref": ref,
         "device_name": {"type": "string"},
         "device_index": {"type": "integer"},
@@ -374,7 +375,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "timeout": response_controls["timeout"],
         **strict_timeout_control,
     }), forward("transport")))
-    server.add_tool(Tool("live_batch", "Batch bridge operations.", schema({
+    server.add_tool(Tool("live_batch", "Batch ops.", schema({
         "operations": {"type": "array", "items": {"type": "object", "properties": {
             "method": {"type": "string", "description": "Bridge method."},
             "params": {"type": "object"},

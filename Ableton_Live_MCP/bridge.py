@@ -891,9 +891,21 @@ class AbletonLiveMCP(ControlSurface):
     def _rpc_clip_add_notes(self, params):
         target = self._resolve(params.get("ref"))
         created_clip = False
+        replaced_clip = False
         launched = False
         legacy_note_api = False
         if hasattr(target, "has_clip") and hasattr(target, "clip"):
+            if params.get("replace_existing_clip"):
+                length = params.get("create_clip_length")
+                if length is None:
+                    raise ValueError("clip_add_notes requires create_clip_length when replacing an existing clip")
+                if getattr(target, "has_clip", False):
+                    if not hasattr(target, "delete_clip"):
+                        raise ValueError("clip_add_notes replace_existing_clip requires a clip slot with delete_clip")
+                    target.delete_clip()
+                    replaced_clip = True
+                target.create_clip(float(length))
+                created_clip = True
             if not getattr(target, "has_clip", False):
                 length = params.get("create_clip_length")
                 if length is None:
@@ -902,6 +914,8 @@ class AbletonLiveMCP(ControlSurface):
                 created_clip = True
             clip = target.clip
         else:
+            if params.get("replace_existing_clip"):
+                raise ValueError("clip_add_notes replace_existing_clip requires a clip slot ref, not a clip ref")
             clip = target
         if not getattr(clip, "is_midi_clip", False):
             raise ValueError("clip_add_notes requires a MIDI clip")
@@ -960,6 +974,7 @@ class AbletonLiveMCP(ControlSurface):
             "clip": self._clip_summary(clip, None),
             "added": len(specs),
             "created_clip": created_clip,
+            "replaced_clip": replaced_clip,
             "launched": launched,
             "legacy_note_api": legacy_note_api,
             "note_count": len(list(clip.get_all_notes_extended())),

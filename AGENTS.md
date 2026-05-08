@@ -123,6 +123,8 @@ For generated MIDI effects, validate the transformed MIDI itself, not only downs
 
 For generated instrument tests, prefer `live_clip_add_notes` targeting an empty clip slot with `create_clip_length`, `clip_name`, and optional `fire` over arbitrary `live_exec` note-writing code. This keeps MIDI setup JSON-safe, bounded, and easier to reason about after a sent-call timeout.
 
+For repeated ad-hoc instrument tests that need a clean pattern in the same Session slot, prefer `replace_existing_clip: true` with `create_clip_length` over `clear: true`; replacing the slot clip avoids note-clear APIs and reduces the chance of Live showing the legacy MIDI Remote Script warning modal.
+
 If Live shows the modal warning that a custom MIDI Remote Script uses an older process to modify MIDI notes, treat that as a validation blocker and preserve it in notes. Do not click through automatically. Prefer the extended note APIs through `live_clip_add_notes`; only pass `allow_legacy_note_api: true` for deliberate compatibility testing in a disposable set.
 
 For rich web UI, put large libraries, models, images, fonts, or generated bundles in the webui `assets` map/list and reference the written relative files from HTML/JS. Asset entries may carry inline `content`/`text`/`base64` or copy bytes from a local `source_path`/`file_path`, which lets generated Three.js/WebGL panels bundle real local modules without stuffing the command JSON. After materialization, command patches should carry only paths and small metadata, not bulky `html`, `css`, `js`, `controls`, or asset source content. This keeps creative UIs such as Three.js scenes practical without making M4L command files slow or fragile.

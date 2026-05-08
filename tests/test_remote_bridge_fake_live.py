@@ -291,6 +291,7 @@ class FakeClipSlot:
         self.clip = clip
         self.has_clip = clip is not None
         self.fired = False
+        self.deleted = False
 
     def create_clip(self, length):
         self.clip = FakeClip("Created Clip", end_time=float(length))
@@ -298,6 +299,11 @@ class FakeClipSlot:
         self.clip.length = float(length)
         self.clip.loop_end = float(length)
         self.has_clip = True
+
+    def delete_clip(self):
+        self.clip = None
+        self.has_clip = False
+        self.deleted = True
 
     def fire(self):
         self.fired = True
@@ -1302,6 +1308,48 @@ def test_clip_add_notes_can_create_slot_clip_and_launch(monkeypatch):
     assert slot.clip.loop_end == 4.0
     notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 1 clip_slots 0 clip"}})
     assert [note["pitch"] for note in notes["notes"]] == [60, 67]
+
+
+def test_clip_add_notes_can_replace_slot_clip(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    slot = song.tracks[0].clip_slots[0]
+    old_clip = slot.clip
+    assert old_clip.get_all_notes_extended()
+
+    result = bridge._rpc_clip_add_notes({
+        "ref": {"path": "live_set tracks 0 clip_slots 0"},
+        "replace_existing_clip": True,
+        "create_clip_length": 8.0,
+        "clip_name": "Fresh Pattern",
+        "notes": [{"pitch": 72, "start_time": 0.0, "duration": 0.5, "velocity": 90}],
+    })
+
+    assert result["created_clip"] is True
+    assert result["replaced_clip"] is True
+    assert result["legacy_note_api"] is False
+    assert result["note_count"] == 1
+    assert slot.deleted is True
+    assert slot.clip is not old_clip
+    assert slot.clip.name == "Fresh Pattern"
+    assert slot.clip.length == 8.0
+    notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
+    assert [note["pitch"] for note in notes["notes"]] == [72]
+
+
+def test_clip_add_notes_replace_requires_slot_ref(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+
+    try:
+        bridge._rpc_clip_add_notes({
+            "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
+            "replace_existing_clip": True,
+            "create_clip_length": 4.0,
+            "notes": [{"pitch": 72, "start_time": 0.0, "duration": 0.5, "velocity": 90}],
+        })
+    except ValueError as exc:
+        assert "clip slot ref" in str(exc)
+    else:
+        raise AssertionError("expected clip slot ref error")
 
 
 def test_clip_add_notes_requires_length_for_empty_slot(monkeypatch):
