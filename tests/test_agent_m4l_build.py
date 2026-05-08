@@ -172,6 +172,9 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "ui_bindings" in source
     assert "configureUiBindings" in source
     assert "applyUiBinding" in source
+    assert "createDynamicPoller" in source
+    assert '"__agent_m4l_poll"' in source
+    assert '["metro", 50, "@active", 1, "@defer", 1]' in source
     assert "updateUiBindings" in source
     assert "setUiSourceValue" in source
     assert "var binding = uiBindings[id]" in source

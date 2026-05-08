@@ -270,6 +270,7 @@ function applySpec(spec) {
         }
     }
     configureUiBindings(spec, objects, byId);
+    createDynamicPoller();
     var connections = connectPatchlines(spec.connections || [], byId);
     var restored = restoreState(previousState);
     var reapplied = reapplyStateValues();
@@ -522,6 +523,28 @@ function configureUiBindings(spec, objects, byId) {
     }
     for (var k = 0; k < bindings.length; k++) {
         installUiBinding(bindings[k], byId);
+    }
+}
+
+function createDynamicPoller() {
+    var id = "__agent_m4l_poll";
+    var poller = createNamedDefault(id, 20, 300, ["metro", 50, "@active", 1, "@defer", 1]);
+    if (!poller) {
+        return;
+    }
+    dynamicObjects.push(poller);
+    try {
+        this.patcher.connect(poller, 0, this.box, 0);
+    } catch (err) {
+        lastConnectionErrors.push({ from: id, to: "js", outlet: 0, inlet: 0, reason: String(err) });
+    }
+    try {
+        poller.message("active", 1);
+    } catch (errActive) {
+    }
+    try {
+        poller.message(1);
+    } catch (errStart) {
     }
 }
 
