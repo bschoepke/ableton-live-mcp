@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import server as server_module
 import validate
 from benchmark import run_benchmark
 from bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig, effective_main_thread_timeout
@@ -788,6 +789,55 @@ def test_agent_m4l_status_timeout_defaults_longer_for_webui():
     assert agent_m4l_status_timeout(None, False) == 2.0
     assert agent_m4l_status_timeout(None, True) == 9.0
     assert agent_m4l_status_timeout(0.25, True) == 0.25
+
+
+def test_agent_m4l_device_tool_uses_webui_wait_status_default(monkeypatch, tmp_path):
+    captured = {}
+
+    class StatusBridge(FakeBridge):
+        def request(self, method, params):
+            self.calls.append((method, params))
+            return {
+                "method": method,
+                "command": "update",
+                "command_id": "cmd-web",
+                "status_file": str(tmp_path / "status.json"),
+                "params": params,
+            }
+
+    def fake_wait_status(path, previous_mtime, command_id, timeout, poll_interval, expected_event=None):
+        captured["timeout"] = timeout
+        captured["expected_event"] = expected_event
+        return {"event": "reload", "command_id": command_id}
+
+    monkeypatch.setattr(server_module, "wait_agent_m4l_status", fake_wait_status)
+    bridge = StatusBridge()
+    mcp = make_server(bridge)
+    args = {
+        "role": "audio_effect",
+        "instance_id": "Web Wait",
+        "build": False,
+        "command": "update",
+        "command_file": str(tmp_path / "command.json"),
+        "status_file": str(tmp_path / "status.json"),
+        "ref": {"path": "live_set tracks 0"},
+        "patch": {
+            "objects": [],
+            "webui": {"id": "panel", "html_path": str(tmp_path / "panel.html")},
+        },
+        "wait_status": True,
+    }
+
+    response = mcp.handle({
+        "jsonrpc": "2.0",
+        "id": 47,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": args},
+    })
+
+    assert response["result"]["structuredContent"]["status"]["event"] == "reload"
+    assert captured["timeout"] == 9.0
+    assert captured["expected_event"] == "reload"
 
 
 def test_wait_agent_m4l_status_requires_matching_command_id(tmp_path):
