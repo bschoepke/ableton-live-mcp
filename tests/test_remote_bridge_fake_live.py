@@ -1200,6 +1200,45 @@ def test_agent_m4l_device_reports_load_error_without_dropping_command(monkeypatc
     assert result["command_id"] == "fresh1"
 
 
+def test_agent_m4l_cleanup_dry_runs_by_default_and_filters_role(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    song.tracks[0].insert_device("AgentM4L_audio_effect_Old_Wobble")
+    song.tracks[0].insert_device("AgentM4L_instrument_Old_Synth")
+    song.tracks[0].insert_device("EQ Eight")
+
+    result = bridge._rpc_agent_m4l_cleanup({"role": "audio_effect"})
+
+    assert result["delete"] is False
+    assert result["matched_count"] == 1
+    assert result["deleted_count"] == 0
+    assert result["matches"][0]["device_name"] == "AgentM4L_audio_effect_Old_Wobble"
+    assert [device.name for device in song.tracks[0].devices][-3:] == [
+        "AgentM4L_audio_effect_Old_Wobble",
+        "AgentM4L_instrument_Old_Synth",
+        "EQ Eight",
+    ]
+
+
+def test_agent_m4l_cleanup_deletes_with_explicit_flag(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    song.tracks[0].insert_device("AgentM4L_audio_effect_First")
+    song.tracks[0].insert_device("AgentM4L_audio_effect_Second")
+    song.tracks[1].insert_device("AgentM4L_audio_effect_Third")
+
+    result = bridge._rpc_agent_m4l_cleanup({
+        "delete": True,
+        "role": "audio_effect",
+        "track_query": "track 1",
+        "max_delete": 1,
+    })
+
+    assert result["matched_count"] == 2
+    assert result["deleted_count"] == 1
+    assert result["deleted"][0]["track_path"] == "live_set tracks 0"
+    assert [device.name for device in song.tracks[0].devices][-2:] == ["Compressor", "AgentM4L_audio_effect_Second"]
+    assert [device.name for device in song.tracks[1].devices] == ["AgentM4L_audio_effect_Third"]
+
+
 def test_transport_tool_seeks_and_retries_play(monkeypatch):
     bridge, song, _app = make_bridge(monkeypatch)
     calls = []

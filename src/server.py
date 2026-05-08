@@ -34,7 +34,7 @@ AGENT_M4L_STATIC_OBJECTS_BY_ROLE = {
 }
 AGENT_M4L_RESERVED_IDS = {"js", "script", "status", "udp", "out", "poll-metro", "command-trigger"}
 ABLETON_MCP_INSTRUCTIONS = (
-    "General Live bridge; review AGENTS.md for deeper tips. "
+    "General Live bridge; review AGENTS.md tips. "
     "Prefer installed Packs/user assets/samples/presets/devices/plugins unless asked; roots:['plugins']. "
     "Sets: live_set_summary first; expected_set_signature for destructive edits. "
     "Compact live_exec/live_batch; limit props/children/strings. "
@@ -42,17 +42,17 @@ ABLETON_MCP_INSTRUCTIONS = (
     "AgentAudioTap: master tap+solo target; start with path. "
     "Idle sockets auto-retry; sent-call timeouts fail closed; main-thread calls serialize/reject; use live_bridge_status before retry. "
     "Agent must visually verify M4L device UI via live_visual_capture: Ableton-window-only, never capture arbitrary apps/windows, device-detail crop, blank_capture invalid; locked/asleep display blocks capture/e2e. "
-    "M4L: arbitrary native/web/mixed UI hot-reloads; wait_status/compact_result + matching command_id. Reuse hosts/IDs; avoid web-renderer buildup; clear stale tests. Supports preflight files, UDP hints, throttled fallback wakes, load:false/set/status skip build, host_not_woken=no ack, midiin+midiparse, origin-aligned rect/openrect, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batch/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web must prove signal telemetry+nonblank visual delta. No web ack/width shrink: reload/simplify or validate fresh host. "
+    "M4L: arbitrary native/web/mixed UI hot-reloads; wait_status/compact_result + matching command_id. Reuse hosts/IDs; avoid web-renderer buildup; cleanup dry-run before delete. Supports preflight files, UDP hints, throttled fallback wakes, load:false/set/status skip build, host_not_woken=no ack, midiin+midiparse, origin-aligned rect/openrect, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batch/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web must prove signal telemetry+nonblank visual delta. No web ack/width shrink: reload/simplify or validate fresh host. "
     "Avoid broad dumps. Gotchas: live_eval expr-only; use live_exec; Live nums JSON; Simpler.sample not settable; ids from summaries. "
     "Hints only; full Live object model remains available: paths/ids/calls/props/children/listeners/eval."
 )
 AGENT_M4L_TOOL_DESCRIPTION = (
-    "arbitrary native UI, jweb/jbrowser web UI/mixed; "
-    "wait_status/compact_status/compact_result, files, bounds, ui_bindings, web diag, fast paths."
+    "arbitrary native UI, jweb/jbrowser web UI; wait_status compact_status compact_result, web diag."
 )
-AGENT_AUDIO_TAP_DESCRIPTION = "Command AgentAudioTap capture: use start with path, then stop/status; file command reliable, UDP optional."
-AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap on master/target; optional solo target track/reset transport."
-VISUAL_CAPTURE_DESCRIPTION = "Ableton Live window-only; device-detail crop/downscale; region-relative; no arbitrary apps/windows."
+AGENT_M4L_CLEANUP_DESCRIPTION = "Dry-run/delete AgentM4L; ask before delete."
+AGENT_AUDIO_TAP_DESCRIPTION = "AgentAudioTap: start with path; stop/status; UDP optional."
+AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap; optional solo target track/reset."
+VISUAL_CAPTURE_DESCRIPTION = "Ableton Live window-only; device-detail crop/downscale; region-rel; no arbitrary apps/windows."
 
 
 def schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -386,6 +386,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         return summarize_agent_m4l_result(result) if compact_result else result
 
     server.add_tool(Tool("live_agent_m4l_device", AGENT_M4L_TOOL_DESCRIPTION, loose_schema(), agent_m4l_device))
+    server.add_tool(Tool("live_agent_m4l_cleanup", AGENT_M4L_CLEANUP_DESCRIPTION, loose_schema(), forward("agent_m4l_cleanup")))
     server.add_tool(Tool("live_transport", "Transport status/play/continue/stop with optional seek.", schema({
         "action": {"type": "string", "description": "status/play/continue/stop."},
         "time": {"type": "number", "description": "Seek time."},

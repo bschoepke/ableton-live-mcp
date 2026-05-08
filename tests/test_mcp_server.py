@@ -57,6 +57,7 @@ def test_lists_general_purpose_tools():
         "live_agent_audio_tap_setup",
         "live_visual_capture",
         "live_agent_m4l_device",
+        "live_agent_m4l_cleanup",
         "live_transport",
         "live_eval",
         "live_exec",
@@ -506,6 +507,22 @@ def test_agent_m4l_device_tool_builds_and_forwards(monkeypatch, tmp_path):
     assert response["result"]["structuredContent"]["built"]["device_width"] == 340
     assert response["result"]["structuredContent"]["built"]["device_height"] == 180
     assert response["result"]["structuredContent"]["webui"]["html_path"].endswith("index.html")
+
+
+def test_agent_m4l_cleanup_tool_forwards_to_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {"delete": False, "role": "audio_effect", "track_query": "scratch"}
+
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 804,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_cleanup", "arguments": args},
+    })
+
+    assert bridge.calls == [("agent_m4l_cleanup", args)]
+    assert response["result"]["structuredContent"]["method"] == "agent_m4l_cleanup"
 
 
 def test_agent_m4l_device_tool_preflight_only_reports_compact_errors(tmp_path):
@@ -1957,6 +1974,9 @@ def test_tool_list_stays_compact():
     assert "compact_status" in m4l["description"]
     assert "compact_result" in m4l["description"]
     assert "web diag" in m4l["description"]
+    cleanup = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_agent_m4l_cleanup")
+    assert "Dry-run" in cleanup["description"]
+    assert "ask before delete" in cleanup["description"]
     clip_add = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_clip_add_notes")
     assert "create a MIDI clip" in clip_add["description"]
     transport = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_transport")

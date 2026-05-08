@@ -542,6 +542,85 @@ class AbletonLiveMCP(ControlSurface):
             result["track"] = self._track_summary(target_track, None, 0, 16, 0)
         return result
 
+    def _rpc_agent_m4l_cleanup(self, params):
+        delete = bool(params.get("delete", False))
+        prefix = str(params.get("name_prefix") if params.get("name_prefix") is not None else "AgentM4L_")
+        name_contains = str(params.get("name_contains") or "").lower()
+        role = self._agent_m4l_role(params.get("role")) if params.get("role") else ""
+        limit = int(params.get("limit") if params.get("limit") is not None else 128)
+        max_delete = int(params.get("max_delete") if params.get("max_delete") is not None else 0)
+        tracks = self._agent_m4l_cleanup_tracks(params)
+        matches = []
+        delete_items = []
+        for track_info in tracks:
+            track = track_info["track"]
+            devices = list(getattr(track, "devices", []))
+            for index, device in enumerate(devices):
+                name = str(getattr(device, "name", ""))
+                if prefix and not name.startswith(prefix):
+                    continue
+                if name_contains and name_contains not in name.lower():
+                    continue
+                if role and not name.startswith("AgentM4L_%s_" % role):
+                    continue
+                item = {
+                    "track": track_info["name"],
+                    "track_path": track_info["path"],
+                    "device_index": index,
+                    "device_name": name,
+                    "class_name": self._device_class_name(device),
+                }
+                matches.append(item)
+                delete_items.append({"track": track, "index": index, "item": item})
+        deleted = []
+        if delete:
+            remaining = max_delete
+            by_track = {}
+            for entry in delete_items:
+                if max_delete > 0 and remaining <= 0:
+                    break
+                key = id(entry["track"])
+                by_track.setdefault(key, {"track": entry["track"], "entries": []})["entries"].append(entry)
+                if max_delete > 0:
+                    remaining -= 1
+            for group in by_track.values():
+                track = group["track"]
+                for entry in sorted(group["entries"], key=lambda value: value["index"], reverse=True):
+                    index = entry["index"]
+                    if hasattr(track, "delete_device"):
+                        track.delete_device(index)
+                    else:
+                        del getattr(track, "devices")[index]
+                    deleted.append(entry["item"])
+        return {
+            "delete": delete,
+            "matched_count": len(matches),
+            "deleted_count": len(deleted),
+            "matches": matches[:limit] if limit >= 0 else matches,
+            "matches_truncated": bool(limit >= 0 and len(matches) > limit),
+            "deleted": deleted[:limit] if limit >= 0 else deleted,
+            "deleted_truncated": bool(limit >= 0 and len(deleted) > limit),
+        }
+
+    def _agent_m4l_cleanup_tracks(self, params):
+        if params.get("target_track"):
+            track = self._resolve(params.get("target_track"))
+            return [{"name": getattr(track, "name", ""), "path": "", "track": track}]
+        if params.get("ref"):
+            track = self._resolve(params.get("ref"))
+            return [{"name": getattr(track, "name", ""), "path": "", "track": track}]
+        query = str(params.get("track_query") or "").lower()
+        song = self.song()
+        result = []
+        for index, track in enumerate(list(song.tracks)):
+            result.append({"name": getattr(track, "name", ""), "path": "live_set tracks %d" % index, "track": track})
+        for index, track in enumerate(list(song.return_tracks)):
+            result.append({"name": getattr(track, "name", ""), "path": "live_set return_tracks %d" % index, "track": track})
+        result.append({"name": getattr(song.master_track, "name", ""), "path": "live_set master_track", "track": song.master_track})
+        if query:
+            result = [item for item in result if query in str(item["name"]).lower()]
+        return result
+
     def _load_agent_m4l_device(self, target_track, device_name, role, params):
         errors = []
         if hasattr(target_track, "insert_device") and not params.get("prefer_browser_load"):

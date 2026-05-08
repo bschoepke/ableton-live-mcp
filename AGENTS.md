@@ -213,7 +213,7 @@ When `live_agent_m4l_device` does not need to build or resolve a Live track/devi
 
 For iterative generated M4L updates, reuse the installed role host. `live_agent_m4l_device` skips rebuilds by default for `set`, `status`, `clear`, and value-only calls; pass `build: true` only when creating/replacing the host AMXD.
 
-Generated M4L UI remains freeform: native, web, hybrid, Three.js, piano rolls, sequencers, and custom layouts are all allowed. Reliability still requires lifecycle discipline: reuse stable instance IDs and existing hosts during iteration, and clear or remove stale test devices/tracks before creating more web UI instances. Each `jweb`/`jbrowser` view can create renderer work in Max; if OS diagnostics show many `Max Helper (Renderer)` processes or high Live/Max renderer CPU, stop creating new web views and recover Live before continuing.
+Generated M4L UI remains freeform: native, web, hybrid, Three.js, piano rolls, sequencers, and custom layouts are all allowed. Reliability still requires lifecycle discipline: reuse stable instance IDs and existing hosts during iteration, and clear or remove stale test devices/tracks before creating more web UI instances. Use `live_agent_m4l_cleanup` without `delete` for a dry run; ask before rerunning it with `delete: true`. Each `jweb`/`jbrowser` view can create renderer work in Max; if OS diagnostics show many `Max Helper (Renderer)` processes or high Live/Max renderer CPU, stop creating new web views and recover Live before continuing.
 
 Hot reloads should preserve current values for matching generated parameter IDs. When changing a patch/spec, keep stable IDs for controls and controlled objects that should retain state; change IDs deliberately when the new design should reset a value.
 
