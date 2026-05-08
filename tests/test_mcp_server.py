@@ -1894,6 +1894,41 @@ def test_validate_can_check_remote_script_without_live(tmp_path, capsys):
     assert '"current": true' in current_output.out
 
 
+def test_validate_checks_agent_m4l_host_companion_js(tmp_path, monkeypatch, capsys):
+    source = tmp_path / "source" / "agent_m4l_host.js"
+    source.parent.mkdir()
+    source.write_text("current host\n", encoding="utf-8")
+    generated = tmp_path / "generated"
+    generated.mkdir()
+    (generated / "AgentM4L_audio_effect_Test.amxd").write_text("device", encoding="utf-8")
+    (generated / "agent_m4l_host.js").write_text("stale host\n", encoding="utf-8")
+    install = tmp_path / "install" / "audio"
+    install.mkdir(parents=True)
+    (install / "AgentM4L_audio_effect_Test.amxd").write_text("device", encoding="utf-8")
+
+    monkeypatch.setattr(validate.agent_m4l, "HOST_JS", source)
+    monkeypatch.setattr(validate.agent_m4l, "GENERATED_DIR", generated)
+    monkeypatch.setattr(validate.agent_m4l, "ROLE_PRESETS", {"audio_effect": {}})
+    monkeypatch.setattr(validate.agent_m4l, "install_folder", lambda _role: install)
+
+    status = validate.agent_m4l_host_status()
+    assert status["current"] is False
+    assert status["stale"] == [str(generated / "agent_m4l_host.js")]
+    assert status["missing"] == [str(install / "agent_m4l_host.js")]
+
+    install_remote_script("Ableton_Live_MCP", tmp_path / "remote")
+    assert validate_main(["--skip-live", "--target-dir", str(tmp_path / "remote")]) == 1
+    failed = capsys.readouterr()
+    assert "companion JS is missing or stale" in failed.err
+
+    (generated / "agent_m4l_host.js").write_text("current host\n", encoding="utf-8")
+    (install / "agent_m4l_host.js").write_text("current host\n", encoding="utf-8")
+    assert validate_main(["--skip-live", "--target-dir", str(tmp_path / "remote")]) == 0
+    passed = capsys.readouterr()
+    assert '"m4l_host"' in passed.out
+    assert '"current": true' in passed.out
+
+
 def test_validate_rejects_running_stale_remote_script(tmp_path, monkeypatch, capsys):
     missing = remote_script_status(target_dir=tmp_path)
     assert missing["installed"] is False
