@@ -2161,6 +2161,8 @@ def test_bridge_client_reuses_socket(monkeypatch):
 
     def connect(*_args, **_kwargs):
         sock = FakeSocket()
+        if len(created) == 1:
+            sock.responses = [b'{"jsonrpc":"2.0","id":3,"result":{"ok":true}}\n']
         created.append(sock)
         return sock
 
@@ -2194,6 +2196,8 @@ def test_bridge_client_expands_socket_timeout_for_long_live_request(monkeypatch)
 
     def connect(*_args, **_kwargs):
         sock = FakeSocket()
+        if len(created) == 1:
+            sock.responses = [b'{"jsonrpc":"2.0","id":3,"result":{"ok":true}}\n']
         created.append(sock)
         return sock
 
@@ -2300,6 +2304,129 @@ def test_bridge_client_keeps_bridge_status_timeout_short(monkeypatch):
 
     assert client.request("bridge_status", {"timeout": 2.0}) == {"ok": True}
     assert created[0].timeouts[-1] == 2.0
+
+
+def test_bridge_client_stall_cooldown_after_sent_timeout(monkeypatch):
+    created = []
+    now = [100.0]
+
+    class FakeSocket:
+        def __init__(self):
+            self.sent = []
+            self.responses = [socket.timeout("timed out")]
+
+        def settimeout(self, _timeout):
+            pass
+
+        def sendall(self, line):
+            self.sent.append(line)
+
+        def recv(self, _size):
+            response = self.responses.pop(0)
+            if isinstance(response, BaseException):
+                raise response
+            return response
+
+        def close(self):
+            pass
+
+    def connect(*_args, **_kwargs):
+        sock = FakeSocket()
+        if len(created) == 1:
+            sock.responses = [b'{"jsonrpc":"2.0","id":3,"result":{"ok":true}}\n']
+        created.append(sock)
+        return sock
+
+    monkeypatch.setattr("socket.create_connection", connect)
+    monkeypatch.setattr("bridge.time.monotonic", lambda: now[0])
+    client = AbletonBridgeClient(BridgeConfig(timeout=0.01))
+
+    with pytest.raises(AbletonBridgeError, match="client-side stall cooldown"):
+        client.request("transport", {"action": "play", "timeout": 0.01, "strict_timeout": True})
+    assert len(created) == 1
+
+    with pytest.raises(AbletonBridgeError, match="refusing to send 'ping'"):
+        client.request("ping")
+    assert len(created) == 1
+
+    assert client.request("bridge_status", {"timeout": 0.01}) == {"ok": True}
+    assert len(created) == 2
+
+
+def test_bridge_client_force_probe_bypasses_stall_cooldown(monkeypatch):
+    created = []
+    now = [100.0]
+
+    class FakeSocket:
+        def __init__(self):
+            self.responses = [socket.timeout("timed out")]
+
+        def settimeout(self, _timeout):
+            pass
+
+        def sendall(self, _line):
+            pass
+
+        def recv(self, _size):
+            response = self.responses.pop(0)
+            if isinstance(response, BaseException):
+                raise response
+            return response
+
+        def close(self):
+            pass
+
+    def connect(*_args, **_kwargs):
+        sock = FakeSocket()
+        if len(created) == 1:
+            sock.responses = [b'{"jsonrpc":"2.0","id":2,"result":{"ok":true}}\n']
+        created.append(sock)
+        return sock
+
+    monkeypatch.setattr("socket.create_connection", connect)
+    monkeypatch.setattr("bridge.time.monotonic", lambda: now[0])
+    client = AbletonBridgeClient(BridgeConfig(timeout=0.01))
+
+    with pytest.raises(AbletonBridgeError, match="client-side stall cooldown"):
+        client.request("transport", {"timeout": 0.01, "strict_timeout": True})
+    assert client.request("ping", {"force_main_thread_probe": True}) == {"ok": True}
+    assert len(created) == 2
+
+
+def test_bridge_client_marks_stall_when_remote_reports_main_thread_timeout(monkeypatch):
+    created = []
+    now = [100.0]
+
+    class FakeSocket:
+        def __init__(self):
+            self.responses = [b'{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Timed out waiting for Live main thread during batch after 3s"}}\n']
+
+        def settimeout(self, _timeout):
+            pass
+
+        def sendall(self, _line):
+            pass
+
+        def recv(self, _size):
+            return self.responses.pop(0)
+
+        def close(self):
+            pass
+
+    def connect(*_args, **_kwargs):
+        sock = FakeSocket()
+        created.append(sock)
+        return sock
+
+    monkeypatch.setattr("socket.create_connection", connect)
+    monkeypatch.setattr("bridge.time.monotonic", lambda: now[0])
+    client = AbletonBridgeClient(BridgeConfig(timeout=5.0))
+
+    with pytest.raises(AbletonBridgeError, match="Timed out waiting for Live main thread"):
+        client.request("batch")
+    with pytest.raises(AbletonBridgeError, match="refusing to send 'ping'"):
+        client.request("ping")
+    assert len(created) == 1
 
 
 def test_bridge_client_reconnects_before_remote_idle_timeout(monkeypatch):

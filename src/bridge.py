@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 DEFAULT_MAIN_THREAD_TIMEOUT = 30.0
+DEFAULT_CLIENT_STALL_COOLDOWN = 10.0
 NO_MAIN_THREAD_METHODS = {"bridge_status"}
 
 
@@ -50,6 +51,8 @@ class AbletonBridgeClient:
         self._sock: socket.socket | None = None
         self._lock = threading.Lock()
         self._last_used = 0.0
+        self._main_thread_stall_until = 0.0
+        self._main_thread_stall_method = ""
 
     def request(self, method: str, params: dict[str, Any] | None = None) -> Any:
         params = params or {}
@@ -60,16 +63,20 @@ class AbletonBridgeClient:
             "params": params,
         }
         with self._lock:
+            self._raise_if_client_stall(method, params)
             try:
                 response = self._send(payload)
             except _BridgeReadTimeout as exc:
+                self._mark_client_stall(method, params)
                 self.close()
                 raise AbletonBridgeError(self._timeout_message(method, params)) from exc
             except OSError:
                 self.close()
                 try:
+                    self._raise_if_client_stall(method, params)
                     response = self._send(payload)
                 except _BridgeReadTimeout as exc:
+                    self._mark_client_stall(method, params)
                     self.close()
                     raise AbletonBridgeError(self._timeout_message(method, params)) from exc
                 except OSError as exc:
@@ -80,8 +87,10 @@ class AbletonBridgeClient:
             self.close()
             with self._lock:
                 try:
+                    self._raise_if_client_stall(method, params)
                     response = self._send(payload)
                 except _BridgeReadTimeout as exc:
+                    self._mark_client_stall(method, params)
                     self.close()
                     raise AbletonBridgeError(self._timeout_message(method, params)) from exc
                 except OSError as exc:
@@ -92,7 +101,10 @@ class AbletonBridgeClient:
             err = message["error"]
             detail = err.get("data") if os.environ.get("ABLETON_MCP_TRACEBACK") else ""
             suffix = f": {detail}" if detail else ""
-            raise AbletonBridgeError(f"{err.get('code', -32000)} {err.get('message', 'Bridge error')}{suffix}")
+            error_message = f"{err.get('code', -32000)} {err.get('message', 'Bridge error')}{suffix}"
+            if self._is_main_thread_timeout_error(error_message):
+                self._mark_client_stall(method, params)
+            raise AbletonBridgeError(error_message)
         return message.get("result")
 
     def close(self) -> None:
@@ -130,8 +142,31 @@ class AbletonBridgeClient:
         request_timeout = self._request_timeout(method, params)
         return (
             f"Ableton bridge request {method!r} timed out after {request_timeout:g}s waiting for a response. "
-            "The request was sent, so it was not retried automatically."
+            "The request was sent, so it was not retried automatically. "
+            "Further Live API calls will fail fast during a short client-side stall cooldown."
         )
+
+    def _raise_if_client_stall(self, method: str, params: dict[str, Any]) -> None:
+        if method in NO_MAIN_THREAD_METHODS or params.get("force_main_thread_probe"):
+            return
+        remaining = self._main_thread_stall_until - time.monotonic()
+        if remaining <= 0:
+            return
+        previous = self._main_thread_stall_method or "unknown"
+        raise AbletonBridgeError(
+            "Ableton bridge client is in stall cooldown after %r timed out; refusing to send %r for %.1fs. "
+            "Use live_bridge_status for socket-thread health or recover/restart Live before sending mutations."
+            % (previous, method, remaining)
+        )
+
+    def _mark_client_stall(self, method: str, params: dict[str, Any]) -> None:
+        if method in NO_MAIN_THREAD_METHODS:
+            return
+        cooldown = float(params.get("stall_cooldown") or DEFAULT_CLIENT_STALL_COOLDOWN)
+        if cooldown <= 0:
+            return
+        self._main_thread_stall_until = max(self._main_thread_stall_until, time.monotonic() + cooldown)
+        self._main_thread_stall_method = method
 
     def _socket(self) -> socket.socket:
         if self._sock is not None and self.config.idle_timeout > 0:
@@ -151,6 +186,11 @@ class AbletonBridgeClient:
         if not isinstance(error, dict):
             return False
         return message.get("id") is None and str(error.get("message", "")).lower() == "timed out"
+
+    @staticmethod
+    def _is_main_thread_timeout_error(message: str) -> bool:
+        text = str(message).lower()
+        return "timed out waiting for live main thread" in text or "live main thread is in stall cooldown" in text
 
     @staticmethod
     def _read_line(sock: socket.socket, max_bytes: int = 8 * 1024 * 1024, deadline: float | None = None) -> bytes:
