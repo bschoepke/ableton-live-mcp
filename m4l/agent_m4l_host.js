@@ -143,6 +143,9 @@ function deferRawCommand(raw) {
     deferredRawCommands.push(String(raw || ""));
     while (deferredRawCommands.length > MAX_DEFERRED_RAW_COMMANDS) {
         deferredRawCommands.shift();
+        deferredCommandPoll = 1;
+        state.deferred_raw_commands_dropped = (state.deferred_raw_commands_dropped || 0) + 1;
+        state.deferred_raw_command_limit = MAX_DEFERRED_RAW_COMMANDS;
     }
     scheduleDeferredCommandTaskIfNeeded();
 }

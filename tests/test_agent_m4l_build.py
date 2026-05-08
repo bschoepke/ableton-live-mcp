@@ -256,6 +256,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "handleActivityWake(\"task\")" in source
     assert "function handleOsc(args)" in source
     assert "function msg_string(value)" in source
+    assert "deferred_raw_commands_dropped" in source
+    assert "deferred_raw_command_limit" in source
     assert "startLiveParameterObservers" in source
     assert "cancelLiveParameterObserverRefreshTasks" in source
     assert "handleLiveParameterChange" in source
