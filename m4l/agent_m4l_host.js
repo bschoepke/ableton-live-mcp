@@ -10,6 +10,7 @@ var lastCommandId = "";
 var currentCommandId = "";
 var pollTask = null;
 var webReadTask = null;
+var webReadTaskDueTime = 0;
 var dynamicObjects = [];
 var objectById = {};
 var objectSpecById = {};
@@ -839,13 +840,12 @@ function scheduleWebUiRead(obj, path, id, attempt, readMessage, fallbackPath) {
 }
 
 function scheduleWebReadTask(delay) {
-    if (!webReadTask) {
-        webReadTask = new Task(readPendingWebUis, this);
+    var dueTime = nowMs() + Math.max(1, Number(delay || 1));
+    if (webReadTaskDueTime && webReadTaskDueTime <= dueTime + 1) {
+        return;
     }
-    try {
-        webReadTask.cancel();
-    } catch (errCancel) {
-    }
+    webReadTaskDueTime = dueTime;
+    webReadTask = new Task(readPendingWebUis, this);
     webReadTask.schedule(Math.max(1, Number(delay || 1)));
 }
 
@@ -862,6 +862,7 @@ function scheduleNextPendingWebRead() {
 }
 
 function readPendingWebUis() {
+    webReadTaskDueTime = 0;
     var now = nowMs();
     var reads = [];
     var deferred = [];
