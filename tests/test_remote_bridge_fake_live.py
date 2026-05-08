@@ -1359,6 +1359,16 @@ def test_batch_and_id_resolution(monkeypatch):
     assert result[0]["result"]["properties"]["tempo"] == 120.0
 
 
+def test_ping_reports_running_remote_script_hash(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+
+    result = bridge._rpc_ping({})
+
+    assert result["ok"] is True
+    assert result["remote_script"]["path"].endswith("bridge.py")
+    assert len(result["remote_script"]["bridge_sha256"]) == 64
+
+
 def test_batch_inherits_response_controls(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     result = bridge._rpc_batch({

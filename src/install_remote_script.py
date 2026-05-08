@@ -72,6 +72,8 @@ def remote_script_status(name: str = DEFAULT_REMOTE_SCRIPT, target_dir: Path | N
         "installed": target.is_dir(),
         "current": current,
         "files_checked": len(source_hashes),
+        "source_bridge_sha256": source_hashes.get("bridge.py"),
+        "target_bridge_sha256": target_hashes.get("bridge.py"),
         "missing": missing,
         "mismatched": mismatched,
     }

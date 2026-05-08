@@ -38,8 +38,29 @@ def main(argv: list[str] | None = None) -> int:
     except AbletonBridgeError as exc:
         print(f"Ableton Live MCP validation failed: {exc}", file=sys.stderr)
         return 1
+    runtime_ok, runtime_reason = _check_running_remote_script(results)
+    results["remote_script"]["runtime_current"] = runtime_ok
+    if runtime_reason:
+        results["remote_script"]["runtime_mismatch"] = runtime_reason
+    if not runtime_ok and not args.allow_stale_remote_script:
+        print(json.dumps(results, indent=2, sort_keys=True))
+        print("Ableton Live MCP validation failed: running Remote Script is stale or unverified", file=sys.stderr)
+        return 1
     print(json.dumps(results, indent=2, sort_keys=True))
     return 0
+
+
+def _check_running_remote_script(results: dict) -> tuple[bool, str]:
+    expected = (results.get("remote_script") or {}).get("source_bridge_sha256")
+    runtime = ((results.get("ping") or {}).get("remote_script") or {})
+    actual = runtime.get("bridge_sha256")
+    if not expected:
+        return False, "missing_source_bridge_hash"
+    if not actual:
+        return False, "missing_runtime_bridge_hash"
+    if actual != expected:
+        return False, "bridge_hash_mismatch"
+    return True, ""
 
 
 if __name__ == "__main__":

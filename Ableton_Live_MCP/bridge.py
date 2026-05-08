@@ -198,7 +198,17 @@ class AbletonLiveMCP(ControlSurface):
     def _rpc_ping(self, _params):
         app = Live.Application.get_application()
         version = app.get_version_string() if hasattr(app, "get_version_string") else "unknown"
-        return {"ok": True, "version": version, "major": self._major_version(version)}
+        return {"ok": True, "version": version, "major": self._major_version(version), "remote_script": self._remote_script_info()}
+
+    def _remote_script_info(self):
+        path = globals().get("__file__", "")
+        info = {"path": str(path)}
+        try:
+            with open(path, "rb") as handle:
+                info["bridge_sha256"] = hashlib.sha256(handle.read()).hexdigest()
+        except Exception as exc:
+            info["hash_error"] = str(exc)
+        return info
 
     def _rpc_agent_audio_tap(self, params):
         command = params.get("command")

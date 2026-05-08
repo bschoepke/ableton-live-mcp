@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import validate
 from benchmark import run_benchmark
 from bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig, effective_main_thread_timeout
 from install_remote_script import install_remote_script, remote_script_root, remote_script_status
@@ -1277,6 +1278,8 @@ def test_remote_script_status_detects_stale_install(tmp_path):
     current = remote_script_status(target_dir=tmp_path)
     assert current["installed"] is True
     assert current["current"] is True
+    assert len(current["source_bridge_sha256"]) == 64
+    assert current["target_bridge_sha256"] == current["source_bridge_sha256"]
     assert current["missing"] == []
     assert current["mismatched"] == []
 
@@ -1285,6 +1288,7 @@ def test_remote_script_status_detects_stale_install(tmp_path):
     assert stale["installed"] is True
     assert stale["current"] is False
     assert stale["mismatched"] == ["bridge.py"]
+    assert stale["target_bridge_sha256"] != stale["source_bridge_sha256"]
 
 
 def test_validate_can_check_remote_script_without_live(tmp_path, capsys):
@@ -1297,6 +1301,26 @@ def test_validate_can_check_remote_script_without_live(tmp_path, capsys):
     assert validate_main(["--skip-live", "--target-dir", str(tmp_path)]) == 0
     current_output = capsys.readouterr()
     assert '"current": true' in current_output.out
+
+
+def test_validate_rejects_running_stale_remote_script(tmp_path, monkeypatch, capsys):
+    missing = remote_script_status(target_dir=tmp_path)
+    assert missing["installed"] is False
+    install_remote_script("Ableton_Live_MCP", tmp_path)
+
+    class FakeClient:
+        def request(self, method, _params):
+            if method == "ping":
+                return {"ok": True, "remote_script": {"bridge_sha256": "0" * 64}}
+            return {"ok": True}
+
+    monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
+
+    assert validate_main(["--target-dir", str(tmp_path)]) == 1
+    output = capsys.readouterr()
+    assert "running Remote Script is stale" in output.err
+    assert '"runtime_current": false' in output.out
+    assert '"runtime_mismatch": "bridge_hash_mismatch"' in output.out
 
 
 def test_remote_script_resources_available_from_source_checkout():
