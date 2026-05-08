@@ -139,6 +139,33 @@ def test_postprocess_capture_crops_and_downscales(tmp_path):
     assert output.stat().st_size > 0
 
 
+def test_capture_blank_result_includes_validation_blocker(monkeypatch, tmp_path):
+    Image = pytest.importorskip("PIL.Image")
+    monkeypatch.setattr(visual_capture, "list_platform_windows", lambda: [
+        WindowInfo(
+            platform="Darwin",
+            id=100,
+            title="vibe-m4l",
+            owner="Live",
+            process_path="/Applications/Ableton Live Suite.app/Contents/MacOS/Live",
+            bundle_id="com.ableton.live",
+            bounds={"x": 0, "y": 33, "width": 1200, "height": 800},
+        )
+    ])
+
+    def fake_capture(_window, output, _backend):
+        Image.new("RGB", (200, 100), "black").save(output)
+        return "fake"
+
+    monkeypatch.setattr(visual_capture, "capture_window", fake_capture)
+
+    result = visual_capture.capture_ableton_window(output_path=tmp_path / "live.png", max_width=100)
+
+    assert result["warning"] == "blank_capture"
+    assert result["validation_blocker"] == "blank_capture_invalid"
+    assert result["next_action"] == "unlock_or_wake_display_before_visual_e2e"
+
+
 def test_image_content_stats_detects_nonblank_capture():
     Image = pytest.importorskip("PIL.Image")
     image = Image.new("RGB", (40, 20), "black")

@@ -97,13 +97,23 @@ def capture_ableton_window(
     output.parent.mkdir(parents=True, exist_ok=True)
     backend_used = capture_window(window, output, backend)
     postprocess = postprocess_capture(output, region, crop, bottom_fraction, max_width, max_height)
-    return {
+    result = {
         "ok": True,
         "path": str(output),
         "backend": backend_used,
         "window": window_result(window),
         "postprocess": postprocess,
-        **({"warning": "blank_capture"} if postprocess.get("content", {}).get("blank") else {}),
+    }
+    if postprocess.get("content", {}).get("blank"):
+        result.update(blank_capture_guidance())
+    return result
+
+
+def blank_capture_guidance() -> dict[str, str]:
+    return {
+        "warning": "blank_capture",
+        "validation_blocker": "blank_capture_invalid",
+        "next_action": "unlock_or_wake_display_before_visual_e2e",
     }
 
 
