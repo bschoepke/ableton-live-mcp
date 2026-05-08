@@ -122,6 +122,9 @@ def test_initialize_includes_general_model_instructions():
     assert "device-detail crop" in instructions
     assert "blank_capture invalid" in instructions
     assert "locked/asleep display blocks capture/e2e" in instructions
+    assert "Sizing: device_width/openrect tight to authored UI/webview" in instructions
+    assert "hidden patching_rect inside width" in instructions
+    assert "shrink via new host/fresh reload + nonblank capture" in instructions
     assert "FFT/spectrum=real telemetry/no fake" in instructions
     assert "audio-reactive web: prove signal+visual delta" in instructions
     assert "Smooth clicks" in instructions
