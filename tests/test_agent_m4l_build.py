@@ -171,7 +171,9 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "WEBUI_READ_DELAYS" in source
     assert "web_read_pending" in source
     assert "webui_read_exhausted" in source
-    assert 'reads[i].obj.message(reads[i].read_message || "read", reads[i].path)' in source
+    assert "webUiReadRequest" in source
+    assert '"readfile" && read.fallback_path' in source
+    assert "web_\" + key + \"_read_message" in source
     assert "handleTaggedWebUiMessage" in source
     assert "webUiIdByTag" in source
     assert "markWebUiLoaded" in source

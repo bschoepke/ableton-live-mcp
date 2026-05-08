@@ -624,6 +624,7 @@ function createWebUi(webui, index, byId) {
     var rect = webui.presentation_rect || [0, 0, 320, 160];
     var path = webui.html_path || webui.path || webui.url || webui.html_url;
     var readMessage = webui.read_message || webui.readMessage || ((webui.html_path || webui.path) ? "readfile" : "read");
+    var fallbackPath = webui.url || webui.html_url || "";
     if (!path) {
         return;
     }
@@ -677,7 +678,7 @@ function createWebUi(webui, index, byId) {
             }
         }
     }
-    scheduleWebUiRead(obj, path, id, 0, readMessage);
+    scheduleWebUiRead(obj, path, id, 0, readMessage, fallbackPath);
 }
 
 function reusableWebIdsForSpec(spec) {
@@ -730,9 +731,9 @@ function containsObject(list, obj) {
     return false;
 }
 
-function scheduleWebUiRead(obj, path, id, attempt, readMessage) {
+function scheduleWebUiRead(obj, path, id, attempt, readMessage, fallbackPath) {
     attempt = Number(attempt || 0);
-    pendingWebUiReads.push({ obj: obj, path: String(path), id: String(id), attempt: attempt, read_message: String(readMessage || "read") });
+    pendingWebUiReads.push({ obj: obj, path: String(path), id: String(id), attempt: attempt, read_message: String(readMessage || "read"), fallback_path: String(fallbackPath || "") });
     state.web_read_scheduled = (state.web_read_scheduled || 0) + 1;
     state.web_read_pending = pendingWebUiReads.length;
     if (attempt === 0) {
@@ -762,17 +763,26 @@ function readPendingWebUis() {
         state.web_read_attempts = (state.web_read_attempts || 0) + 1;
         state["web_" + key + "_read_attempts"] = (state["web_" + key + "_read_attempts"] || 0) + 1;
         try {
-            reads[i].obj.message(reads[i].read_message || "read", reads[i].path);
+            var request = webUiReadRequest(reads[i]);
+            state["web_" + key + "_read_message"] = request.message;
+            reads[i].obj.message(request.message, request.path);
         } catch (err) {
             report("error", { reason: "webui_load_failed", id: id, detail: String(err) });
         }
         if (!loadedWebUis[id] && reads[i].attempt + 1 < WEBUI_READ_DELAYS.length) {
-            scheduleWebUiRead(reads[i].obj, reads[i].path, id, reads[i].attempt + 1, reads[i].read_message);
+            scheduleWebUiRead(reads[i].obj, reads[i].path, id, reads[i].attempt + 1, reads[i].read_message, reads[i].fallback_path);
         } else if (!loadedWebUis[id]) {
             state["web_" + key + "_read_exhausted"] = 1;
             report("error", { reason: "webui_read_exhausted", id: id, attempts: reads[i].attempt + 1 });
         }
     }
+}
+
+function webUiReadRequest(read) {
+    if (read.read_message === "readfile" && read.fallback_path && read.attempt > 0 && read.attempt % 2 === 1) {
+        return { message: "read", path: read.fallback_path };
+    }
+    return { message: read.read_message || "read", path: read.path };
 }
 
 function webUiReadDelay(attempt) {
