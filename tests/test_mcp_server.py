@@ -1987,7 +1987,11 @@ def test_benchmark_skips_optional_failures():
     assert skipped[0]["name"] == "device_parameter_filter"
 
 
-def test_prompt_audit_runs_expected_bridge_methods():
+def test_prompt_audit_runs_expected_bridge_methods(monkeypatch, tmp_path):
+    import agent_m4l
+
+    monkeypatch.setattr(agent_m4l, "WEBUI_DIR", tmp_path / "webui")
+
     class PromptBridge:
         def __init__(self):
             self.calls = []
@@ -2034,9 +2038,16 @@ def test_prompt_audit_runs_expected_bridge_methods():
     assert {call["role"] for call in agent_m4l_calls[:3]} == {"audio_effect", "midi_effect", "instrument"}
     assert all(call["load"] is False and call["udp"] is False for call in agent_m4l_calls)
     assert agent_m4l_calls[0]["patch"]["webuis"][0]["object"] == "jbrowser~"
+    assert agent_m4l_calls[0]["patch"]["webuis"][0]["html_path"].endswith("index.html")
+    assert "html" not in agent_m4l_calls[0]["patch"]["webuis"][0]
+    assert agent_m4l_calls[0]["patch"]["webuis"][0]["assets"]["relative_paths"] == ["scene/field.json"]
     assert agent_m4l_calls[0]["patch"]["objects"][3]["text"].startswith("pictslider")
     assert agent_m4l_calls[1]["patch"]["objects"][1]["text"] == "kslider"
     assert agent_m4l_calls[2]["patch"]["webui"]["id"] == "glass_scene"
+    assert agent_m4l_calls[2]["patch"]["webui"]["js_path"].endswith("device.js")
     assert agent_m4l_calls[3]["command"] == "set"
     assert agent_m4l_calls[3]["values"][0]["value"] == [1, 0, 1, 1, 0, 1, 0, 1]
     assert agent_m4l_calls[3]["values"][1]["value"]["pressure"] == 0.44
+    js = Path(agent_m4l_calls[0]["patch"]["webuis"][0]["js_path"]).read_text(encoding="utf-8")
+    assert "agentm4lstate" in js
+    assert "set_many_silent" in js

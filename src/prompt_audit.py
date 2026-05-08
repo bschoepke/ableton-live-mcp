@@ -13,6 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import agent_m4l
 from bridge import AbletonBridgeClient, AbletonBridgeError
 from debug import require_debug_cli
 
@@ -248,13 +249,17 @@ def _creative_audio_effect_patch() -> dict[str, Any]:
             {"id": "level_value", "text": "flonum", "presentation_rect": [308, 46, 72, 22]},
         ],
         "webuis": [
-            {
+            _prompt_audit_webui("Prompt Audit Reactive Field", {
                 "id": "reactive_scene",
                 "object": "jbrowser~",
-                "url": "about:blank",
+                "title": "Reactive Field",
                 "presentation_rect": [420, 10, 540, 220],
                 "reuse": True,
-            }
+                "html": _WEBUI_CANVAS_HTML,
+                "css": _WEBUI_CANVAS_CSS,
+                "js": _WEBUI_REACTIVE_FIELD_JS,
+                "assets": {"scene/field.json": "{\"kind\":\"reactive-field\",\"version\":1}"},
+            })
         ],
         "ui_bindings": [
             {"source": "drive_ui", "target": "drive_amount", "source_min": 0, "source_max": 127, "target_min": 0.1, "target_max": 1.5},
@@ -289,11 +294,16 @@ def _creative_midi_effect_patch() -> dict[str, Any]:
             {"id": "input_velocity", "text": "number", "patching_rect": [290, 290, 60, 22]},
         ],
         "webui": {
-            "id": "piano_roll",
-            "object": "jbrowser~",
-            "url": "about:blank",
-            "presentation_rect": [452, 10, 292, 182],
-            "reuse": True,
+            **_prompt_audit_webui("Prompt Audit Matrix Sequencer", {
+                "id": "piano_roll",
+                "object": "jbrowser~",
+                "title": "Piano Roll",
+                "presentation_rect": [452, 10, 292, 182],
+                "reuse": True,
+                "html": _WEBUI_CANVAS_HTML,
+                "css": _WEBUI_CANVAS_CSS,
+                "js": _WEBUI_PIANO_ROLL_JS,
+            }),
         },
         "ui_bindings": [
             {"source": "transpose_ui", "target": "transpose_value", "source_min": -24, "source_max": 24, "target_min": -24, "target_max": 24},
@@ -334,11 +344,16 @@ def _creative_instrument_patch() -> dict[str, Any]:
             {"id": "out_r", "text": "send~ %s" % buses["right"], "patching_rect": [480, 350, 150, 22]},
         ],
         "webui": {
-            "id": "glass_scene",
-            "object": "jbrowser~",
-            "url": "about:blank",
-            "presentation_rect": [648, 10, 232, 210],
-            "reuse": True,
+            **_prompt_audit_webui("Prompt Audit Piano Synth", {
+                "id": "glass_scene",
+                "object": "jbrowser~",
+                "title": "Glass Scene",
+                "presentation_rect": [648, 10, 232, 210],
+                "reuse": True,
+                "html": _WEBUI_CANVAS_HTML,
+                "css": _WEBUI_CANVAS_CSS,
+                "js": _WEBUI_GLASS_SCENE_JS,
+            }),
         },
         "ui_bindings": [
             {"source": "tone_ui", "target": "tone_value", "source_min": 0, "source_max": 127, "target_min": 0, "target_max": 1},
@@ -356,6 +371,167 @@ def _creative_instrument_patch() -> dict[str, Any]:
             {"from": "amp", "outlet": 0, "to": "out_r", "inlet": 0},
         ],
     }
+
+
+def _prompt_audit_webui(instance_id: str, source: dict[str, Any]) -> dict[str, Any]:
+    rendered = agent_m4l.write_webui("%s_%s" % (instance_id, source["id"]), source)
+    result = {
+        key: source[key]
+        for key in ("id", "object", "presentation_rect", "patching_rect", "reuse", "read_message", "readMessage")
+        if key in source
+    }
+    result.update({key: rendered[key] for key in ("html_path", "css_path", "js_path", "url") if key in rendered})
+    assets = rendered.get("assets") or []
+    if assets:
+        result["assets"] = {
+            "count": len(assets),
+            "bytes": sum(int(item.get("bytes") or 0) for item in assets if isinstance(item, dict)),
+            "relative_paths": [str(item["relative_path"]) for item in assets if isinstance(item, dict) and item.get("relative_path")][:8],
+        }
+    return result
+
+
+_WEBUI_CANVAS_HTML = """<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent M4L Panel</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <script src="device.js"></script>
+</body>
+</html>
+"""
+
+
+_WEBUI_CANVAS_CSS = """
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #08090d; color: #edf2ff; }
+canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
+"""
+
+
+_WEBUI_PANEL_PREAMBLE_JS = """
+const outlet = (...args) => {
+  if (window.agentM4L && window.agentM4L.outlet) window.agentM4L.outlet(...args);
+  else if (window.max && window.max.outlet) window.max.outlet(...args);
+};
+const canvas = document.getElementById("scene");
+const ctx = canvas.getContext("2d");
+let state = {};
+function resize() {
+  const ratio = Math.max(1, window.devicePixelRatio || 1);
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+  canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+}
+function receiveState(next) {
+  state = next || {};
+}
+window.addEventListener("resize", resize);
+window.addEventListener("agentm4lstate", (event) => receiveState(event.detail || {}));
+window.agentM4L = window.agentM4L || {};
+window.agentM4L.onstate = receiveState;
+resize();
+"""
+
+
+_WEBUI_REACTIVE_FIELD_JS = _WEBUI_PANEL_PREAMBLE_JS + """
+let pointer = { x: 0.5, y: 0.5, pressure: 0 };
+function sendGesture(event) {
+  const rect = canvas.getBoundingClientRect();
+  pointer = {
+    x: Math.max(0, Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width))),
+    y: Math.max(0, Math.min(1, (event.clientY - rect.top) / Math.max(1, rect.height))),
+    pressure: event.pressure || 0.5
+  };
+  const pattern = Array.from({ length: 8 }, (_, i) => ((i / 7) < pointer.x || (i % 3) === 0) ? 1 : 0);
+  outlet("set_many_silent", JSON.stringify({ values: [
+    { id: "gesture_payload", value: pointer },
+    { id: "step_pattern", value: pattern }
+  ] }));
+}
+canvas.addEventListener("pointermove", sendGesture);
+function draw(time) {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const level = Number(state.level_meter || state.level_value || 0);
+  const drive = Number(state.drive_amount || 0.4);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#08090d";
+  ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 36; i++) {
+    const a = i / 36 * Math.PI * 2 + time * 0.0004;
+    const r = (0.15 + level * 0.7 + i / 80) * Math.min(w, h);
+    const x = w * pointer.x + Math.cos(a) * r;
+    const y = h * pointer.y + Math.sin(a * 1.7) * r * 0.55;
+    ctx.fillStyle = `hsla(${180 + i * 5 + drive * 90}, 82%, ${45 + level * 35}%, 0.72)`;
+    ctx.beginPath();
+    ctx.arc(x, y, 3 + level * 18, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  requestAnimationFrame(draw);
+}
+outlet("web_ready", "reactive_scene");
+requestAnimationFrame(draw);
+"""
+
+
+_WEBUI_PIANO_ROLL_JS = _WEBUI_PANEL_PREAMBLE_JS + """
+function draw() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const pitch = Number(state.input_pitch || 60);
+  const transpose = Number(state.transpose_value || 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#10131a";
+  ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 16; i++) {
+    const active = (i + Math.round(transpose)) % 5 === 0;
+    ctx.fillStyle = active ? "#9cffd8" : "#202735";
+    ctx.fillRect(i * w / 16 + 1, 0, w / 16 - 2, h);
+  }
+  ctx.fillStyle = "#f8f4b8";
+  const y = h - ((pitch - 36) / 48) * h;
+  ctx.fillRect(0, Math.max(0, Math.min(h - 4, y)), w, 4);
+  requestAnimationFrame(draw);
+}
+canvas.addEventListener("pointerdown", (event) => {
+  const rect = canvas.getBoundingClientRect();
+  const value = Math.round(((event.clientX - rect.left) / Math.max(1, rect.width)) * 48 - 24);
+  outlet("set_silent", "transpose_value", value);
+});
+outlet("web_ready", "piano_roll");
+requestAnimationFrame(draw);
+"""
+
+
+_WEBUI_GLASS_SCENE_JS = _WEBUI_PANEL_PREAMBLE_JS + """
+function draw(time) {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const tone = Number(state.tone_value || 0.5);
+  ctx.clearRect(0, 0, w, h);
+  const gradient = ctx.createLinearGradient(0, 0, w, h);
+  gradient.addColorStop(0, "#071018");
+  gradient.addColorStop(1, "#25182f");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 10; i++) {
+    const x = (i + 0.5) * w / 10;
+    const y = h * (0.5 + 0.25 * Math.sin(time * 0.001 + i + tone * 4));
+    ctx.strokeStyle = `hsla(${250 + i * 11}, 90%, 75%, 0.72)`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, h);
+    ctx.lineTo(x + Math.sin(i) * 12, y);
+    ctx.stroke();
+  }
+  requestAnimationFrame(draw);
+}
+outlet("web_ready", "glass_scene");
+requestAnimationFrame(draw);
+"""
 
 
 def _scenario_plugin_discovery(client: AbletonBridgeClient) -> dict[str, Any]:
