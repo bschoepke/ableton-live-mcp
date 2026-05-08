@@ -77,7 +77,7 @@ def test_initialize_includes_general_model_instructions():
     server = make_server(FakeBridge())
     response = server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
     instructions = response["result"]["instructions"]
-    assert "review AGENTS.md" in instructions
+    assert "review AGENTS.md as needed" in instructions
     assert "devices/plugins unless asked" in instructions
     assert "roots:['plugins']" in instructions
     assert "find_similar_sounds requires Live 12+" in instructions
@@ -1962,7 +1962,7 @@ def test_tool_list_stays_compact():
     server = make_server(FakeBridge())
     response = server.handle({"jsonrpc": "2.0", "id": 7, "method": "tools/list"})
     payload = json.dumps(response, separators=(",", ":"))
-    assert len(payload) < 17500
+    assert len(payload) < 17000
     live_eval = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_eval")
     assert "live_exec" in live_eval["description"]
     assert "duplicate session clips" not in live_eval["description"].lower()

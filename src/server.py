@@ -34,7 +34,7 @@ AGENT_M4L_STATIC_OBJECTS_BY_ROLE = {
 }
 AGENT_M4L_RESERVED_IDS = {"js", "script", "status", "udp", "out", "poll-metro", "command-trigger"}
 ABLETON_MCP_INSTRUCTIONS = (
-    "General Live bridge; review AGENTS.md tips. "
+    "General Live bridge; review AGENTS.md as needed. "
     "Prefer installed Packs/user assets/samples/presets/devices/plugins unless asked; roots:['plugins']. "
     "Sets: live_set_summary first; expected_set_signature for destructive edits. "
     "Compact live_exec/live_batch; limit props/children/strings. "
@@ -79,7 +79,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "additionalProperties": False,
     }
 
-    timeout_control = {"timeout": {"type": "number", "description": "Wait seconds."}}
+    timeout_control = {"timeout": {"type": "number"}}
     server.add_tool(Tool("live_ping", "Bridge health/version.", schema(timeout_control), forward("ping")))
     server.add_tool(Tool("live_bridge_status", "Socket-thread status; no Live API/main-thread scheduling.", schema(timeout_control), forward("bridge_status")))
     response_controls = {
@@ -87,7 +87,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "max_items": {"type": "integer"},
         "max_depth": {"type": "integer"},
         "max_string_length": {"type": "integer"},
-        "timeout": {"type": "number", "description": "Wait seconds."},
+        "timeout": {"type": "number"},
     }
     mutation_controls = {
         "timeout": response_controls["timeout"],
