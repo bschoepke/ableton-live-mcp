@@ -333,6 +333,20 @@ def test_agent_audio_tap_tool_accepts_stop_command_without_path():
     assert response["result"]["structuredContent"]["method"] == "agent_audio_tap"
 
 
+def test_agent_audio_tap_tool_rejects_unknown_command_before_bridge():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 323,
+        "method": "tools/call",
+        "params": {"name": "live_agent_audio_tap", "arguments": {"command": "pause"}},
+    })
+
+    assert response["error"]["message"] == "arguments.command must be one of: open, start, stop, status"
+    assert bridge.calls == []
+
+
 def test_agent_audio_tap_setup_and_transport_tools_forward_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)

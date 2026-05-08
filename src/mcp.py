@@ -100,6 +100,8 @@ def _validate(value: Any, schema: Json, path: str) -> None:
     expected = schema.get("type")
     if expected:
         _validate_type(value, expected, path)
+    if "enum" in schema and value not in schema["enum"]:
+        raise ValueError("%s must be one of: %s" % (path, ", ".join(map(str, schema["enum"]))))
     if "minimum" in schema and value < schema["minimum"]:
         raise ValueError("%s must be >= %s" % (path, schema["minimum"]))
     if expected == "object":
