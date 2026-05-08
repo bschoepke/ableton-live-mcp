@@ -14,6 +14,9 @@ var dynamicObjects = [];
 var objectById = {};
 var objectSpecById = {};
 var webObjects = [];
+var webObjectById = {};
+var webRouterById = {};
+var webObjectNameById = {};
 var webUiIdByTag = {};
 var loadedWebUis = {};
 var state = {};
@@ -472,7 +475,7 @@ function applySpec(spec) {
     }
     var previousState = cloneObject(state);
     configureDeviceBounds(spec);
-    clearDynamic();
+    clearDynamic(reusableWebIdsForSpec(spec));
     var byId = seedStaticObjects();
     createWebUis(spec.webuis || spec.webui, byId);
     nextGeneratedLiveParameterIndex = 2;
@@ -628,7 +631,8 @@ function createWebUi(webui, index, byId) {
     var objectName = normalizeWebObject(webui.object || "jweb~");
     var args = webObjectArgs(webui, objectName);
     var patchRect = webui.patching_rect || rect;
-    var obj = createNamedDefault(safeScriptName(id), Number(patchRect[0]), Number(patchRect[1]), args);
+    var existing = reusableWebObject(id, objectName, webui);
+    var obj = existing || createNamedDefault(safeScriptName(id), Number(patchRect[0]), Number(patchRect[1]), args);
     if (!obj) {
         return;
     }
@@ -639,26 +643,29 @@ function createWebUi(webui, index, byId) {
         patching_rect: patchRect,
         box_attrs: webui.box_attrs || webui.boxAttrs || {}
     });
-    dynamicObjects.push(obj);
-    webObjects.push(obj);
+    rememberDynamicObject(obj);
+    rememberWebObject(id, objectName, obj);
     objectById[id] = obj;
     objectSpecById[id] = webui;
     byId[id] = obj;
     var tag = "__webui_" + safeScriptName(id);
     webUiIdByTag[tag] = id;
-    var router = createNamedDefault(safeScriptName(tag), Number(patchRect[0]), Number(patchRect[1]) + 30, ["prepend", tag]);
+    var router = webRouterById[id] || createNamedDefault(safeScriptName(tag), Number(patchRect[0]), Number(patchRect[1]) + 30, ["prepend", tag]);
     if (router) {
-        dynamicObjects.push(router);
+        webRouterById[id] = router;
+        rememberDynamicObject(router);
     }
-    try {
-        if (router) {
-            this.patcher.connect(obj, webMessageOutlet(objectName), router, 0);
-            this.patcher.connect(router, 0, this.box, 0);
-        } else {
-            this.patcher.connect(obj, webMessageOutlet(objectName), this.box, 0);
+    if (!existing) {
+        try {
+            if (router) {
+                this.patcher.connect(obj, webMessageOutlet(objectName), router, 0);
+                this.patcher.connect(router, 0, this.box, 0);
+            } else {
+                this.patcher.connect(obj, webMessageOutlet(objectName), this.box, 0);
+            }
+        } catch (err) {
+            lastConnectionErrors.push({ from: id, to: "js", outlet: webMessageOutlet(objectName), inlet: 0, reason: String(err) });
         }
-    } catch (err) {
-        lastConnectionErrors.push({ from: id, to: "js", outlet: webMessageOutlet(objectName), inlet: 0, reason: String(err) });
     }
     if (webui.audio_out) {
         var plugout = getNamed("plugout");
@@ -671,6 +678,56 @@ function createWebUi(webui, index, byId) {
         }
     }
     scheduleWebUiRead(obj, path, id, 0, readMessage);
+}
+
+function reusableWebIdsForSpec(spec) {
+    var preserve = {};
+    var list = webuiList(spec.webuis || spec.webui);
+    for (var i = 0; i < list.length; i++) {
+        var webui = list[i] || {};
+        var id = String(webui.id || (i ? "webui_" + i : "webui"));
+        var objectName = normalizeWebObject(webui.object || "jweb~");
+        if (webui.reuse === false) {
+            continue;
+        }
+        if (webObjectById[id] && webObjectNameById[id] === objectName) {
+            preserve[id] = 1;
+        }
+    }
+    return preserve;
+}
+
+function reusableWebObject(id, objectName, webui) {
+    if (webui.reuse === false) {
+        return null;
+    }
+    if (webObjectNameById[id] !== objectName) {
+        return null;
+    }
+    return webObjectById[id] || null;
+}
+
+function rememberWebObject(id, objectName, obj) {
+    webObjectById[id] = obj;
+    webObjectNameById[id] = objectName;
+    if (!containsObject(webObjects, obj)) {
+        webObjects.push(obj);
+    }
+}
+
+function rememberDynamicObject(obj) {
+    if (obj && !containsObject(dynamicObjects, obj)) {
+        dynamicObjects.push(obj);
+    }
+}
+
+function containsObject(list, obj) {
+    for (var i = 0; i < list.length; i++) {
+        if (list[i] === obj) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function scheduleWebUiRead(obj, path, id, attempt, readMessage) {
@@ -1447,7 +1504,27 @@ function pushWebState() {
     }
 }
 
-function clearDynamic() {
+function clearDynamic(preserveWebIds) {
+    preserveWebIds = preserveWebIds || {};
+    var keepDynamicObjects = [];
+    var keepWebObjectById = {};
+    var keepWebRouterById = {};
+    var keepWebObjectNameById = {};
+    var preservedObjects = [];
+    for (var preserveId in preserveWebIds) {
+        if (!preserveWebIds.hasOwnProperty(preserveId)) {
+            continue;
+        }
+        if (webObjectById[preserveId]) {
+            keepWebObjectById[preserveId] = webObjectById[preserveId];
+            keepWebObjectNameById[preserveId] = webObjectNameById[preserveId];
+            preservedObjects.push(webObjectById[preserveId]);
+        }
+        if (webRouterById[preserveId]) {
+            keepWebRouterById[preserveId] = webRouterById[preserveId];
+            preservedObjects.push(webRouterById[preserveId]);
+        }
+    }
     if (webReadTask) {
         try {
             webReadTask.cancel();
@@ -1456,15 +1533,22 @@ function clearDynamic() {
     }
     pendingWebUiReads = [];
     for (var i = dynamicObjects.length - 1; i >= 0; i--) {
+        if (containsObject(preservedObjects, dynamicObjects[i])) {
+            keepDynamicObjects.unshift(dynamicObjects[i]);
+            continue;
+        }
         try {
             this.patcher.remove(dynamicObjects[i]);
         } catch (err) {
         }
     }
-    dynamicObjects = [];
+    dynamicObjects = keepDynamicObjects;
     objectById = {};
     objectSpecById = {};
     webObjects = [];
+    webObjectById = keepWebObjectById;
+    webRouterById = keepWebRouterById;
+    webObjectNameById = keepWebObjectNameById;
     webUiIdByTag = {};
     loadedWebUis = {};
     state = {};

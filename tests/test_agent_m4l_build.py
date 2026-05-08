@@ -225,6 +225,13 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "reapplyStateValues" in source
     assert "restored_state" in source
     assert "webObjects[i].message(\"state\"" in source
+    assert "reusableWebIdsForSpec" in source
+    assert "reusableWebObject" in source
+    assert "rememberWebObject" in source
+    assert "webObjectById" in source
+    assert "webRouterById" in source
+    assert "webObjectNameById" in source
+    assert "webui.reuse === false" in source
     assert "command.command === \"set\"" in source
     assert "applyValues" in source
     assert "set_silent" in source
