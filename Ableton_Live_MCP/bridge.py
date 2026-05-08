@@ -846,6 +846,8 @@ class AbletonLiveMCP(ControlSurface):
 
     def _rpc_clip_notes(self, params):
         clip = self._resolve(params.get("ref"))
+        if not hasattr(clip, "get_all_notes_extended"):
+            raise RuntimeError("clip_notes requires get_all_notes_extended; refusing legacy note API")
         limit = int(params.get("limit") if params.get("limit") is not None else 512)
         start = params.get("start_time")
         end = params.get("end_time")
@@ -861,6 +863,7 @@ class AbletonLiveMCP(ControlSurface):
             truncated = True
         return {
             "clip": self._clip_summary(clip, None),
+            "note_api": "extended",
             "note_count": total,
             "truncated": truncated,
             "notes": [self._note_summary(note) for note in notes],
@@ -868,6 +871,8 @@ class AbletonLiveMCP(ControlSurface):
 
     def _rpc_clip_update_notes(self, params):
         clip = self._resolve(params.get("ref"))
+        if not hasattr(clip, "get_all_notes_extended") or not hasattr(clip, "apply_note_modifications"):
+            raise RuntimeError("clip_update_notes requires extended note APIs; refusing legacy note API")
         updates = params.get("updates") or []
         notes = clip.get_all_notes_extended()
         by_id = dict((note.note_id, note) for note in notes)
@@ -884,6 +889,7 @@ class AbletonLiveMCP(ControlSurface):
         clip.apply_note_modifications(notes)
         return {
             "clip": self._clip_summary(clip, None),
+            "note_api": "extended",
             "updated": len(changed),
             "notes": [self._note_summary(note) for note in changed],
         }
@@ -972,6 +978,7 @@ class AbletonLiveMCP(ControlSurface):
             launched = True
         return {
             "clip": self._clip_summary(clip, None),
+            "note_api": "extended" if not legacy_note_api else "legacy",
             "added": len(specs),
             "created_clip": created_clip,
             "replaced_clip": replaced_clip,

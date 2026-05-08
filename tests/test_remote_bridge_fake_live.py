@@ -1250,6 +1250,7 @@ def test_expected_set_signature_blocks_stale_mutation(monkeypatch):
 def test_clip_notes_can_be_listed_and_updated(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
+    assert notes["note_api"] == "extended"
     assert notes["note_count"] == 1
     assert notes["notes"][0]["velocity"] == 40.0
 
@@ -1257,10 +1258,38 @@ def test_clip_notes_can_be_listed_and_updated(monkeypatch):
         "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
         "updates": [{"note_id": 1, "velocity": 88.0}],
     })
+    assert updated["note_api"] == "extended"
     assert updated["updated"] == 1
     assert updated["notes"][0]["velocity"] == 88.0
     notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
     assert notes["notes"][0]["velocity"] == 88.0
+
+
+def test_clip_notes_refuses_legacy_note_api(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    monkeypatch.delattr(FakeClip, "get_all_notes_extended")
+
+    try:
+        bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
+    except RuntimeError as exc:
+        assert "refusing legacy note API" in str(exc)
+    else:
+        raise AssertionError("expected legacy note API refusal")
+
+
+def test_clip_update_notes_refuses_legacy_note_api(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    monkeypatch.delattr(FakeClip, "apply_note_modifications")
+
+    try:
+        bridge._rpc_clip_update_notes({
+            "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
+            "updates": [{"note_id": 1, "velocity": 88.0}],
+        })
+    except RuntimeError as exc:
+        assert "refusing legacy note API" in str(exc)
+    else:
+        raise AssertionError("expected legacy note API refusal")
 
 
 def test_clip_add_notes_accepts_json_note_specs(monkeypatch):
@@ -1275,6 +1304,7 @@ def test_clip_add_notes_accepts_json_note_specs(monkeypatch):
     })
 
     assert result["added"] == 2
+    assert result["note_api"] == "extended"
     assert result["note_count"] == 2
     notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
     assert [note["pitch"] for note in notes["notes"]] == [64, 67]
@@ -1327,6 +1357,7 @@ def test_clip_add_notes_can_replace_slot_clip(monkeypatch):
     assert result["created_clip"] is True
     assert result["replaced_clip"] is True
     assert result["legacy_note_api"] is False
+    assert result["note_api"] == "extended"
     assert result["note_count"] == 1
     assert slot.deleted is True
     assert slot.clip is not old_clip
@@ -1405,6 +1436,7 @@ def test_clip_add_notes_allows_legacy_clear_when_explicit(monkeypatch):
     })
 
     assert result["legacy_note_api"] is True
+    assert result["note_api"] == "legacy"
     assert clip.legacy_remove_notes_called is True
 
 
