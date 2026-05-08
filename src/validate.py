@@ -65,6 +65,10 @@ def main(argv: list[str] | None = None) -> int:
         ("song", "get", {"ref": {"path": "live_set"}, "properties": ["tempo", "signature_numerator", "signature_denominator"], **live_controls}),
         ("application", "eval", {"expr": "app.get_major_version() if hasattr(app, 'get_major_version') else app.get_version_string().split('.')[0]", **live_controls}),
     ]
+    target_root = results["remote_script"].get("target")
+    if target_root:
+        target_bridge = Path(str(target_root)) / "bridge.py"
+        checks.append(("live_runtime_code", "exec", {"code": _live_runtime_code_fingerprint_code(target_bridge), **live_controls}))
     batch_params = {
         "operations": [{"method": method, "params": params} for _name, method, params in checks],
         "timeout": live_timeout,
@@ -77,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
             if not item.get("ok"):
                 raise AbletonBridgeError("%s validation failed: %s" % (method, item.get("error", "unknown error")))
             results[name] = item.get("result")
+        _attach_live_runtime_code_status(results)
     except AbletonBridgeError as exc:
         bridge_status = _probe_bridge_status(live_timeout)
         if bridge_status:
@@ -101,6 +106,31 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(json.dumps(results, indent=2, sort_keys=True))
     return 0
+
+
+def _attach_live_runtime_code_status(results: dict) -> None:
+    runtime_code = results.get("live_runtime_code")
+    if isinstance(runtime_code, dict):
+        code_hash = runtime_code.get("runtime_code_sha256")
+        if code_hash:
+            results["remote_script"]["live_compiled_runtime_code_sha256"] = code_hash
+        elif runtime_code.get("error"):
+            results["remote_script"]["live_compiled_runtime_code_error"] = runtime_code.get("error")
+
+
+def _live_runtime_code_fingerprint_code(path: Path) -> str:
+    source_path = json.dumps(str(path))
+    return f"""
+_source_path = {source_path}
+_namespace = {{"__name__": "__ableton_mcp_runtime_probe__", "__file__": _source_path}}
+try:
+    with open(_source_path, "r") as _handle:
+        _source = _handle.read()
+    exec(compile(_source, _source_path, "exec", dont_inherit=True), _namespace)
+    result = {{"path": _source_path, "runtime_code_sha256": _namespace["_runtime_code_fingerprint"]()}}
+except Exception as _exc:
+    result = {{"path": _source_path, "error": str(_exc)}}
+""".strip()
 
 
 def _record_runtime_status(results: dict, runtime_ok: bool, runtime_reason: str, next_action: str | None = None) -> None:
@@ -130,7 +160,7 @@ def _loaded_runtime_state(runtime_reason: str) -> str:
 def _check_running_remote_script(results: dict) -> tuple[bool, str]:
     remote_script = results.get("remote_script") or {}
     expected_version = remote_script.get("source_runtime_version")
-    expected_code = remote_script.get("source_runtime_code_sha256")
+    expected_code = remote_script.get("live_compiled_runtime_code_sha256") or remote_script.get("source_runtime_code_sha256")
     expected = remote_script.get("source_bridge_sha256")
     runtime = ((results.get("ping") or {}).get("remote_script") or {})
     actual_version = runtime.get("runtime_version")

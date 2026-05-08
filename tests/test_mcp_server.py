@@ -2995,6 +2995,38 @@ def test_validate_live_checks_are_compact_and_timed(tmp_path, monkeypatch, capsy
     }}
     assert operations[2]["method"] == "eval"
     assert operations[2]["params"]["timeout"] == 45.0
+    assert operations[3]["method"] == "exec"
+    assert "_runtime_code_fingerprint" in operations[3]["params"]["code"]
+    assert operations[3]["params"]["timeout"] == 45.0
+
+
+def test_validate_compares_runtime_code_with_live_compiled_hash(tmp_path, monkeypatch, capsys):
+    install_remote_script("Ableton_Live_MCP", tmp_path)
+    status = remote_script_status(target_dir=tmp_path)
+    live_hash = "1" * 64
+
+    class FakeClient:
+        def request(self, method, params):
+            assert method == "batch"
+            assert params["operations"][3]["method"] == "exec"
+            return [
+                {"ok": True, "result": {"ok": True, "remote_script": {
+                    "bridge_sha256": status["source_bridge_sha256"],
+                    "runtime_version": status["source_runtime_version"],
+                    "runtime_code_sha256": live_hash,
+                }}},
+                {"ok": True, "result": {"ok": True}},
+                {"ok": True, "result": 12},
+                {"ok": True, "result": {"runtime_code_sha256": live_hash}},
+            ]
+
+    monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
+
+    assert validate_main(["--target-dir", str(tmp_path)]) == 0
+    output = capsys.readouterr()
+    assert '"runtime_current": true' in output.out
+    assert '"live_mutations_safe": true' in output.out
+    assert '"live_compiled_runtime_code_sha256": "1111111111111111111111111111111111111111111111111111111111111111"' in output.out
 
 
 def test_validate_live_checks_can_use_strict_short_timeout(tmp_path, monkeypatch, capsys):
