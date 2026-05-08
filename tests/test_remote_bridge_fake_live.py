@@ -1383,6 +1383,27 @@ def test_batch_inherits_response_controls(monkeypatch):
     assert result[1]["result"] == "abc...<truncated 3 chars>"
 
 
+def test_batch_get_properties_are_not_double_encoded(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    result = bridge._run_on_main("batch", {
+        "max_depth": 3,
+        "operations": [
+            {"method": "get", "params": {
+                "ref": {"path": "live_set"},
+                "properties": ["tempo", "signature_numerator", "signature_denominator"],
+            }},
+        ],
+    })
+
+    assert result[0]["ok"] is True
+    assert result[0]["result"]["properties"] == {
+        "tempo": 120.0,
+        "signature_numerator": 4,
+        "signature_denominator": 4,
+    }
+    assert result[0]["result"]["children"] == {}
+
+
 def test_remote_script_read_line_preserves_buffered_requests(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
 

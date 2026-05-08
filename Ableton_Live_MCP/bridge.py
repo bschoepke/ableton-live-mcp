@@ -32,6 +32,10 @@ AGENT_M4L_PORT_SPAN = 30000
 AGENT_M4L_MAX_UDP_BYTES = 8192
 
 
+class _EncodedResult(list):
+    pass
+
+
 def _temp_file(name):
     root = os.environ.get("ABLETON_MCP_STATE_DIR") or os.path.join(os.path.expanduser("~"), ".ableton-live-mcp")
     try:
@@ -161,7 +165,10 @@ class AbletonLiveMCP(ControlSurface):
     def _run_on_main(self, method, params):
         if threading.current_thread().ident == self._main_thread_id:
             self._check_expected_set_signature(params)
-            return self._encode(getattr(self, "_rpc_" + method)(params), self._encode_options(params))
+            value = getattr(self, "_rpc_" + method)(params)
+            if isinstance(value, _EncodedResult):
+                return value
+            return self._encode(value, self._encode_options(params))
         done = threading.Event()
         result = {"value": None, "error": None}
         abandoned = {"value": False}
@@ -173,7 +180,10 @@ class AbletonLiveMCP(ControlSurface):
             try:
                 self._check_expected_set_signature(params)
                 value = getattr(self, "_rpc_" + method)(params)
-                result["value"] = self._encode(value, self._encode_options(params))
+                if isinstance(value, _EncodedResult):
+                    result["value"] = value
+                else:
+                    result["value"] = self._encode(value, self._encode_options(params))
             except Exception:
                 result["error"] = sys.exc_info()
             finally:
@@ -1021,7 +1031,7 @@ class AbletonLiveMCP(ControlSurface):
                 results.append(item)
                 if not continue_on_error:
                     break
-        return results
+        return _EncodedResult(results)
 
     def _rpc_browser_roots(self, _params):
         browser = Live.Application.get_application().browser
