@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import sqlite3
+import time
 from pathlib import Path
 
 import pytest
@@ -1004,6 +1006,43 @@ def test_agent_m4l_device_tool_load_false_patch_uses_direct_update(tmp_path):
     assert payload["patch"]["device_height"] == 170
 
 
+def test_agent_m4l_device_wait_status_uses_default_status_file_mtime(monkeypatch, tmp_path):
+    import agent_m4l
+
+    monkeypatch.setattr(agent_m4l, "state_dir", lambda: tmp_path)
+    status_path = Path(agent_m4l.status_file("Default Wait"))
+    status_path.write_text('{"event":"status","command_id":"old"}', encoding="utf-8")
+    previous_mtime = status_path.stat().st_mtime
+    captured = {}
+
+    def fake_wait_status(path, before, command_id, timeout, poll_interval, expected_event=None):
+        captured["path"] = path
+        captured["previous_mtime"] = before
+        captured["command_id"] = command_id
+        captured["expected_event"] = expected_event
+        return {"event": "status", "command_id": command_id}
+
+    monkeypatch.setattr(server_module, "wait_agent_m4l_status", fake_wait_status)
+    response = make_server(FakeBridge()).handle({
+        "jsonrpc": "2.0",
+        "id": 57,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "instance_id": "Default Wait",
+            "command": "status",
+            "load": False,
+            "udp": False,
+            "wait_status": True,
+        }},
+    })
+
+    assert captured["path"] == str(status_path)
+    assert captured["previous_mtime"] == previous_mtime
+    assert captured["expected_event"] == "status"
+    assert response["result"]["structuredContent"]["status"]["command_id"] == captured["command_id"]
+
+
 def test_agent_m4l_device_tool_materializes_webui_arrays(monkeypatch, tmp_path):
     import agent_m4l
 
@@ -1607,6 +1646,8 @@ def test_wait_agent_m4l_status_timeout_includes_compact_last_status(tmp_path):
             "level_value": 0.5,
         },
     }), encoding="utf-8")
+    stale_time = time.time() - 5
+    os.utime(status_file, (stale_time, stale_time))
 
     result = wait_agent_m4l_status(str(status_file), status_file.stat().st_mtime - 1.0, "new", 0.01, 0.01, "set")
 
@@ -1614,6 +1655,8 @@ def test_wait_agent_m4l_status_timeout_includes_compact_last_status(tmp_path):
     assert result["expected_command_id"] == "new"
     assert result["expected_event"] == "set"
     assert result["mismatch"] == "command_id_mismatch"
+    assert result["last_status_age_seconds"] >= 4
+    assert result["status_file_updated_after_command"] is True
     assert result["last_status"]["command_id"] == "old"
     assert result["last_status"]["dynamic_objects"] == 8
     assert result["last_status"]["device_width"] == 900
@@ -1642,6 +1685,8 @@ def test_compact_agent_m4l_status_preserves_timeout_diagnostics():
         "expected_command_id": "new",
         "expected_event": "status",
         "mismatch": "command_id_mismatch",
+        "last_status_age_seconds": 8.25,
+        "status_file_updated_after_command": False,
         "last_status": {
             "event": "set",
             "command_id": "old",
@@ -1655,6 +1700,8 @@ def test_compact_agent_m4l_status_preserves_timeout_diagnostics():
     assert status["expected_command_id"] == "new"
     assert status["expected_event"] == "status"
     assert status["mismatch"] == "command_id_mismatch"
+    assert status["last_status_age_seconds"] == 8.25
+    assert status["status_file_updated_after_command"] is False
     assert status["last_status"]["command_id"] == "old"
     assert status["last_status"]["dynamic_objects"] == 76
     assert status["last_status"]["state"]["web_read_pending"] == 5

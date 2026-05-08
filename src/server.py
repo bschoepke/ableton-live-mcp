@@ -288,7 +288,6 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         status_poll_interval = float(params.pop("status_poll_interval", 0.05))
         load_retry_timeout_arg = params.pop("load_retry_timeout", None)
         load_retry_interval = float(params.pop("load_retry_interval", 0.25))
-        previous_status_mtime = _file_mtime(str(params.get("status_file") or ""))
 
         def remember_webui(webui_key: str, rendered: Any) -> None:
             nonlocal webui
@@ -297,6 +296,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
             webui[webui_key] = rendered
 
         instance_id = str(params.get("instance_id") or params.get("name") or "device")
+        previous_status_mtime = _file_mtime(str(params.get("status_file") or agent_m4l_status_file(instance_id)))
         for webui_key in ("webui", "webuis"):
             if params.get(webui_key):
                 rendered = materialize_agent_m4l_webui(instance_id, params[webui_key])
@@ -1235,6 +1235,11 @@ def wait_agent_m4l_status(path: str, previous_mtime: float | None, command_id: s
     if expected_event:
         result["expected_event"] = expected_event
     last_status, read_error = _read_agent_m4l_status(path)
+    current_mtime = _file_mtime(path)
+    if current_mtime is not None:
+        result["last_status_age_seconds"] = round(max(0.0, time.time() - current_mtime), 3)
+        if previous_mtime is not None:
+            result["status_file_updated_after_command"] = current_mtime > previous_mtime
     if last_status is not None:
         result["last_status"] = summarize_agent_m4l_status(last_status)
         mismatch = agent_m4l_status_mismatch(last_status, command_id, expected_event)
@@ -1291,7 +1296,7 @@ def _read_agent_m4l_status(path: str) -> tuple[dict[str, Any] | None, str | None
 
 def summarize_agent_m4l_status(status: dict[str, Any]) -> dict[str, Any]:
     summary: dict[str, Any] = {}
-    for key in ("event", "command_id", "last_reload_command_id", "dynamic_objects", "webuis", "device_width", "device_height", "id", "reason", "attempt", "attempts", "message", "reload_seen", "webui_status", "changed", "source", "target", "timed_out", "expected_command_id", "expected_event", "mismatch", "error", "path", "state_keys"):
+    for key in ("event", "command_id", "last_reload_command_id", "dynamic_objects", "webuis", "device_width", "device_height", "id", "reason", "attempt", "attempts", "message", "reload_seen", "webui_status", "changed", "source", "target", "timed_out", "expected_command_id", "expected_event", "mismatch", "error", "path", "last_status_age_seconds", "status_file_updated_after_command", "state_keys"):
         if key in status:
             summary[key] = status.get(key)
     last_status = status.get("last_status")
