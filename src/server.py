@@ -42,7 +42,7 @@ ABLETON_MCP_INSTRUCTIONS = (
     "AgentAudioTap: master tap+solo target; start with path. "
     "Idle sockets auto-retry; sent-call timeouts fail closed; client/RS cooldown+serialize; live_bridge_status timeout=wedged. "
     "Agent must visually verify M4L device UI via live_visual_capture: Ableton-window-only, never capture arbitrary apps/windows, device-detail crop, blank_capture invalid; locked/asleep display blocks capture/e2e. "
-    "M4L: arbitrary native/web/mixed UI hot-reloads; wait_status/compact_result + matching command_id. Reuse hosts/IDs; check host_runtime_version; avoid web-renderer buildup; cleanup dry-run before delete. Supports preflight files, UDP hints, throttled fallback wakes, load:false/set/status skip build, host_not_woken=no ack, midiin+midiparse, origin-aligned rect/openrect, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batch/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web: prove signal telemetry+visual delta. No web ack/shrink: reload/simplify or fresh host. "
+    "M4L: arbitrary native/web/mixed UI hot-reloads; wait_status/compact_result + matching command_id. Reuse hosts/IDs; host_runtime_version; avoid web-renderer buildup; cleanup dry-run. Supports preflight, sidecar recovery+slim set/status, UDP hints, throttled fallback wakes, load:false/set/status skip build, host_not_woken=no ack, midiin+midiparse, origin-aligned rect/openrect, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batch/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web: prove signal telemetry+visual delta. No web ack/shrink: reload/simplify or fresh host. "
     "Avoid broad dumps. Gotchas: live_eval expr-only; use live_exec; Live nums JSON; Simpler.sample not settable; ids from summaries. "
     "Hints only; full Live object model remains available: paths/ids/calls/props/children/listeners/eval."
 )
@@ -1056,8 +1056,8 @@ def handle_agent_m4l_direct(params: dict[str, Any]) -> dict[str, Any]:
         write_command_file = True
     if write_command_file:
         Path(command_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(command_path).write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
         write_agent_m4l_recovery_patch(command_path, patch)
+        Path(command_path).write_text(json.dumps(agent_m4l_command_file_payload(payload), separators=(",", ":")), encoding="utf-8")
     port = int(params.get("port") or agent_m4l_udp_port(instance_id))
     sent = False
     if params.get("udp", True):
@@ -1127,6 +1127,14 @@ def write_agent_m4l_recovery_patch(command_path: str, patch: Any) -> None:
         path.write_text(json.dumps({"patch": patch}, separators=(",", ":")), encoding="utf-8")
     except Exception:
         pass
+
+
+def agent_m4l_command_file_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    slim = {key: value for key, value in payload.items() if value is not None}
+    if slim.get("command") in ("set", "status"):
+        for key in ("patch", "spec", "webui", "webuis"):
+            slim.pop(key, None)
+    return slim
 
 
 def agent_m4l_udp_payload(payload: dict[str, Any]) -> dict[str, Any]:

@@ -397,6 +397,10 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "lastReloadCommandId" in source
     assert "last_reload_command_id" in source
     assert "ensureRecovered" in source
+    assert "readRecoveryPayload" in source
+    assert "recoveryFilePath" in source
+    assert "invalid_recovery_sidecar_json" in source
+    assert "recoverySpecFromPayload" in source
     assert "readCommandFileJson" in source
     assert "recovery.patch || recovery.spec" in source
     assert "objectById" in source

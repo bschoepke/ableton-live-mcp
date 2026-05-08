@@ -923,11 +923,13 @@ def test_agent_m4l_device_tool_direct_update_preserves_recovery_patch(tmp_path):
     })
 
     payload = json.loads(command_file.read_text(encoding="utf-8"))
+    sidecar = json.loads(server_module.agent_m4l_sidecar_recovery_path(str(command_file)).read_text(encoding="utf-8"))
     assert bridge.calls == []
     assert response["result"]["structuredContent"]["direct"] is True
-    assert payload["patch"]["objects"][0]["id"] == "dial"
-    assert payload["patch"]["device_width"] == 640
-    assert payload["patch"]["device_height"] == 220
+    assert "patch" not in payload
+    assert sidecar["patch"]["objects"][0]["id"] == "dial"
+    assert sidecar["patch"]["device_width"] == 640
+    assert sidecar["patch"]["device_height"] == 220
     assert payload["values"] == [{"id": "dial", "value": 0.7}]
 
 
@@ -958,7 +960,9 @@ def test_agent_m4l_device_tool_recovers_patch_from_sidecar(tmp_path):
 
     payload = json.loads(command_file.read_text(encoding="utf-8"))
     assert response["result"]["structuredContent"]["direct"] is True
-    assert payload["patch"] == patch
+    assert "patch" not in payload
+    assert payload["command"] == "status"
+    assert json.loads(server_module.agent_m4l_sidecar_recovery_path(str(command_file)).read_text(encoding="utf-8"))["patch"] == patch
 
 
 def test_agent_m4l_device_tool_writes_recovery_sidecar_for_forwarded_patch(tmp_path):

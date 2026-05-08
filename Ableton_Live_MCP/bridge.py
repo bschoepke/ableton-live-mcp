@@ -474,9 +474,9 @@ class AbletonLiveMCP(ControlSurface):
         if write_command_file is None:
             write_command_file = True
         if write_command_file:
-            with open(command_file, "w") as handle:
-                json.dump(payload, handle, separators=(",", ":"))
             self._agent_m4l_write_recovery_patch(command_file, patch)
+            with open(command_file, "w") as handle:
+                json.dump(self._agent_m4l_command_file_payload(payload), handle, separators=(",", ":"))
 
         sent = False
         udp_bytes = 0
@@ -694,6 +694,17 @@ class AbletonLiveMCP(ControlSurface):
         for key in ("patch", "spec", "webui", "webuis"):
             if key in slim:
                 del slim[key]
+        return slim
+
+    def _agent_m4l_command_file_payload(self, payload):
+        slim = {}
+        for key, value in payload.items():
+            if value is not None:
+                slim[key] = value
+        if slim.get("command") in ("set", "status"):
+            for key in ("patch", "spec", "webui", "webuis"):
+                if key in slim:
+                    del slim[key]
         return slim
 
     def _agent_m4l_recovery_patch(self, command_file):

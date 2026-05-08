@@ -678,7 +678,7 @@ function ensureRecovered(command) {
     if (command.command !== "set" && command.command !== "status") {
         return;
     }
-    var recovery = readCommandFileJson();
+    var recovery = readRecoveryPayload();
     if (!recovery) {
         return;
     }
@@ -698,8 +698,35 @@ function ensureRecovered(command) {
     currentCommandId = pendingId;
 }
 
+function readRecoveryPayload() {
+    var recovery = readCommandFileJson();
+    if (recoverySpecFromPayload(recovery)) {
+        return recovery;
+    }
+    var sidecar = readJsonFile(recoveryFilePath(), "invalid_recovery_sidecar_json");
+    if (recoverySpecFromPayload(sidecar)) {
+        return sidecar;
+    }
+    return recovery;
+}
+
+function recoverySpecFromPayload(recovery) {
+    if (!recovery) {
+        return null;
+    }
+    return recovery.patch || recovery.spec || ((recovery.objects || recovery.webui || recovery.webuis) ? recovery : null);
+}
+
 function readCommandFileJson() {
-    var file = new File(commandFile, "read");
+    return readJsonFile(commandFile, "invalid_recovery_json");
+}
+
+function recoveryFilePath() {
+    return String(commandFile) + ".recovery.json";
+}
+
+function readJsonFile(path, errorReason) {
+    var file = new File(path, "read");
     if (!file.isopen) {
         return null;
     }
@@ -711,7 +738,7 @@ function readCommandFileJson() {
     try {
         return JSON.parse(String(raw));
     } catch (err) {
-        report("error", { reason: "invalid_recovery_json", detail: String(err) });
+        report("error", { reason: errorReason || "invalid_json_file", detail: String(err) });
         return null;
     }
 }

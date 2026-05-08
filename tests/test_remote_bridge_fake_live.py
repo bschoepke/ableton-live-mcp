@@ -838,13 +838,15 @@ def test_agent_m4l_value_update_writes_file_with_recovery_patch(monkeypatch):
         "id": "set1",
     })
     payload = json.loads(stored[module._temp_file("agent_m4l_Wobble.json")])
+    recovery = json.loads(stored["%s.recovery.json" % module._temp_file("agent_m4l_Wobble.json")])
 
     assert result["sent"] is True
     assert result["command_file_written"] is True
     assert sent and sent[0][1] == ("127.0.0.1", bridge._agent_m4l_port("Wobble"))
     assert payload["command"] == "set"
     assert payload["values"] == [{"id": "cutoff", "value": 0.72}]
-    assert payload["patch"]["objects"][0]["id"] == "cutoff"
+    assert "patch" not in payload
+    assert recovery["patch"]["objects"][0]["id"] == "cutoff"
     assert b'"values":[{"id":"cutoff","value":0.72}]' in sent[0][0]
     assert b'"patch"' not in sent[0][0]
 
