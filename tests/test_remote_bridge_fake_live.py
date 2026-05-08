@@ -564,6 +564,29 @@ def test_agent_audio_tap_setup_loads_on_master_and_solos_target(monkeypatch):
     assert song.is_playing is False
 
 
+def test_agent_audio_tap_setup_solos_resolved_track_by_canonical_path(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    for index, track in enumerate(song.tracks):
+        track.canonical_path = "live_set tracks %d" % index
+    resolved_track = FakeTrack("Track 1 proxy")
+    resolved_track.canonical_path = "live_set tracks 0"
+    original_resolve = bridge._resolve
+
+    def resolve(ref):
+        if ref.get("path") == "live_set tracks 0":
+            return resolved_track
+        return original_resolve(ref)
+
+    monkeypatch.setattr(bridge, "_resolve", resolve)
+
+    bridge._rpc_agent_audio_tap_setup({
+        "placement": "master",
+        "solo_track": {"path": "live_set tracks 0"},
+    })
+
+    assert [track.solo for track in song.tracks] == [True, False]
+
+
 def test_agent_m4l_device_writes_command_sends_udp_and_loads(monkeypatch):
     module, app = load_bridge_module(monkeypatch)
     bridge = object.__new__(module.AbletonLiveMCP)

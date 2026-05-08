@@ -81,7 +81,7 @@ This repo includes `m4l/AgentAudioTap.amxd`, a Max for Live audio effect that le
 
 For validation captures, call `live_agent_audio_tap` with a `command` field. Prefer one atomic `{"command": "start", "path": "..."}` command, then a later `{"command": "stop"}`. Avoid separate `open` then `start` command-file writes unless you also add an acknowledgement wait; otherwise the tap can poll only the later `start` and Max may log `sfrecord~: start requested without preceding open`.
 
-Before using AgentAudioTap WAVs as pass/fail evidence, sanity-check the measurement path by changing the target track volume or solo/mute state and confirming the capture or Live meters respond. If a capture ignores an obvious source change, rebuild/reload the tap and use Live's `output_meter_left/right` as the validation signal until the tap path is trustworthy again.
+Before using AgentAudioTap WAVs as pass/fail evidence, sanity-check the measurement path by changing the target track volume or solo/mute state and confirming the capture or Live meters respond. After `live_agent_audio_tap_setup` with `solo_track`, explicitly read the involved tracks and verify the requested target is soloed and non-targets are not contributing; do not treat the setup response alone as isolation evidence. If a capture ignores an obvious source change, rebuild/reload the tap and use Live's `output_meter_left/right` as the validation signal until the tap path is trustworthy again.
 
 ## Visual validation captures
 

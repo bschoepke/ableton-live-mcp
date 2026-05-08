@@ -36,9 +36,9 @@ AGENT_M4L_RESERVED_IDS = {"js", "script", "status", "udp", "out", "poll-metro", 
 ABLETON_MCP_INSTRUCTIONS = (
     "review AGENTS.md for tips as needed. "
     "Prefer devices/plugins unless asked; roots:['plugins']; "
-    "Compact exec/batch. "
+    "Compact calls. "
     "find_similar_sounds requires Live 12+. "
-    "AgentAudioTap: start with path. "
+    "Tap: start with path; verify isolation. "
     "Validate runtime_current/live_mutations_safe; no-arg tool schema=stale MCP, reload. No parallel Live API. Idle sockets auto-retry; sent-call timeouts fail closed; client/RS cooldown; live_bridge_status timeout=wedged. Save/recover modals: inspect UI, no retry mutations. "
     "Agent must visually verify M4L device UI: inspect pixels; status/meter not enough; Ableton-window-only, no arbitrary apps/windows, select target then device-detail crop, blank_capture invalid; locked/asleep display blocks capture/e2e. "
     "M4L: free native/web/mixed UI hot-reloads; wait_status/compact_result+cmd. host_runtime_version. No default piano/knob UI/templates. Supports preflight, web_reload UI-only, throttled fallback wakes, load:false/set/status skip build, direct status polls, host_not_woken=no ack, midiin+midiparse, origin rect/openrect, bounds, ui_bindings/no loops, agent-settable UI, telemetry report:false, ack guard/state throttles, web assets/source_path, status_state_keys/_only diag, set_silent/batch/list vals, audio buses, jweb/jbrowser aliases. Sizing: device_width/openrect tight to authored UI/webview; keep hidden patching_rect inside width; shrink via new host/fresh reload + nonblank capture. FFT/spectrum=real telemetry/no fake; audio-reactive web: prove signal+visual delta. Smooth clicks. UI hang: unload web/restart/validate. No web ack/shrink: simplify/new host. "
@@ -49,7 +49,7 @@ AGENT_M4L_TOOL_DESCRIPTION = (
 )
 AGENT_M4L_CLEANUP_DESCRIPTION = "Dry-run/delete AgentM4L; ask before delete."
 AGENT_AUDIO_TAP_DESCRIPTION = "AgentAudioTap: command open/start/stop/status; start with path; UDP optional."
-AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap; optional solo target track/reset."
+AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap; solo target track; verify."
 VISUAL_CAPTURE_DESCRIPTION = "Ableton Live window-only; device-detail crop/downscale; region-rel; no arbitrary apps/windows."
 AGENT_AUDIO_TAP_SCHEMA = {
     "type": "object",

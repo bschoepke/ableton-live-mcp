@@ -451,7 +451,7 @@ class AbletonLiveMCP(ControlSurface):
             if params.get("exclusive_solo", True):
                 for track in song.tracks:
                     try:
-                        track.solo = track is solo_track
+                        track.solo = self._same_live_object(track, solo_track)
                     except Exception:
                         pass
             else:
@@ -1941,6 +1941,19 @@ class AbletonLiveMCP(ControlSurface):
             return obj.canonical_path
         except Exception:
             return None
+
+    def _same_live_object(self, left, right):
+        if left is right:
+            return True
+        left_path = self._canonical_path(left)
+        right_path = self._canonical_path(right)
+        if left_path and right_path:
+            return left_path == right_path
+        left_ptr = getattr(left, "_live_ptr", None)
+        right_ptr = getattr(right, "_live_ptr", None)
+        if left_ptr is not None and right_ptr is not None:
+            return left_ptr == right_ptr
+        return False
 
     def _detail(self, params):
         return bool(params and (params.get("detail") or params.get("include_repr")))
