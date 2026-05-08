@@ -110,7 +110,8 @@ def test_initialize_includes_general_model_instructions():
     assert "host_not_woken=no ack" in instructions
     assert "host_runtime_version" in instructions
     assert "telemetry report:false" in instructions
-    assert "ack protection/state throttles" in instructions
+    assert "ack guard/state throttles" in instructions
+    assert "ui_bindings/no binding loops" in instructions
     assert "Agent must visually verify M4L device UI" in instructions
     assert "Ableton-window-only" in instructions
     assert "no arbitrary apps/windows" in instructions
@@ -118,7 +119,7 @@ def test_initialize_includes_general_model_instructions():
     assert "device-detail crop" in instructions
     assert "blank_capture invalid" in instructions
     assert "locked/asleep display blocks capture/e2e" in instructions
-    assert "audio-reactive web: clock/prove signal telemetry+visual delta" in instructions
+    assert "audio-reactive web: clock/prove signal+visual delta" in instructions
     assert "full Live object model remains available" in instructions
     assert len(instructions) < 1600
 
