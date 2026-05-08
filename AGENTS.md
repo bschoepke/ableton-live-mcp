@@ -247,6 +247,8 @@ When `wait_status` times out, preserve the expected command id/event, mismatch r
 
 Generated hosts must not route full JSON status payloads to Max `print` objects or the Max Console. Status is delivered through the status file; any optional outlet/console diagnostic must be one compact line with event, command id, and small counts only. A `printobj: Too many lines ... output truncated` warning is a validation failure and means console/status output must be reduced before continuing.
 
+Generated hosts should write compact status JSON without fixed-size padding. The MCP server intentionally tolerates stale trailing bytes from Max file writes, so do not reintroduce large padded status files as a truncation workaround; they slow down status polling and increase token pressure during creative UI iteration.
+
 After removing a console/status sink from the host wrapper, run `ableton-live-mcp-sync-m4l-host` before validating. The sync command updates companion JS and repairs stale generated/installed AgentM4L wrapper AMXDs/maxpats that still contain `print AgentM4L_*`; `ableton-live-mcp-validate --skip-live` should report no `stale_wrappers` before Live e2e testing resumes.
 
 Setting a generated `live.numbox`/`live.*` parameter through the Live API does not reliably emit from the UI object's Max outlet. If the host observes Live parameters, the observer path must remain generic: observe the generated device's current parameters and route names that match `ui_bindings` through the same binding code as native UI gestures. Treat observer output as opportunistic state sync until validated by a status update.

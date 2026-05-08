@@ -36,7 +36,6 @@ var liveParameterIndexBySource = {};
 var liveParameterSourceByTag = {};
 var nextGeneratedLiveParameterIndex = 2;
 var directLiveApiObserversEnabled = false;
-var statusPadSize = 65536;
 var lastConnectionErrors = [];
 var connectionErrorsTruncated = 0;
 var lastReloadCommandId = "";
@@ -2180,9 +2179,6 @@ function writeStatus(payload) {
     }
     try {
         var raw = JSON.stringify(payload);
-        if (raw.length < statusPadSize) {
-            raw += repeatString(" ", statusPadSize - raw.length);
-        }
         var file = new File(path, "write");
         if (!file.isopen) {
             return;
@@ -2191,18 +2187,4 @@ function writeStatus(payload) {
         file.close();
     } catch (err) {
     }
-}
-
-function repeatString(value, count) {
-    var result = "";
-    while (count > 0) {
-        if (count & 1) {
-            result += value;
-        }
-        count = Math.floor(count / 2);
-        if (count > 0) {
-            value += value;
-        }
-    }
-    return result;
 }
