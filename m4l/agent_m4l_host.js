@@ -254,6 +254,8 @@ function anything() {
         handleCommandTrigger();
     } else if (messagename === "__filewatch") {
         handleFilewatchWake(atoms);
+    } else if (messagename === "__signal_wake") {
+        handleSignalWake();
     } else if (messagename.indexOf("__live_param_") === 0) {
         handleLiveParameterObserverMessage(messagename, atoms);
     } else if (messagename === "url" || messagename === "title") {
@@ -286,6 +288,14 @@ function handleFilewatchWake(atoms) {
     }
     if (before === lastCommandId) {
         report("filewatch", { filewatch_bangs: state.filewatch_bangs });
+    }
+}
+
+function handleSignalWake() {
+    markCommandWake("signal");
+    pollCommandFile();
+    if (pendingWebUiReads.length) {
+        readPendingWebUis();
     }
 }
 

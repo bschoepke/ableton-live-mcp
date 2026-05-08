@@ -16,8 +16,10 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert "js agent_m4l_host.js instrument Lead %s %s" % (command_file("Lead"), status_file("Lead")) in texts
     assert "midiin" in texts
     assert "plugout~ 1 2" in texts
-    assert "snapshot~ 100" in texts
-    assert "start" in texts
+    assert "phasor~ 4" in texts
+    assert ">~ 0.5" in texts
+    assert "edge~" in texts
+    assert "prepend __signal_wake" in texts
     buses = audio_bus_names("Lead")
     assert "receive~ %s" % buses["output_left"] in texts
     assert "receive~ %s" % buses["output_right"] in texts
@@ -60,10 +62,10 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert {"patchline": {"source": ["command-filewatch-prepend", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["poll-delay", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["command-trigger", 0], "destination": ["js", 0]}} in lines
-    assert {"patchline": {"source": ["poll-loadbang", 0], "destination": ["audio-wake-start", 0]}} in lines
-    assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["audio-wake-start", 0]}} in lines
-    assert {"patchline": {"source": ["audio-wake-start", 0], "destination": ["audio-wake", 0]}} in lines
-    assert {"patchline": {"source": ["audio-wake", 0], "destination": ["js", 0]}} in lines
+    assert {"patchline": {"source": ["signal-wake-clock", 0], "destination": ["signal-wake-threshold", 0]}} in lines
+    assert {"patchline": {"source": ["signal-wake-threshold", 0], "destination": ["signal-wake-edge", 0]}} in lines
+    assert {"patchline": {"source": ["signal-wake-edge", 0], "destination": ["signal-wake-prepend", 0]}} in lines
+    assert {"patchline": {"source": ["signal-wake-prepend", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["midiout", 0]}} not in lines
     assert "jweb~ @rendermode 1" not in texts
@@ -95,10 +97,8 @@ def test_agent_m4l_host_does_not_impose_fixed_pass_through():
     assert {"patchline": {"source": ["plugin", 1], "destination": ["plugout", 1]}} not in audio_lines
     assert {"patchline": {"source": ["plugin", 0], "destination": ["audio-in-l", 0]}} in audio_lines
     assert {"patchline": {"source": ["audio-out-l", 0], "destination": ["plugout", 0]}} in audio_lines
-    assert {"patchline": {"source": ["poll-loadbang", 0], "destination": ["audio-wake-start", 0]}} in audio_lines
-    assert {"patchline": {"source": ["audio-wake-start", 0], "destination": ["audio-wake", 0]}} in audio_lines
-    assert {"patchline": {"source": ["plugin", 0], "destination": ["audio-wake", 0]}} in audio_lines
-    assert {"patchline": {"source": ["audio-wake", 0], "destination": ["js", 0]}} in audio_lines
+    assert {"patchline": {"source": ["signal-wake-clock", 0], "destination": ["signal-wake-threshold", 0]}} in audio_lines
+    assert {"patchline": {"source": ["signal-wake-prepend", 0], "destination": ["js", 0]}} in audio_lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["js", 0]}} in midi_lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["midiout", 0]}} not in midi_lines
 
@@ -231,6 +231,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "markCommandWake" in source
     assert "command_wake_source" in source
     assert "function list()" in source
+    assert "handleSignalWake" in source
+    assert "__signal_wake" in source
     assert "handleLiveParameterObserverMessage" in source
     assert "createLiveParameterObserverForSource" in source
     assert "trackGeneratedLiveParameter" in source
