@@ -772,7 +772,8 @@ def test_agent_m4l_device_tool_materializes_existing_webui_assets(monkeypatch, t
         "bytes": 25,
         "relative_paths": ["lib/scene.js"],
     }
-    assert (agent_m4l.WEBUI_DIR / "Asset_Existing" / "lib" / "scene.js").read_text(encoding="utf-8") == "window.sceneReady = true;"
+    assert (tmp_path / "lib" / "scene.js").read_text(encoding="utf-8") == "window.sceneReady = true;"
+    assert not (agent_m4l.WEBUI_DIR / "Asset_Existing" / "lib" / "scene.js").exists()
     assert response["result"]["structuredContent"]["webui"]["assets"]["bytes"] == 25
 
 

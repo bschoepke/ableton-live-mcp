@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from bridge import AbletonBridgeClient, BridgeConfig
-from agent_m4l import build_device, command_file as agent_m4l_command_file, device_name as agent_m4l_device_name, infer_device_bounds, normalize_role, slugify, status_file as agent_m4l_status_file, udp_port as agent_m4l_udp_port, write_webui, write_webui_asset_files
+from agent_m4l import build_device, command_file as agent_m4l_command_file, device_name as agent_m4l_device_name, infer_device_bounds, normalize_role, slugify, status_file as agent_m4l_status_file, udp_port as agent_m4l_udp_port, write_webui, write_webui_asset_files, write_webui_assets
 from mcp import StdioMcpServer, Tool
 from similar_sounds import find_similar_sounds
 
@@ -532,9 +532,26 @@ def materialize_agent_m4l_webui(instance_id: str, webui: Any) -> Any:
         result = materialized_agent_m4l_webui(result, rendered)
     elif _has_agent_m4l_webui_source_assets(result):
         result = materialized_agent_m4l_webui(result, {
-            "assets": write_webui_asset_files(instance_id, result.get("assets")),
+            "assets": write_agent_m4l_webui_assets(instance_id, result),
         })
     return result
+
+
+def write_agent_m4l_webui_assets(instance_id: str, webui: dict[str, Any]) -> list[dict[str, Any]]:
+    directory = agent_m4l_existing_webui_asset_dir(webui)
+    if directory is not None:
+        return write_webui_assets(directory, webui.get("assets"))
+    return write_webui_asset_files(instance_id, webui.get("assets"))
+
+
+def agent_m4l_existing_webui_asset_dir(webui: dict[str, Any]) -> Path | None:
+    raw_path = webui.get("html_path") or webui.get("path")
+    if not raw_path or "://" in str(raw_path):
+        return None
+    try:
+        return Path(str(raw_path)).expanduser().resolve().parent
+    except Exception:
+        return None
 
 
 def materialized_agent_m4l_webui(source: dict[str, Any], rendered: dict[str, Any]) -> dict[str, Any]:
