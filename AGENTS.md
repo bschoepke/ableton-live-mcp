@@ -155,4 +155,6 @@ Create or refresh `LiveAPI` observers only from the `live.thisdevice`/deferred l
 
 Generated hosts may also create Max-object `live.path`/`live.observer value` observers for Live parameters that need to react to Live API writes. Observe the hidden trigger at `this_device parameters 1`; for generated bound `live.*` controls, assign observer indexes from the generated parameter creation order and route observer output through the same `ui_bindings` code as native UI gestures. This must remain general purpose and must be validated per host because Live parameter notifications may produce initial values without reliably waking later command-file reads.
 
+When routing Max-object `live.observer value` output into generated bindings, normalize observer atoms first. Max may output `value <number>` rather than a bare number; the binding layer must apply the observed numeric value, not the literal symbol.
+
 Generated hosts also expose a hidden Live parameter used only to try to wake the command-file poller; Live may surface it as `Agent Poll`, `Agent M4L Poll`, or the Max box name `command-trigger`. After writing a command file, the Remote Script may toggle one of those names on the target generated device when a target track is available, but the command is not successful until the status file reports the matching `command_id`.

@@ -250,6 +250,7 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "handleSignalWake" in source
     assert "__signal_wake" in source
     assert "handleLiveParameterObserverMessage" in source
+    assert "applyUiBinding(source, [liveApiObservedValue(atoms)])" in source
     assert "createLiveParameterObserverForSource" in source
     assert "trackGeneratedLiveParameter" in source
     assert '"live.observer", "value"' in source

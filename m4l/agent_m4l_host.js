@@ -308,7 +308,7 @@ function handleLiveParameterObserverMessage(tag, atoms) {
     if (!source || !uiBindings[source] || uiBindingUpdating) {
         return;
     }
-    applyUiBinding(source, atoms);
+    applyUiBinding(source, [liveApiObservedValue(atoms)]);
 }
 
 function handleTaggedWebUiMessage(tag, atoms) {
