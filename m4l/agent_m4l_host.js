@@ -734,6 +734,10 @@ function sendObjectValue(obj, spec, value, command) {
 }
 
 function sendNumericValue(obj, spec, value) {
+    if (shouldSendToggleValue(spec)) {
+        obj.message("int", Math.round(value) ? 1 : 0);
+        return;
+    }
     if (shouldOutputStoredValue(spec)) {
         try {
             obj.message("set", value);
@@ -743,6 +747,11 @@ function sendNumericValue(obj, spec, value) {
         }
     }
     obj.message("float", value);
+}
+
+function shouldSendToggleValue(spec) {
+    var text = String(spec.text || spec.object || spec.maxclass || "").toLowerCase();
+    return text.indexOf("live.toggle") === 0 || text.indexOf("toggle") === 0;
 }
 
 function shouldOutputStoredValue(spec) {

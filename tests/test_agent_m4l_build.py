@@ -133,6 +133,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "command.command === \"set\"" in source
     assert "applyValues" in source
     assert "sendNumericValue" in source
+    assert "shouldSendToggleValue" in source
+    assert 'obj.message("int", Math.round(value) ? 1 : 0)' in source
     assert "shouldOutputStoredValue" in source
     assert "obj.message(\"set\", value)" in source
     assert "obj.message(\"bang\")" in source
