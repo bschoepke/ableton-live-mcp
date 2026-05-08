@@ -444,10 +444,13 @@ def test_agent_m4l_device_tool_builds_and_forwards(monkeypatch, tmp_path):
         "relative_paths": ["lib/scene.js"],
     }
     assert forwarded["patch"]["device_width"] == 340
+    assert forwarded["patch"]["device_height"] == 180
     assert forwarded["device_width"] == 340
+    assert forwarded["device_height"] == 180
     assert forwarded["webui"]["url"].startswith("file://")
     assert response["result"]["structuredContent"]["built"]["installed_path"] == ""
     assert response["result"]["structuredContent"]["built"]["device_width"] == 340
+    assert response["result"]["structuredContent"]["built"]["device_height"] == 180
     assert response["result"]["structuredContent"]["webui"]["html_path"].endswith("index.html")
 
 
@@ -635,7 +638,9 @@ def test_agent_m4l_device_tool_materializes_webui_arrays(monkeypatch, tmp_path):
     assert forwarded["webuis"][1]["html_path"] == str(existing)
     assert forwarded["patch"]["webuis"] == forwarded["webuis"]
     assert forwarded["patch"]["device_width"] == 500
+    assert forwarded["patch"]["device_height"] == 140
     assert response["result"]["structuredContent"]["built"]["device_width"] == 500
+    assert response["result"]["structuredContent"]["built"]["device_height"] == 140
     assert response["result"]["structuredContent"]["webui"]["webuis"][0]["url"].startswith("file://")
 
 
@@ -711,7 +716,9 @@ def test_agent_m4l_device_tool_materializes_patch_webui(monkeypatch, tmp_path):
     assert forwarded["patch"]["webui"]["object"] == "jbrowser~"
     assert forwarded["patch"]["webui"]["html_path"].endswith("Nested_Panel/index.html")
     assert forwarded["patch"]["device_width"] == 260
+    assert forwarded["patch"]["device_height"] == 140
     assert response["result"]["structuredContent"]["built"]["device_width"] == 260
+    assert response["result"]["structuredContent"]["built"]["device_height"] == 140
     assert response["result"]["structuredContent"]["webui"]["html_path"].endswith("Nested_Panel/index.html")
 
 

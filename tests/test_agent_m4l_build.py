@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import agent_m4l
-from agent_m4l import audio_bus_names, build_amxd, build_pool, command_file, infer_device_width, inject_webui_bootstrap, make_host_patch, replace_ptch_chunk, status_file, udp_port, write_webui
+from agent_m4l import audio_bus_names, build_amxd, build_pool, command_file, infer_device_height, infer_device_width, inject_webui_bootstrap, make_host_patch, replace_ptch_chunk, status_file, udp_port, write_webui
 
 
 def test_agent_m4l_host_patch_contains_runtime_and_role_io():
@@ -83,13 +83,19 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert patch["patcher"]["amxdtype"] == 1768515945
 
 
-def test_agent_m4l_infers_device_width_from_presentation_bounds():
+def test_agent_m4l_infers_device_bounds_from_presentation_bounds():
     assert infer_device_width() == 420
+    assert infer_device_height() == 170
     assert infer_device_width({"device_width": 760}) == 760
+    assert infer_device_height({"device_height": 260}) == 260
     assert infer_device_width({
         "objects": [{"id": "wide_knob", "presentation_rect": [20, 8, 520, 60]}],
         "webui": {"id": "panel", "presentation_rect": [560, 0, 260, 120]},
     }) == 840
+    assert infer_device_height({
+        "objects": [{"id": "wide_knob", "presentation_rect": [20, 8, 520, 60]}],
+        "webui": {"id": "panel", "presentation_rect": [560, 160, 260, 140]},
+    }) == 320
 
 
 def test_agent_m4l_host_does_not_impose_fixed_pass_through():
@@ -178,6 +184,7 @@ def test_agent_m4l_build_device_installs_companion_js_when_not_installing(tmp_pa
     assert result["installed_path"] == ""
     assert result["udp_port"] == udp_port("Gate Test")
     assert result["device_width"] == 420
+    assert result["device_height"] == 170
     assert patch["patcher"]["devicewidth"] == 420.0
     assert "midiout" in texts
     assert Path(result["amxd_path"]).with_name("agent_m4l_host.js").exists()
@@ -313,9 +320,13 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "lastConnectionErrors.concat(errors)" in source
     assert "configureDeviceBounds" in source
     assert "inferDeviceWidth" in source
+    assert "inferDeviceHeight" in source
+    assert "inferDeviceBounds" in source
+    assert "rectBottom" in source
     assert "devicewidth" in source
     assert "openrect" in source
     assert "device_width" in source
+    assert "device_height" in source
     assert "lastReloadCommandId" in source
     assert "last_reload_command_id" in source
     assert "ensureRecovered" in source
@@ -342,9 +353,12 @@ def test_agent_m4l_write_webui_generates_jweb_page(tmp_path, monkeypatch):
     js = Path(result["js_path"]).read_text(encoding="utf-8")
     assert "agent-m4l-bootstrap" in html
     assert "web_ready" in html
+    assert "web_dom_ready" in html
     assert "web_error" in html
+    assert "agentM4L.outlet" in html
+    assert "setTimeout(flush" in html
     assert 'data-param="cutoff"' in html
-    assert "window.max.outlet" in js
+    assert "window.agentM4L" in js
     assert "bindInlet(\"state\"" in js
     assert result["url"].startswith("file://")
     assert Path(result["assets"][0]["path"]).read_text(encoding="utf-8") == "export const scene = true;"

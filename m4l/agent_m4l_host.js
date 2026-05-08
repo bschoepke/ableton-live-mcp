@@ -36,13 +36,17 @@ var WEBUI_READ_DELAYS = [100, 250, 500, 1000, 2000, 4000];
 var DEFAULT_DEVICE_WIDTH = 420;
 var MIN_DEVICE_WIDTH = 260;
 var DEVICE_WIDTH_PADDING = 20;
+var DEFAULT_DEVICE_HEIGHT = 170;
+var MIN_DEVICE_HEIGHT = 120;
+var DEVICE_HEIGHT_PADDING = 20;
 var currentDeviceWidth = DEFAULT_DEVICE_WIDTH;
+var currentDeviceHeight = DEFAULT_DEVICE_HEIGHT;
 
 function loadbang() {
     startStaticPolling();
     start_polling();
     scheduleLiveParameterObserverRefresh(100);
-    report("ready", { role: role, instance_id: instanceId, command_file: commandFile, device_width: currentDeviceWidth });
+    report("ready", { role: role, instance_id: instanceId, command_file: commandFile, device_width: currentDeviceWidth, device_height: currentDeviceHeight });
     pollCommandFile();
 }
 
@@ -588,11 +592,12 @@ function connectPatchlines(connections, byId) {
 }
 
 function configureDeviceBounds(spec) {
-    var width = inferDeviceWidth(spec, currentDeviceWidth || DEFAULT_DEVICE_WIDTH);
-    currentDeviceWidth = width;
-    setPatcherAttr("devicewidth", [width]);
-    setPatcherAttr("openrect", [0, 0, width, 170]);
-    setPatcherAttr("rect", [80, 80, Math.max(620, width), 360]);
+    var bounds = inferDeviceBounds(spec, currentDeviceWidth || DEFAULT_DEVICE_WIDTH, currentDeviceHeight || DEFAULT_DEVICE_HEIGHT);
+    currentDeviceWidth = bounds.width;
+    currentDeviceHeight = bounds.height;
+    setPatcherAttr("devicewidth", [bounds.width]);
+    setPatcherAttr("openrect", [0, 0, bounds.width, bounds.height]);
+    setPatcherAttr("rect", [80, 80, Math.max(620, bounds.width), Math.max(360, bounds.height + 190)]);
 }
 
 function inferDeviceWidth(spec, fallback) {
@@ -616,6 +621,34 @@ function inferDeviceWidth(spec, fallback) {
     return Math.max(MIN_DEVICE_WIDTH, Math.round(width + DEVICE_WIDTH_PADDING));
 }
 
+function inferDeviceHeight(spec, fallback) {
+    var explicit = positiveNumber(spec.device_height || spec.deviceheight || spec.height);
+    if (explicit > 0) {
+        return Math.max(MIN_DEVICE_HEIGHT, Math.round(explicit));
+    }
+    var height = 0;
+    var objects = spec.objects || [];
+    for (var i = 0; i < objects.length; i++) {
+        height = Math.max(height, rectBottom(objects[i].presentation_rect));
+    }
+    var webuis = webuiList(spec.webuis || spec.webui);
+    for (var j = 0; j < webuis.length; j++) {
+        height = Math.max(height, rectBottom(webuis[j].presentation_rect));
+    }
+    if (height <= 0) {
+        height = fallback || DEFAULT_DEVICE_HEIGHT;
+        return Math.max(MIN_DEVICE_HEIGHT, Math.round(height));
+    }
+    return Math.max(MIN_DEVICE_HEIGHT, Math.round(height + DEVICE_HEIGHT_PADDING));
+}
+
+function inferDeviceBounds(spec, fallbackWidth, fallbackHeight) {
+    return {
+        width: inferDeviceWidth(spec, fallbackWidth),
+        height: inferDeviceHeight(spec, fallbackHeight)
+    };
+}
+
 function positiveNumber(value) {
     var number = Number(value);
     return isNaN(number) ? 0 : number;
@@ -631,6 +664,18 @@ function rectRight(rect) {
         return 0;
     }
     return x + width;
+}
+
+function rectBottom(rect) {
+    if (!(rect instanceof Array) || rect.length < 4) {
+        return 0;
+    }
+    var y = Number(rect[1]);
+    var height = Number(rect[3]);
+    if (isNaN(y) || isNaN(height)) {
+        return 0;
+    }
+    return y + height;
 }
 
 function webuiList(webui) {
@@ -1625,6 +1670,7 @@ function report(eventName, payload) {
     payload.dynamic_objects = dynamicObjects.length;
     payload.webuis = webObjects.length;
     payload.device_width = currentDeviceWidth;
+    payload.device_height = currentDeviceHeight;
     if (eventName === "reload") {
         lastReloadCommandId = currentCommandId;
     }

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from bridge import AbletonBridgeClient, BridgeConfig
-from agent_m4l import build_device, command_file as agent_m4l_command_file, device_name as agent_m4l_device_name, infer_device_width, normalize_role, slugify, status_file as agent_m4l_status_file, udp_port as agent_m4l_udp_port, write_webui, write_webui_asset_files
+from agent_m4l import build_device, command_file as agent_m4l_command_file, device_name as agent_m4l_device_name, infer_device_bounds, normalize_role, slugify, status_file as agent_m4l_status_file, udp_port as agent_m4l_udp_port, write_webui, write_webui_asset_files
 from mcp import StdioMcpServer, Tool
 from similar_sounds import find_similar_sounds
 
@@ -27,7 +27,7 @@ ABLETON_MCP_INSTRUCTIONS = (
     "find_similar_sounds requires Live 12+ analysis data. "
     "AgentAudioTap: prefer master tap + solo target; start with path. "
     "Idle sockets auto-retry; fresh AMXD loads retry. "
-    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status, success requires matching status command_id/last_reload_command_id. Supports file-backed updates, UDP hints, set/status skip build, midiin+midiparse, presentation_rect/devicewidth/ui_bindings, agent-settable UI, early web ack, set_silent/batches, audio buses, jweb/jbrowser aliases. Stressed sets may drop filewatch/timer/UDP/parameter/signal wakes; if no ack, ask to reload/simplify or validate a fresh host. "
+    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status and require matching command_id/last_reload_command_id. Supports file-backed updates, UDP hints, set/status skip build, midiin+midiparse, rect-driven devicewidth/openrect sizing, ui_bindings, agent-settable UI, retrying early web ack, set_silent/batches, audio buses, jweb/jbrowser aliases. In stressed sets, no ack means reload/simplify or validate a fresh host. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args are JSON numbers; Simpler.sample is not generally settable; use ids from summaries, not raw _live_ptr values. "
     "Hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
@@ -275,8 +275,8 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
                 params["patch"] = dict(params["patch"])
                 for webui_key, rendered in webui.items():
                     params["patch"][webui_key] = rendered
-        device_width = infer_agent_m4l_width(params)
-        apply_agent_m4l_width(params, device_width)
+        device_bounds = infer_agent_m4l_bounds(params)
+        apply_agent_m4l_bounds(params, device_bounds)
         should_build = should_build_agent_m4l(params)
         if should_build:
             built = build_device(
@@ -284,7 +284,8 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
                 str(params.get("instance_id") or params.get("name") or "device"),
                 params.get("name"),
                 bool(params.get("install", True)),
-                device_width,
+                device_bounds["width"],
+                device_bounds["height"],
             )
             params["device_name"] = built["name"]
             params["instance_id"] = built["instance_id"]
@@ -408,11 +409,15 @@ def should_build_agent_m4l(params: dict[str, Any]) -> bool:
     return True
 
 
-def infer_agent_m4l_width(params: dict[str, Any]) -> int:
+def infer_agent_m4l_bounds(params: dict[str, Any]) -> dict[str, int]:
     spec: dict[str, Any] = {}
     for key in ("device_width", "devicewidth", "width"):
         if params.get(key) is not None:
             spec["device_width"] = params[key]
+            break
+    for key in ("device_height", "deviceheight", "height"):
+        if params.get(key) is not None:
+            spec["device_height"] = params[key]
             break
     objects: list[Any] = []
     webuis: list[dict[str, Any]] = []
@@ -425,6 +430,11 @@ def infer_agent_m4l_width(params: dict[str, Any]) -> int:
                 if patch.get(key) is not None:
                     spec["device_width"] = patch[key]
                     break
+        if "device_height" not in spec:
+            for key in ("device_height", "deviceheight", "height"):
+                if patch.get(key) is not None:
+                    spec["device_height"] = patch[key]
+                    break
         if isinstance(patch.get("objects"), list):
             objects.extend(patch["objects"])
         webuis.extend(agent_m4l_webui_items(patch.get("webuis") or patch.get("webui")))
@@ -433,19 +443,38 @@ def infer_agent_m4l_width(params: dict[str, Any]) -> int:
         spec["objects"] = objects
     if webuis:
         spec["webuis"] = webuis
-    return infer_device_width(spec)
+    return infer_device_bounds(spec)
 
 
-def apply_agent_m4l_width(params: dict[str, Any], device_width: int) -> None:
-    params["device_width"] = device_width
+def infer_agent_m4l_width(params: dict[str, Any]) -> int:
+    return infer_agent_m4l_bounds(params)["width"]
+
+
+def apply_agent_m4l_bounds(params: dict[str, Any], device_bounds: dict[str, int]) -> None:
+    params["device_width"] = device_bounds["width"]
+    params["device_height"] = device_bounds["height"]
     for patch_key in ("patch", "spec"):
         patch = params.get(patch_key)
         if not isinstance(patch, dict):
             continue
+        updated = dict(patch)
+        changed = False
         if any(patch.get(key) is not None for key in ("device_width", "devicewidth", "width")):
-            continue
-        params[patch_key] = dict(patch)
-        params[patch_key]["device_width"] = device_width
+            pass
+        else:
+            updated["device_width"] = device_bounds["width"]
+            changed = True
+        if any(patch.get(key) is not None for key in ("device_height", "deviceheight", "height")):
+            pass
+        else:
+            updated["device_height"] = device_bounds["height"]
+            changed = True
+        if changed:
+            params[patch_key] = updated
+
+
+def apply_agent_m4l_width(params: dict[str, Any], device_width: int) -> None:
+    apply_agent_m4l_bounds(params, {"width": device_width, "height": infer_agent_m4l_bounds(params)["height"]})
 
 
 def agent_m4l_webui_items(webui: Any) -> list[dict[str, Any]]:
@@ -613,6 +642,9 @@ def handle_agent_m4l_direct(params: dict[str, Any]) -> dict[str, Any]:
     if patch is not None and params.get("device_width") is not None:
         patch = dict(patch)
         patch.setdefault("device_width", params.get("device_width"))
+    if patch is not None and params.get("device_height") is not None:
+        patch = dict(patch)
+        patch.setdefault("device_height", params.get("device_height"))
     if patch is None and command in ("set", "status"):
         patch = agent_m4l_recovery_patch(command_path)
     values = params.get("values")
