@@ -2212,9 +2212,43 @@ def test_validate_live_failure_prints_structured_diagnostics(tmp_path, monkeypat
     assert "bridge timed out" in output.err
     assert '"current": true' in output.out
     assert '"live_error": "bridge timed out"' in output.out
+    assert '"live_failure_type": "bridge_response_timeout"' in output.out
     assert '"runtime_current": false' in output.out
-    assert '"runtime_mismatch": "live_check_failed"' in output.out
-    assert "restart Ableton Live" in output.out
+    assert '"runtime_mismatch": "bridge_response_timeout"' in output.out
+    assert "modal" in output.out
+
+
+def test_validate_classifies_live_main_thread_timeout(tmp_path, monkeypatch, capsys):
+    install_remote_script("Ableton_Live_MCP", tmp_path)
+
+    class FakeClient:
+        def request(self, _method, _params):
+            raise AbletonBridgeError("-32000 Timed out waiting for Live main thread")
+
+    monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
+
+    assert validate_main(["--target-dir", str(tmp_path), "--timeout", "3", "--strict-timeout"]) == 1
+    output = capsys.readouterr()
+    assert '"live_failure_type": "live_main_thread_timeout"' in output.out
+    assert '"runtime_mismatch": "live_main_thread_timeout"' in output.out
+    assert "modal dialogs" in output.out
+    assert "before sending more mutations" in output.out
+
+
+def test_validate_classifies_bridge_not_listening(tmp_path, monkeypatch, capsys):
+    install_remote_script("Ableton_Live_MCP", tmp_path)
+
+    class FakeClient:
+        def request(self, _method, _params):
+            raise AbletonBridgeError("Could not connect to Ableton bridge at 127.0.0.1:8765: [Errno 61] Connection refused")
+
+    monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
+
+    assert validate_main(["--target-dir", str(tmp_path), "--timeout", "3", "--strict-timeout"]) == 1
+    output = capsys.readouterr()
+    assert '"live_failure_type": "bridge_not_listening"' in output.out
+    assert '"runtime_mismatch": "bridge_not_listening"' in output.out
+    assert "bridge is not listening" in output.out
 
 
 def test_remote_script_resources_available_from_source_checkout():

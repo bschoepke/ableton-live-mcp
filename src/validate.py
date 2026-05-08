@@ -61,11 +61,13 @@ def main(argv: list[str] | None = None) -> int:
                 raise AbletonBridgeError("%s validation failed: %s" % (method, item.get("error", "unknown error")))
             results[name] = item.get("result")
     except AbletonBridgeError as exc:
+        failure_type, next_action = _live_failure_diagnostics(exc)
         results["live_error"] = str(exc)
+        results["live_failure_type"] = failure_type
         results["remote_script"]["runtime_current"] = False
-        results["remote_script"]["runtime_mismatch"] = "live_check_failed"
+        results["remote_script"]["runtime_mismatch"] = failure_type
         results["remote_script"]["runtime_reload_required"] = True
-        results["remote_script"]["runtime_next_action"] = "Start Ableton Live and select or reload the Ableton_Live_MCP Control Surface; if the bridge remains unresponsive, restart Ableton Live."
+        results["remote_script"]["runtime_next_action"] = next_action
         print(json.dumps(results, indent=2, sort_keys=True))
         print(f"Ableton Live MCP validation failed: {exc}", file=sys.stderr)
         return 1
@@ -94,6 +96,36 @@ def _check_running_remote_script(results: dict) -> tuple[bool, str]:
     if actual != expected:
         return False, "bridge_hash_mismatch"
     return True, ""
+
+
+def _live_failure_diagnostics(exc: Exception) -> tuple[str, str]:
+    message = str(exc)
+    lower = message.lower()
+    if "connection refused" in lower:
+        return (
+            "bridge_not_listening",
+            "Start Ableton Live and select or reload the Ableton_Live_MCP Control Surface; the localhost bridge is not listening.",
+        )
+    if "could not connect" in lower and "timed out" in lower:
+        return (
+            "bridge_connect_timeout",
+            "Confirm Ableton Live is running and the Ableton_Live_MCP Control Surface is selected; reload the Control Surface if the bridge never starts listening.",
+        )
+    if "timed out waiting for live main thread" in lower:
+        return (
+            "live_main_thread_timeout",
+            "Check Ableton Live for modal dialogs, permission prompts, browser/indexing stalls, or heavy UI work; resolve the blocker, then rerun validation before sending more mutations.",
+        )
+    if "timed out" in lower:
+        return (
+            "bridge_response_timeout",
+            "Check Ableton Live for modal dialogs or UI stalls. In stressed sets, retry with a longer timeout only after confirming no modal is blocking Live.",
+        )
+    return (
+        "live_check_failed",
+        "Start Ableton Live and select or reload the Ableton_Live_MCP Control Surface; if the bridge remains unresponsive, restart Ableton Live.",
+    )
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

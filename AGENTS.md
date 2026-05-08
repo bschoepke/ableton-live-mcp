@@ -44,7 +44,7 @@ After changing files under `Ableton_Live_MCP/`, reinstall the Remote Script and 
 
 Reloading the Control Surface or restarting Live can interrupt playback and the user's current set. Ask for explicit user authorization before doing either, then rerun `ableton-live-mcp-validate` and require `runtime_current: true` before claiming current-runtime e2e validation.
 
-If validation fails with `live_error` and `runtime_mismatch: "live_check_failed"`, preserve that structured output in the investigation notes. It means installed files may still be current, but the running Live bridge did not complete the health check, so do not infer current-runtime behavior from source tests alone.
+If validation fails with `live_error`, preserve `live_failure_type`, `runtime_mismatch`, and `runtime_next_action` in the investigation notes. `live_main_thread_timeout` often means a modal dialog or heavy UI/indexing work is blocking Live; inspect the UI before sending more mutations. `bridge_not_listening` means the Control Surface bridge is not accepting localhost connections. Installed files may still be current in either case, so do not infer current-runtime behavior from source tests alone.
 
 ## Repository operations
 
