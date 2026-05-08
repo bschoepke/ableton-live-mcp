@@ -6,7 +6,7 @@ import json
 import platform
 import sys
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import agent_m4l
 from bridge import AbletonBridgeClient, AbletonBridgeError
@@ -25,13 +25,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     results = {
+        "mcp_tools": mcp_tool_schema_status(),
         "remote_script": remote_script_status(target_dir=args.target_dir),
         "m4l_host": agent_m4l.agent_m4l_host_status(),
         "visual_capture": visual_capture_dependency_status(),
     }
+    mcp_tools_ok = bool(results["mcp_tools"].get("ok"))
     remote_ok = bool(results["remote_script"].get("current"))
     m4l_host_ok = bool(results["m4l_host"].get("current"))
     visual_ok = bool(results["visual_capture"].get("ok"))
+    if not mcp_tools_ok:
+        print(json.dumps(results, indent=2, sort_keys=True))
+        print("Ableton Live MCP validation failed: local MCP tool schemas are stale or incomplete", file=sys.stderr)
+        return 1
     if not remote_ok and not args.allow_stale_remote_script:
         print(json.dumps(results, indent=2, sort_keys=True))
         print("Ableton Live MCP validation failed: installed Remote Script is missing or stale", file=sys.stderr)
@@ -124,6 +130,62 @@ def _check_running_remote_script(results: dict) -> tuple[bool, str]:
     if actual != expected:
         return False, "bridge_hash_mismatch"
     return True, ""
+
+
+def mcp_tool_schema_status() -> dict:
+    class _NoopBridge:
+        def request(self, _method: str, _params: dict) -> Any:
+            raise RuntimeError("schema inspection should not call Live")
+
+    try:
+        from server import make_server
+
+        server = make_server(_NoopBridge())
+        tools = {name: tool.as_mcp().get("inputSchema", {}) for name, tool in server.tools.items()}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+    expectations = {
+        "live_agent_audio_tap": {
+            "properties": ["command", "path", "id", "udp"],
+            "required": ["command"],
+            "enums": {"command": ["open", "start", "stop", "status"]},
+        },
+        "live_transport": {
+            "properties": ["action", "time", "timeout", "strict_timeout"],
+        },
+        "live_ping": {
+            "properties": ["timeout"],
+        },
+    }
+    checks = []
+    for name, expected in expectations.items():
+        schema = tools.get(name) or {}
+        properties = schema.get("properties") or {}
+        missing_properties = [item for item in expected.get("properties", []) if item not in properties]
+        missing_required = [item for item in expected.get("required", []) if item not in schema.get("required", [])]
+        enum_mismatches = {}
+        for prop, expected_enum in expected.get("enums", {}).items():
+            actual_enum = properties.get(prop, {}).get("enum")
+            if actual_enum != expected_enum:
+                enum_mismatches[prop] = {"expected": expected_enum, "actual": actual_enum}
+        ok = not missing_properties and not missing_required and not enum_mismatches
+        checks.append({
+            "tool": name,
+            "ok": ok,
+            "missing_properties": missing_properties,
+            "missing_required": missing_required,
+            "enum_mismatches": enum_mismatches,
+        })
+    failed = [item for item in checks if not item.get("ok")]
+    result = {
+        "ok": not failed,
+        "checked": len(checks),
+        "checks": checks,
+    }
+    if failed:
+        result["next_action"] = "Restart the MCP server/client so it advertises the current local tool schemas."
+    return result
 
 
 def visual_capture_dependency_status(

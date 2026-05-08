@@ -84,6 +84,7 @@ def test_initialize_includes_general_model_instructions():
     assert "start with path" in instructions
     assert "Idle sockets auto-retry" in instructions
     assert "Validate runtime_current" in instructions
+    assert "no-arg known-tool schema=stale MCP" in instructions
     assert "sent-call timeouts fail closed" in instructions
     assert "client/RS cooldown" in instructions
     assert "live_bridge_status" in instructions
@@ -109,6 +110,33 @@ def test_initialize_includes_general_model_instructions():
     assert "audio-reactive web: prove signal telemetry+visual delta" in instructions
     assert "full Live object model remains available" in instructions
     assert len(instructions) < 1600
+
+
+def test_validate_reports_local_mcp_tool_schemas():
+    status = validate.mcp_tool_schema_status()
+    assert status["ok"] is True
+    checks = {item["tool"]: item for item in status["checks"]}
+    assert checks["live_agent_audio_tap"]["ok"] is True
+    assert checks["live_transport"]["ok"] is True
+    assert checks["live_ping"]["ok"] is True
+
+
+def test_validate_fails_on_local_mcp_tool_schema_gap(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(validate, "mcp_tool_schema_status", lambda: {
+        "ok": False,
+        "next_action": "Restart the MCP server/client so it advertises the current local tool schemas.",
+    })
+
+    assert validate_main([
+        "--skip-live",
+        "--target-dir", str(tmp_path),
+        "--allow-stale-remote-script",
+        "--allow-stale-m4l-host",
+        "--allow-missing-visual-capture",
+    ]) == 1
+    output = capsys.readouterr()
+    assert '"mcp_tools"' in output.out
+    assert "local MCP tool schemas are stale or incomplete" in output.err
 
 
 def test_tool_call_forwards_arguments_to_bridge():
