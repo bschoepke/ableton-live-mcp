@@ -10,7 +10,13 @@ var lastCommandId = "";
 var currentCommandId = "";
 var pollTask = null;
 var webReadTask = null;
+var deferredCommandTask = null;
 var webReadTaskDueTime = 0;
+var webMessageDepth = 0;
+var deferredCommandTaskScheduled = 0;
+var deferredCommandPoll = 0;
+var deferredWebRead = 0;
+var deferredRawCommands = [];
 var dynamicObjects = [];
 var objectById = {};
 var objectSpecById = {};
@@ -47,6 +53,7 @@ var currentDeviceWidth = DEFAULT_DEVICE_WIDTH;
 var currentDeviceHeight = DEFAULT_DEVICE_HEIGHT;
 var lastActivityWakeAt = 0;
 var pollTaskScheduled = 0;
+var MAX_DEFERRED_RAW_COMMANDS = 8;
 
 function loadbang() {
     startStaticPolling();
@@ -103,7 +110,83 @@ function handlePollTask() {
     schedulePollTask(FALLBACK_POLL_INTERVAL);
 }
 
+function beginWebMessage() {
+    webMessageDepth += 1;
+}
+
+function endWebMessage() {
+    webMessageDepth -= 1;
+    if (webMessageDepth < 0) {
+        webMessageDepth = 0;
+    }
+    scheduleDeferredCommandTaskIfNeeded();
+}
+
+function deferCommandPoll() {
+    deferredCommandPoll = 1;
+    scheduleDeferredCommandTaskIfNeeded();
+}
+
+function deferWebRead() {
+    deferredWebRead = 1;
+    scheduleDeferredCommandTaskIfNeeded();
+}
+
+function deferRawCommand(raw) {
+    deferredRawCommands.push(String(raw || ""));
+    while (deferredRawCommands.length > MAX_DEFERRED_RAW_COMMANDS) {
+        deferredRawCommands.shift();
+    }
+    scheduleDeferredCommandTaskIfNeeded();
+}
+
+function scheduleDeferredCommandTaskIfNeeded() {
+    if (!deferredCommandPoll && !deferredWebRead && deferredRawCommands.length <= 0) {
+        return;
+    }
+    if (!deferredCommandTask) {
+        deferredCommandTask = new Task(handleDeferredCommandTask, this);
+    }
+    if (deferredCommandTaskScheduled) {
+        return;
+    }
+    try {
+        deferredCommandTaskScheduled = 1;
+        deferredCommandTask.schedule(1);
+    } catch (errScheduleDeferred) {
+        deferredCommandTaskScheduled = 0;
+    }
+}
+
+function handleDeferredCommandTask() {
+    deferredCommandTaskScheduled = 0;
+    if (webMessageDepth > 0) {
+        scheduleDeferredCommandTaskIfNeeded();
+        return;
+    }
+    var rawCommands = deferredRawCommands;
+    var shouldPoll = deferredCommandPoll;
+    var shouldReadWeb = deferredWebRead;
+    deferredRawCommands = [];
+    deferredCommandPoll = 0;
+    deferredWebRead = 0;
+    for (var i = 0; i < rawCommands.length; i++) {
+        applyRaw(rawCommands[i]);
+    }
+    if (shouldPoll) {
+        pollCommandFile();
+    }
+    if (shouldReadWeb) {
+        drainPendingWebUiReads();
+    }
+    scheduleDeferredCommandTaskIfNeeded();
+}
+
 function pollCommandFile() {
+    if (webMessageDepth > 0) {
+        deferCommandPoll();
+        return;
+    }
     var file = new File(commandFile, "read");
     if (!file.isopen) {
         drainPendingWebUiReads();
@@ -194,9 +277,7 @@ function handleLiveParameterChange(name, args) {
     var value = liveApiObservedValue(args);
     if (isCommandTriggerName(name)) {
         pollCommandFile();
-        if (pendingWebUiReads.length) {
-            readPendingWebUis();
-        }
+        drainPendingWebUiReads();
         return;
     }
     if (uiBindings[name] && !uiBindingUpdating) {
@@ -286,7 +367,12 @@ function anything() {
     } else if (messagename === "set_many_silent" || messagename === "param_many_silent") {
         applyValues(valuesFromAtoms(atoms), false);
     } else if (webUiIdByTag[messagename]) {
-        handleTaggedWebUiMessage(messagename, atoms);
+        beginWebMessage();
+        try {
+            handleTaggedWebUiMessage(messagename, atoms);
+        } finally {
+            endWebMessage();
+        }
     } else if (messagename === "__self_device") {
         handleSelfDevicePath(atoms);
     } else if (messagename === "__command_trigger") {
@@ -300,13 +386,33 @@ function anything() {
     } else if (messagename.indexOf("__live_param_") === 0) {
         handleLiveParameterObserverMessage(messagename, atoms);
     } else if (messagename === "url" || messagename === "title") {
-        handleWebUiLoadMessage(messagename, atoms, "");
+        beginWebMessage();
+        try {
+            handleWebUiLoadMessage(messagename, atoms, "");
+        } finally {
+            endWebMessage();
+        }
     } else if (messagename === "web_ready" || messagename === "webReady" || messagename === "agent_web_ready") {
-        handleWebUiReadyMessage(atoms, "");
+        beginWebMessage();
+        try {
+            handleWebUiReadyMessage(atoms, "");
+        } finally {
+            endWebMessage();
+        }
     } else if (messagename === "web_error" || messagename === "webError") {
-        handleWebUiErrorMessage(atoms, "");
+        beginWebMessage();
+        try {
+            handleWebUiErrorMessage(atoms, "");
+        } finally {
+            endWebMessage();
+        }
     } else if (messagename === "web_tick" || messagename === "agent_web_tick") {
-        handleWebTick();
+        beginWebMessage();
+        try {
+            handleWebTick();
+        } finally {
+            endWebMessage();
+        }
     } else {
         applyRaw([messagename].concat(atoms).join(" "));
     }
@@ -316,9 +422,7 @@ function handleCommandTrigger() {
     start_polling();
     markCommandWake("command_trigger");
     pollCommandFile();
-    if (pendingWebUiReads.length) {
-        readPendingWebUis();
-    }
+    drainPendingWebUiReads();
 }
 
 function handleFilewatchWake(atoms) {
@@ -328,9 +432,7 @@ function handleFilewatchWake(atoms) {
     markCommandWake("filewatch");
     var before = lastCommandId;
     pollCommandFile();
-    if (pendingWebUiReads.length) {
-        readPendingWebUis();
-    }
+    drainPendingWebUiReads();
     if (before === lastCommandId) {
         report("filewatch", { filewatch_bangs: state.filewatch_bangs });
     }
@@ -465,18 +567,14 @@ function msg_int(value) {
     start_polling();
     markCommandWake("int");
     pollCommandFile();
-    if (pendingWebUiReads.length) {
-        readPendingWebUis();
-    }
+    drainPendingWebUiReads();
 }
 
 function msg_float(value) {
     start_polling();
     markCommandWake("float");
     pollCommandFile();
-    if (pendingWebUiReads.length) {
-        readPendingWebUis();
-    }
+    drainPendingWebUiReads();
 }
 
 function list() {
@@ -498,9 +596,7 @@ function handleActivityWake(source) {
     lastActivityWakeAt = now;
     markCommandWake(source);
     pollCommandFile();
-    if (pendingWebUiReads.length) {
-        readPendingWebUis();
-    }
+    drainPendingWebUiReads();
 }
 
 function currentTimeMs() {
@@ -519,6 +615,10 @@ function markCommandWake(source) {
 function applyRaw(raw) {
     var command;
     raw = String(raw || "");
+    if (webMessageDepth > 0) {
+        deferRawCommand(raw);
+        return;
+    }
     if (raw.charAt(0) !== "{" && raw.charAt(0) !== "[") {
         return;
     }
@@ -921,7 +1021,7 @@ function scheduleWebUiReadSeries(obj, path, id, readMessage, fallbackPath) {
     }
     state.web_read_scheduled = (state.web_read_scheduled || 0) + WEBUI_READ_DELAYS.length;
     state.web_read_pending = pendingWebUiReads.length;
-    readPendingWebUis();
+    drainPendingWebUiReads();
     scheduleNextPendingWebRead();
 }
 
@@ -952,6 +1052,10 @@ function scheduleNextPendingWebRead() {
 }
 
 function readPendingWebUis() {
+    if (webMessageDepth > 0) {
+        deferWebRead();
+        return;
+    }
     webReadTaskDueTime = 0;
     var now = nowMs();
     var reads = [];
@@ -1767,6 +1871,10 @@ function pushWebState() {
 
 function drainPendingWebUiReads() {
     if (pendingWebUiReads.length) {
+        if (webMessageDepth > 0) {
+            deferWebRead();
+            return;
+        }
         readPendingWebUis();
     }
 }

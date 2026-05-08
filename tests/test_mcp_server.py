@@ -2468,6 +2468,20 @@ def test_validate_checks_agent_m4l_host_companion_js(tmp_path, monkeypatch, caps
     assert '"current": true' in passed.out
 
 
+def test_agent_m4l_host_defers_web_message_driven_reload_teardown():
+    source = validate.agent_m4l.HOST_JS.read_text(encoding="utf-8")
+
+    assert "var webMessageDepth = 0;" in source
+    assert "function deferCommandPoll()" in source
+    assert "function deferRawCommand(raw)" in source
+    assert "function handleDeferredCommandTask()" in source
+    assert "if (webMessageDepth > 0) {\n        deferCommandPoll();" in source
+    assert "if (webMessageDepth > 0) {\n        deferRawCommand(raw);" in source
+    assert "function readPendingWebUis() {\n    if (webMessageDepth > 0) {" in source
+    assert "beginWebMessage();" in source
+    assert "this.patcher.remove(dynamicObjects[i]);" in source
+
+
 def test_visual_capture_dependency_status_classifies_platform_requirements():
     found = {"PIL.Image", "Quartz"}
     status = validate.visual_capture_dependency_status("Darwin", lambda module: object() if module in found else None)

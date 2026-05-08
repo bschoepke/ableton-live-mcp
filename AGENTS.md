@@ -213,13 +213,15 @@ When `live_agent_m4l_device` does not need to build or resolve a Live track/devi
 
 For iterative generated M4L updates, reuse the installed role host. `live_agent_m4l_device` skips rebuilds by default for `set`, `status`, `clear`, and value-only calls; pass `build: true` only when creating/replacing the host AMXD.
 
+Generated M4L UI remains freeform: native, web, hybrid, Three.js, piano rolls, sequencers, and custom layouts are all allowed. Reliability still requires lifecycle discipline: reuse stable instance IDs and existing hosts during iteration, and clear or remove stale test devices/tracks before creating more web UI instances. Each `jweb`/`jbrowser` view can create renderer work in Max; if OS diagnostics show many `Max Helper (Renderer)` processes or high Live/Max renderer CPU, stop creating new web views and recover Live before continuing.
+
 Hot reloads should preserve current values for matching generated parameter IDs. When changing a patch/spec, keep stable IDs for controls and controlled objects that should retain state; change IDs deliberately when the new design should reset a value.
 
 In large or stressed Live sets, do not pass short `timeout` values such as `10` to `live_batch`, transport, browser, or generated-device operations unless deliberately probing latency. The Remote Script and Python client default to a longer main-thread timeout so ordinary playback/control commands can survive Live UI stalls.
 
 Short `timeout` values are non-strict by default: the Remote Script and Python client clamp them to the default main-thread wait to avoid accidental failures in stressed sets. Use `strict_timeout: true` only for deliberate latency probes where a timeout failure is the expected signal.
 
-After a Live main-thread timeout, the Remote Script enters a short stall cooldown and refuses to enqueue more Live API work while still answering `live_bridge_status` from the socket thread. This prevents repeated agents from accumulating abandoned callbacks in an already hung set. Wait for cooldown only for a deliberate health probe; for ordinary work, recover Live first and then rerun validation.
+The Remote Script must serialize scheduled Live main-thread calls. If one Live API request is already scheduled or running, later Live API requests should fail fast instead of queueing more callbacks behind it; `live_bridge_status` must still answer from the socket thread. After a Live main-thread timeout, the Remote Script enters a short stall cooldown, and if the timed-out callback had already started it keeps the in-flight gate closed until that callback returns. For ordinary work, recover Live first and then rerun validation; use `force_main_thread_probe` only for a deliberate bounded health probe, not for mutations.
 
 A build/install can succeed before Live's browser has indexed the new AMXD. In that case `live_agent_m4l_device` may return `loaded: false` with `load_error` while still returning `built`, `command_file`, and `status_file`. Treat that as a recoverable indexing/load condition: reuse an already loaded compatible host for immediate validation, or retry loading after the browser catches up.
 

@@ -5,6 +5,7 @@ import json
 import socket
 import sys
 import threading
+import time
 import types
 from pathlib import Path
 
@@ -422,6 +423,10 @@ def make_bridge(monkeypatch):
     bridge._main_thread_last_timeout_method = None
     bridge._main_thread_last_success_at = 0.0
     bridge._main_thread_stall_until = 0.0
+    bridge._main_thread_request_lock = threading.BoundedSemaphore(1)
+    bridge._main_thread_busy_method = None
+    bridge._main_thread_busy_since = 0.0
+    bridge._main_thread_busy_timed_out = False
     bridge.song = lambda: song
     return bridge, song, app
 
@@ -1783,6 +1788,7 @@ def test_run_on_main_abandons_request_that_has_not_started(monkeypatch):
     assert invoked == []
     callbacks[0]()
     assert invoked == []
+    assert bridge._main_thread_busy_method is None
 
 
 def test_bridge_status_does_not_schedule_on_main_thread(monkeypatch):
@@ -1795,6 +1801,19 @@ def test_bridge_status_does_not_schedule_on_main_thread(monkeypatch):
     assert response["result"]["ok"] is True
     assert response["result"]["server_thread_responsive"] is True
     assert response["result"]["main_thread"]["timeouts"] == 0
+
+
+def test_bridge_status_reports_in_flight_main_thread_request(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    bridge._main_thread_busy_method = "slow_call"
+    bridge._main_thread_busy_since = time.time() - 3.0
+    bridge._main_thread_busy_timed_out = True
+
+    status = bridge._rpc_bridge_status({})
+
+    assert status["main_thread"]["in_flight_method"] == "slow_call"
+    assert status["main_thread"]["in_flight_timed_out"] is True
+    assert status["main_thread"]["in_flight_age"] >= 2.0
 
 
 def test_run_on_main_circuit_breaker_after_timeout(monkeypatch):
@@ -1820,6 +1839,75 @@ def test_run_on_main_circuit_breaker_after_timeout(monkeypatch):
         raise AssertionError("expected circuit breaker refusal")
 
     assert len(callbacks) == 1
+
+
+def test_run_on_main_rejects_when_main_thread_request_is_in_flight(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    bridge._main_thread_id = -1
+    assert bridge._main_thread_request_lock.acquire(False)
+    bridge._main_thread_busy_method = "slow_call"
+    bridge._main_thread_busy_since = time.time() - 2.0
+    bridge._main_thread_busy_timed_out = True
+    bridge.schedule_message = lambda _delay, _callback: (_ for _ in ()).throw(AssertionError("scheduled main thread"))
+
+    try:
+        bridge._run_on_main("marker", {"timeout": 0.001, "strict_timeout": True, "force_main_thread_probe": True})
+    except RuntimeError as exc:
+        message = str(exc)
+        assert "already in flight" in message
+        assert "slow_call" in message
+        assert "after that request already timed out" in message
+        assert "refusing to enqueue marker" in message
+    else:
+        raise AssertionError("expected in-flight refusal")
+    finally:
+        bridge._main_thread_request_lock.release()
+
+
+def test_started_main_thread_timeout_keeps_gate_closed_until_callback_returns(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    bridge._main_thread_id = -1
+    started = threading.Event()
+    release = threading.Event()
+    threads = []
+
+    def slow_call(_params):
+        started.set()
+        release.wait(1.0)
+        return True
+
+    def schedule(_delay, callback):
+        thread = threading.Thread(target=callback)
+        thread.daemon = True
+        threads.append(thread)
+        thread.start()
+        assert started.wait(1.0)
+
+    bridge.schedule_message = schedule
+    bridge._rpc_slow_call = slow_call
+
+    try:
+        bridge._run_on_main("slow_call", {"timeout": 0.001, "strict_timeout": True, "stall_cooldown": 0})
+    except RuntimeError as exc:
+        assert "Timed out waiting for Live main thread" in str(exc)
+    else:
+        raise AssertionError("expected timeout")
+
+    try:
+        bridge._run_on_main("marker", {"timeout": 0.001, "strict_timeout": True, "force_main_thread_probe": True})
+    except RuntimeError as exc:
+        message = str(exc)
+        assert "already in flight" in message
+        assert "slow_call" in message
+        assert "after that request already timed out" in message
+    else:
+        raise AssertionError("expected in-flight refusal")
+
+    release.set()
+    for thread in threads:
+        thread.join(1.0)
+    assert bridge._main_thread_busy_method is None
+    assert bridge._main_thread_busy_timed_out is False
 
 
 def test_run_on_main_clamps_short_non_strict_timeouts(monkeypatch):

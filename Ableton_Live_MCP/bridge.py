@@ -72,6 +72,10 @@ class AbletonLiveMCP(ControlSurface):
         self._main_thread_last_timeout_method = None
         self._main_thread_last_success_at = 0.0
         self._main_thread_stall_until = 0.0
+        self._main_thread_request_lock = threading.BoundedSemaphore(1)
+        self._main_thread_busy_method = None
+        self._main_thread_busy_since = 0.0
+        self._main_thread_busy_timed_out = False
         self._handler_slots = threading.BoundedSemaphore(16)
         with self.component_guard():
             self._start_server()
@@ -191,15 +195,19 @@ class AbletonLiveMCP(ControlSurface):
                 return value
             return self._encode(value, self._encode_options(params))
         self._raise_if_main_thread_in_stall_cooldown(method, params)
+        gate_released = self._acquire_main_thread_request_gate(method)
         done = threading.Event()
         result = {"value": None, "error": None}
         abandoned = {"value": False}
+        started = {"value": False}
 
         def invoke():
             if abandoned["value"]:
                 done.set()
+                self._release_main_thread_request_gate(gate_released)
                 return
             try:
+                started["value"] = True
                 self._check_expected_set_signature(params)
                 value = getattr(self, "_rpc_" + method)(params)
                 if isinstance(value, _EncodedResult):
@@ -211,12 +219,19 @@ class AbletonLiveMCP(ControlSurface):
                 result["error"] = sys.exc_info()
             finally:
                 done.set()
+                self._release_main_thread_request_gate(gate_released)
 
-        self.schedule_message(0, invoke)
+        try:
+            self.schedule_message(0, invoke)
+        except Exception:
+            self._release_main_thread_request_gate(gate_released)
+            raise
         timeout = self._main_thread_timeout(params)
         if not done.wait(timeout):
             abandoned["value"] = True
             self._mark_main_thread_timeout(method, params)
+            if not started["value"]:
+                self._release_main_thread_request_gate(gate_released)
             raise RuntimeError("Timed out waiting for Live main thread during %s after %.3gs" % (method, timeout))
         if result["error"]:
             exc_type, exc, tb = result["error"]
@@ -228,12 +243,18 @@ class AbletonLiveMCP(ControlSurface):
         last_timeout_at = getattr(self, "_main_thread_last_timeout_at", 0.0)
         last_success_at = getattr(self, "_main_thread_last_success_at", 0.0)
         stall_until = getattr(self, "_main_thread_stall_until", 0.0)
+        busy_since = getattr(self, "_main_thread_busy_since", 0.0)
+        busy_method = getattr(self, "_main_thread_busy_method", None)
         main_thread = {
             "thread_id": getattr(self, "_main_thread_id", None),
             "timeouts": getattr(self, "_main_thread_timeout_count", 0),
             "last_timeout_method": getattr(self, "_main_thread_last_timeout_method", None),
             "stall_cooldown_remaining": max(0.0, stall_until - now),
+            "in_flight_method": busy_method,
+            "in_flight_timed_out": bool(getattr(self, "_main_thread_busy_timed_out", False)),
         }
+        if busy_method and busy_since:
+            main_thread["in_flight_age"] = max(0.0, now - busy_since)
         if last_timeout_at:
             main_thread["last_timeout_age"] = max(0.0, now - last_timeout_at)
         if last_success_at:
@@ -258,6 +279,39 @@ class AbletonLiveMCP(ControlSurface):
                 % (previous, method, remaining)
             )
 
+    def _ensure_main_thread_request_gate(self):
+        if not hasattr(self, "_main_thread_request_lock"):
+            self._main_thread_request_lock = threading.BoundedSemaphore(1)
+            self._main_thread_busy_method = None
+            self._main_thread_busy_since = 0.0
+            self._main_thread_busy_timed_out = False
+
+    def _acquire_main_thread_request_gate(self, method):
+        self._ensure_main_thread_request_gate()
+        if self._main_thread_request_lock.acquire(False):
+            self._main_thread_busy_method = method
+            self._main_thread_busy_since = time.time()
+            self._main_thread_busy_timed_out = False
+            return {"value": False}
+        busy_method = getattr(self, "_main_thread_busy_method", None) or "unknown"
+        busy_since = getattr(self, "_main_thread_busy_since", 0.0)
+        busy_for = max(0.0, time.time() - busy_since) if busy_since else 0.0
+        suffix = " after that request already timed out" if getattr(self, "_main_thread_busy_timed_out", False) else ""
+        raise RuntimeError(
+            "Live main-thread request already in flight (%s for %.1fs%s); refusing to enqueue %s. "
+            "Use live_bridge_status for socket-thread health, then recover or restart/reload Live before sending mutations."
+            % (busy_method, busy_for, suffix, method)
+        )
+
+    def _release_main_thread_request_gate(self, released):
+        if released["value"]:
+            return
+        released["value"] = True
+        self._main_thread_busy_method = None
+        self._main_thread_busy_since = 0.0
+        self._main_thread_busy_timed_out = False
+        self._main_thread_request_lock.release()
+
     def _mark_main_thread_success(self):
         self._main_thread_last_success_at = time.time()
         self._main_thread_stall_until = 0.0
@@ -267,6 +321,8 @@ class AbletonLiveMCP(ControlSurface):
         self._main_thread_timeout_count = getattr(self, "_main_thread_timeout_count", 0) + 1
         self._main_thread_last_timeout_at = now
         self._main_thread_last_timeout_method = method
+        if getattr(self, "_main_thread_busy_method", None) == method:
+            self._main_thread_busy_timed_out = True
         cooldown = float(params.get("stall_cooldown") or DEFAULT_MAIN_THREAD_STALL_COOLDOWN)
         if cooldown > 0:
             self._main_thread_stall_until = max(getattr(self, "_main_thread_stall_until", 0.0), now + cooldown)

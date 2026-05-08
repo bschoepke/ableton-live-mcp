@@ -34,17 +34,17 @@ AGENT_M4L_STATIC_OBJECTS_BY_ROLE = {
 }
 AGENT_M4L_RESERVED_IDS = {"js", "script", "status", "udp", "out", "poll-metro", "command-trigger"}
 ABLETON_MCP_INSTRUCTIONS = (
-    "General Live bridge; no fixed recipes. "
-    "Prefer installed Packs/user assets/samples/presets/devices/plugins unless asked; roots:['plugins']; SKU varies. "
+    "General Live bridge. "
+    "Prefer installed Packs/user assets/samples/presets/devices/plugins unless asked; roots:['plugins']. "
     "Sets: live_set_summary first; expected_set_signature for destructive edits. "
-    "Compact live_exec/live_batch, property lists, child limits, JSON-safe clips. "
+    "Compact live_exec/live_batch; limit props/children/strings. "
     "find_similar_sounds requires Live 12+ analysis. "
     "AgentAudioTap: master tap + solo target; start with path. "
-    "Idle sockets auto-retry; sent-call timeouts fail closed; use live_bridge_status before retry. "
-    "Agent must visually verify M4L device UI via live_visual_capture; Ableton-window-only, never capture arbitrary apps/windows; device-detail crop/max; blank_capture invalid; locked/asleep display blocks capture/e2e. "
-    "M4L: hot-reloads arbitrary native/web/mixed UI; wait_status/compact_result, matching command_id required. Supports preflight files, UDP hints, throttled fallback wakes, load:false/set/status skip build, host_not_woken=no ack, midiin+midiparse, origin-aligned rect/openrect, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batches/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web must prove signal telemetry+nonblank visual delta. No web ack/width shrink: reload/simplify or validate fresh host. "
-    "Avoid broad dumps. Gotchas: live_eval expression-only; use live_exec for statements; Live numeric args are JSON numbers; Simpler.sample is not generally settable; use ids from summaries. "
-    "Hints only; full Live object model remains available through paths, ids, calls, props, children, listeners, eval."
+    "Idle sockets auto-retry; sent-call timeouts fail closed; main-thread calls serialize/reject in flight; use live_bridge_status before retry. "
+    "Agent must visually verify M4L device UI via live_visual_capture: Ableton-window-only, never capture arbitrary apps/windows, device-detail crop, blank_capture invalid; locked/asleep display blocks capture/e2e. "
+    "M4L: arbitrary native/web/mixed UI hot-reloads; wait_status/compact_result + matching command_id. Reuse hosts/IDs; avoid web-renderer buildup; clear stale tests. Supports preflight files, UDP hints, throttled fallback wakes, load:false/set/status skip build, host_not_woken=no ack, midiin+midiparse, origin-aligned rect/openrect, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batch/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web must prove signal telemetry+nonblank visual delta. No web ack/width shrink: reload/simplify or validate fresh host. "
+    "Avoid broad dumps. Gotchas: live_eval expr-only; use live_exec; Live nums JSON; Simpler.sample not settable; ids from summaries. "
+    "Hints only; full Live object model remains available: paths, ids, calls, props, children, listeners, eval."
 )
 AGENT_M4L_TOOL_DESCRIPTION = (
     "arbitrary native UI, jweb/jbrowser web UI/mixed; "
