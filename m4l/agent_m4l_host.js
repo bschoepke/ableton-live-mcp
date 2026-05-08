@@ -1600,14 +1600,45 @@ function applyValues(values, shouldReport) {
 
 function sendObjectValue(obj, spec, value, command) {
     if (command && command.message) {
-        var args = command.args || [];
+        var args = command.args !== undefined ? command.args : messageValueArgs(value);
         obj.message.apply(obj, [String(command.message)].concat(args));
     } else if (spec && spec.set_message) {
-        obj.message.apply(obj, [String(spec.set_message)].concat(asArray(value)));
+        obj.message.apply(obj, [String(spec.set_message)].concat(messageValueArgs(value)));
+    } else if (value instanceof Array) {
+        obj.message.apply(obj, [String((spec && (spec.list_message || spec.listMessage)) || "list")].concat(value));
+    } else if (value && typeof value === "object") {
+        sendObjectDataValue(obj, spec || {}, value);
     } else if (typeof value === "number") {
         sendNumericValue(obj, spec || {}, value);
     } else if (value !== undefined) {
         obj.message(String(value));
+    }
+}
+
+function messageValueArgs(value) {
+    if (value instanceof Array) {
+        return value;
+    }
+    if (value && typeof value === "object") {
+        if (value.values instanceof Array) {
+            return value.values;
+        }
+        return [JSON.stringify(value)];
+    }
+    return asArray(value);
+}
+
+function sendObjectDataValue(obj, spec, value) {
+    if (value.values instanceof Array) {
+        obj.message.apply(obj, [String(spec.list_message || spec.listMessage || "list")].concat(value.values));
+        return;
+    }
+    var message = String(spec.object_message || spec.objectMessage || spec.json_message || spec.jsonMessage || "symbol");
+    var raw = JSON.stringify(value);
+    if (message === "symbol") {
+        obj.message(raw);
+    } else {
+        obj.message(message, raw);
     }
 }
 

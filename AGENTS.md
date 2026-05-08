@@ -117,6 +117,8 @@ When stress-testing many simultaneous web UI devices, a fresh `jweb` panel can f
 
 For high-rate web UI gestures, animation clocks, piano rolls, sequencers, and meters, send `set_silent`/`param_silent` or batched `set_many_silent`/`param_many_silent` from the web panel instead of `set`/`param`; then use explicit status commands for validation snapshots. Use normal `set` when an event should acknowledge through the status file.
 
+For creative state that is naturally a list or object, keep it generic: route arrays to Max objects with `set_message` or `list_message`, and route JSON-like objects with `object_message`/`json_message` when a specific Max object expects serialized data. Do not flatten step patterns, piano-roll notes, or custom gesture payloads into unrelated scalar controls just to fit a knob model.
+
 For long generated-device soaks, track transport state separately from command/device failures. If Live transport stops, relaunch the target clip and count that as a transport event; do not let every later silent meter sample inflate the device failure count. Keep command acknowledgements, connection errors, transport stops, restarts, and meter readings as separate counters.
 
 In heavy generated sets, timeline seeks and repeated `transport play` with `time: 0` can be much slower than compact status/value commands. Prefer checking transport status, using continue/play without a seek, or relaunching only the target clip when possible; reserve timeline resets for tests that specifically need them and give those calls a realistic timeout.

@@ -696,6 +696,9 @@ def test_agent_m4l_device_tool_materializes_webui_arrays(monkeypatch, tmp_path):
                 "id": "left",
                 "object": "jbrowser~",
                 "title": "Left",
+                "reuse": False,
+                "read_message": "readfile",
+                "html_url": existing.resolve().as_uri(),
                 "presentation_rect": [0, 0, 240, 120],
                 "controls": [{"id": "mix", "label": "Mix", "value": 0.4}],
             },
@@ -718,6 +721,9 @@ def test_agent_m4l_device_tool_materializes_webui_arrays(monkeypatch, tmp_path):
     forwarded = bridge.calls[0][1]
     assert len(forwarded["webuis"]) == 2
     assert forwarded["webuis"][0]["object"] == "jbrowser~"
+    assert forwarded["webuis"][0]["reuse"] is False
+    assert forwarded["webuis"][0]["read_message"] == "readfile"
+    assert forwarded["webuis"][0]["html_url"].startswith("file://")
     assert forwarded["webuis"][0]["html_path"].endswith("Panel_Test_left/index.html")
     assert forwarded["webuis"][1]["html_path"] == str(existing)
     assert forwarded["patch"]["webuis"] == forwarded["webuis"]
@@ -726,6 +732,8 @@ def test_agent_m4l_device_tool_materializes_webui_arrays(monkeypatch, tmp_path):
     assert response["result"]["structuredContent"]["built"]["device_width"] == 500
     assert response["result"]["structuredContent"]["built"]["device_height"] == 140
     assert response["result"]["structuredContent"]["webui"]["webuis"][0]["url"].startswith("file://")
+    assert response["result"]["structuredContent"]["webui"]["webuis"][0]["reuse"] is False
+    assert response["result"]["structuredContent"]["webui"]["webuis"][0]["read_message"] == "readfile"
 
 
 def test_agent_m4l_device_tool_materializes_existing_webui_assets(monkeypatch, tmp_path):

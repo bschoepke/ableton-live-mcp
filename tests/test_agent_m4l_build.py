@@ -302,6 +302,10 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "set_silent" in source
     assert "param_silent" in source
     assert "set_many_silent" in source
+    assert "messageValueArgs" in source
+    assert "sendObjectDataValue" in source
+    assert "spec.list_message || spec.listMessage" in source
+    assert "spec.object_message || spec.objectMessage || spec.json_message || spec.jsonMessage" in source
     assert "handleWebUiLoadMessage" in source
     assert "handleWebUiReadyMessage" in source
     assert "handleWebUiErrorMessage" in source
