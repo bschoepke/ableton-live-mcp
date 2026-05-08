@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import sqlite3
 from pathlib import Path
 
@@ -1292,7 +1293,7 @@ def test_bridge_error_omits_traceback_by_default(monkeypatch):
         "id": 1,
         "error": {"code": -32000, "message": "bad call", "data": "Traceback: noisy"},
     }
-    monkeypatch.setattr(client, "_read_line", lambda _sock, _max_bytes: json.dumps(message).encode("utf-8"))
+    monkeypatch.setattr(client, "_read_line", lambda _sock, _max_bytes, _deadline=None: json.dumps(message).encode("utf-8"))
 
     class FakeSocket:
         def __enter__(self):
@@ -1361,6 +1362,29 @@ def test_bridge_client_uses_short_connect_timeout(monkeypatch):
 
     assert client.request("ping") == {"ok": True}
     assert connect_calls == [(("127.0.0.1", 8765), 1.5)]
+
+
+def test_bridge_client_response_timeout_is_not_retried(monkeypatch):
+    client_sock, server_sock = socket.socketpair()
+    connect_calls = []
+
+    def connect(address, timeout):
+        connect_calls.append((address, timeout))
+        return client_sock
+
+    monkeypatch.setattr("socket.create_connection", connect)
+    client = AbletonBridgeClient(BridgeConfig(timeout=0.05, connect_timeout=0.01, idle_timeout=0.0))
+
+    try:
+        with pytest.raises(AbletonBridgeError) as exc:
+            client.request("agent_m4l_device")
+    finally:
+        server_sock.close()
+        client.close()
+
+    assert "timed out after" in str(exc.value)
+    assert "not retried automatically" in str(exc.value)
+    assert len(connect_calls) == 1
 
 
 def test_bridge_client_reuses_socket(monkeypatch):
