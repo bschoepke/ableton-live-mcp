@@ -589,6 +589,10 @@ function normalizeWebObject(name) {
 }
 
 function webMessageOutlet(name) {
+    var value = String(name || "").toLowerCase();
+    if (value.indexOf("jweb~") === 0) {
+        return 2;
+    }
     return 0;
 }
 

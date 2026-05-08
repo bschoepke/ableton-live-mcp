@@ -146,7 +146,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "setattr" in source
     assert "sendtoback" in source
     assert "webMessageOutlet" in source
-    assert "function webMessageOutlet(name) {\n    return 0;\n}" in source
+    assert 'if (value.indexOf("jweb~") === 0) {' in source
+    assert "return 2;" in source
     assert "normalizeWebObject" in source
     assert 'if (value === "jbrowser~") {\n        return "jweb";\n    }' in source
     assert "arrayfromargs(arguments)" in source
