@@ -19,7 +19,7 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert "receive~ %s" % buses["output_left"] in texts
     assert "receive~ %s" % buses["output_right"] in texts
     assert "udpreceive %d" % udp_port("Lead") in texts
-    assert "qmetro 20" in texts
+    assert "metro 50 @active 1 @defer 1" in texts
     assert "deferlow" in texts
     assert "delay 100" in texts
     assert {"patchline": {"source": ["poll-delay", 0], "destination": ["js", 0]}} in lines
@@ -192,6 +192,7 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "sendNumericValue" in source
     assert "function bang()" in source
     assert 'pollCommandFile();' in source
+    assert "if (pendingWebUiReads.length)" in source
     assert "shouldSendToggleValue" in source
     assert 'obj.message("int", Math.round(value) ? 1 : 0)' in source
     assert "shouldOutputStoredValue" in source

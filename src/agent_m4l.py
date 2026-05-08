@@ -245,7 +245,7 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
         _box("udp", "newobj", "udpreceive %d" % udp_port(instance_id), 220.0, 20.0),
         _box("poll-loadbang", "newobj", "loadbang", 220.0, 58.0),
         _box("poll-start", "message", "1", 220.0, 96.0),
-        _box("poll-metro", "newobj", "qmetro 20", 220.0, 134.0),
+        _box("poll-metro", "newobj", "metro 50 @active 1 @defer 1", 220.0, 134.0),
         _box("poll-defer", "newobj", "deferlow", 340.0, 96.0),
         _box("poll-delay", "newobj", "delay 100", 340.0, 134.0),
         _box("script", "newobj", "thispatcher", 420.0, 20.0),

@@ -143,6 +143,9 @@ function msg_string(value) {
 
 function bang() {
     pollCommandFile();
+    if (pendingWebUiReads.length) {
+        readPendingWebUis();
+    }
 }
 
 function applyRaw(raw) {
