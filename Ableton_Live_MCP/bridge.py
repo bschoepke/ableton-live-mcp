@@ -892,6 +892,7 @@ class AbletonLiveMCP(ControlSurface):
         target = self._resolve(params.get("ref"))
         created_clip = False
         launched = False
+        legacy_note_api = False
         if hasattr(target, "has_clip") and hasattr(target, "clip"):
             if not getattr(target, "has_clip", False):
                 length = params.get("create_clip_length")
@@ -915,27 +916,32 @@ class AbletonLiveMCP(ControlSurface):
                     setattr(clip, attr, float(params.get(key)))
                 except Exception:
                     pass
-        if params.get("clear"):
-            try:
-                clip.remove_notes_extended(from_pitch=0, pitch_span=128, from_time=0.0, time_span=float(getattr(clip, "length", 0.0)))
-            except TypeError:
-                clip.remove_notes(0.0, 0, float(getattr(clip, "length", 0.0)), 128)
-        clear_range = params.get("clear_range")
-        if clear_range:
+
+        def remove_notes_extended(from_pitch, pitch_span, from_time, time_span):
             try:
                 clip.remove_notes_extended(
-                    from_pitch=int(clear_range["from_pitch"]),
-                    pitch_span=int(clear_range["pitch_span"]),
-                    from_time=float(clear_range["from_time"]),
-                    time_span=float(clear_range["time_span"]),
+                    from_pitch=int(from_pitch),
+                    pitch_span=int(pitch_span),
+                    from_time=float(from_time),
+                    time_span=float(time_span),
                 )
-            except TypeError:
-                clip.remove_notes(
-                    float(clear_range["from_time"]),
-                    int(clear_range["from_pitch"]),
-                    float(clear_range["time_span"]),
-                    int(clear_range["pitch_span"]),
-                )
+                return False
+            except (AttributeError, TypeError):
+                if not params.get("allow_legacy_note_api"):
+                    raise RuntimeError("clip_add_notes clear requires remove_notes_extended; refusing legacy remove_notes unless allow_legacy_note_api is true")
+                clip.remove_notes(float(from_time), int(from_pitch), float(time_span), int(pitch_span))
+                return True
+
+        if params.get("clear"):
+            legacy_note_api = remove_notes_extended(0, 128, 0.0, float(getattr(clip, "length", 0.0))) or legacy_note_api
+        clear_range = params.get("clear_range")
+        if clear_range:
+            legacy_note_api = remove_notes_extended(
+                clear_range["from_pitch"],
+                clear_range["pitch_span"],
+                clear_range["from_time"],
+                clear_range["time_span"],
+            ) or legacy_note_api
         specs = []
         for note in params.get("notes") or []:
             specs.append(Live.Clip.MidiNoteSpecification(
@@ -955,6 +961,7 @@ class AbletonLiveMCP(ControlSurface):
             "added": len(specs),
             "created_clip": created_clip,
             "launched": launched,
+            "legacy_note_api": legacy_note_api,
             "note_count": len(list(clip.get_all_notes_extended())),
         }
 

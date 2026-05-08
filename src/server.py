@@ -178,6 +178,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "create_clip_length": {"type": "number"},
         "clip_name": {"type": "string"},
         "fire": {"type": "boolean"},
+        "allow_legacy_note_api": {"type": "boolean"},
         "clear_range": {"type": "object", "properties": {
             "from_pitch": {"type": "integer"},
             "pitch_span": {"type": "integer"},
@@ -240,7 +241,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "limit": {"type": "integer", "minimum": 0},
         "expected_set_signature": {"type": "string"},
     }, ["ref"]), forward("clip_warp_markers")))
-    server.add_tool(Tool("live_track_create_audio_clip", "Create an Arrangement audio clip on a track from a local audio file.", schema({
+    server.add_tool(Tool("live_track_create_audio_clip", "Create Arrangement audio clip from local file.", schema({
         "ref": ref,
         "file_path": {"type": "string"},
         "destination_time": {"type": "number"},
@@ -368,14 +369,14 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
 
     server.add_tool(Tool("live_agent_m4l_device", AGENT_M4L_TOOL_DESCRIPTION, loose_schema(), agent_m4l_device))
     server.add_tool(Tool("live_transport", "Transport status/play/continue/stop with optional seek.", schema({
-        "action": {"type": "string", "description": "status, play, continue, or stop."},
-        "time": {"type": "number", "description": "Optional song-time seek."},
+        "action": {"type": "string", "description": "status/play/continue/stop."},
+        "time": {"type": "number", "description": "Seek time."},
         "timeout": response_controls["timeout"],
         **strict_timeout_control,
     }), forward("transport")))
     server.add_tool(Tool("live_batch", "Batch bridge operations.", schema({
         "operations": {"type": "array", "items": {"type": "object", "properties": {
-            "method": {"type": "string", "description": "Bridge method name."},
+            "method": {"type": "string", "description": "Bridge method."},
             "params": {"type": "object"},
         }, "required": ["method"], "additionalProperties": False}},
         "continue_on_error": {"type": "boolean"},

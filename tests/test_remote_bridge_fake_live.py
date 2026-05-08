@@ -214,6 +214,7 @@ class FakeClip:
         self.warp_mode = 0
         self.available_warp_modes = FakeVector([0, 1, 2, 3, 4, 6])
         self.warp_markers = FakeVector([FakeWarpMarker(0.0, 0.0), FakeWarpMarker(2.0, 4.0)])
+        self.legacy_remove_notes_called = False
 
     def get_all_notes_extended(self):
         return self._notes
@@ -234,6 +235,15 @@ class FakeClip:
             FakeClip._next_note_id += 1
 
     def remove_notes_extended(self, from_pitch, pitch_span, from_time, time_span):
+        pitch_end = from_pitch + pitch_span
+        time_end = from_time + time_span
+        self._notes = [
+            note for note in self._notes
+            if not (from_pitch <= note.pitch < pitch_end and from_time <= note.start_time < time_end)
+        ]
+
+    def remove_notes(self, from_time, from_pitch, time_span, pitch_span):
+        self.legacy_remove_notes_called = True
         pitch_end = from_pitch + pitch_span
         time_end = from_time + time_span
         self._notes = [
@@ -1306,6 +1316,48 @@ def test_clip_add_notes_requires_length_for_empty_slot(monkeypatch):
         assert "create_clip_length" in str(exc)
     else:
         raise AssertionError("expected create_clip_length error")
+
+
+def test_clip_add_notes_refuses_legacy_clear_by_default(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    clip = song.tracks[0].clip_slots[0].clip
+
+    def missing_extended(*_args, **_kwargs):
+        raise TypeError("legacy only")
+
+    clip.remove_notes_extended = missing_extended
+
+    try:
+        bridge._rpc_clip_add_notes({
+            "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
+            "clear": True,
+            "notes": [{"pitch": 64, "start_time": 0.0, "duration": 0.5, "velocity": 72}],
+        })
+    except RuntimeError as exc:
+        assert "allow_legacy_note_api" in str(exc)
+    else:
+        raise AssertionError("expected legacy note API refusal")
+    assert clip.legacy_remove_notes_called is False
+
+
+def test_clip_add_notes_allows_legacy_clear_when_explicit(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    clip = song.tracks[0].clip_slots[0].clip
+
+    def missing_extended(*_args, **_kwargs):
+        raise TypeError("legacy only")
+
+    clip.remove_notes_extended = missing_extended
+
+    result = bridge._rpc_clip_add_notes({
+        "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
+        "clear": True,
+        "allow_legacy_note_api": True,
+        "notes": [{"pitch": 64, "start_time": 0.0, "duration": 0.5, "velocity": 72}],
+    })
+
+    assert result["legacy_note_api"] is True
+    assert clip.legacy_remove_notes_called is True
 
 
 def test_clip_duplicate_to_arrangement_uses_clip_object(monkeypatch):
