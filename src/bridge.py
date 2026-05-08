@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 DEFAULT_MAIN_THREAD_TIMEOUT = 30.0
+NO_MAIN_THREAD_METHODS = {"bridge_status"}
 
 
 class AbletonBridgeError(RuntimeError):
@@ -105,7 +106,7 @@ class AbletonBridgeClient:
     def _send(self, payload: dict[str, Any]) -> bytes:
         sock = self._socket()
         params = payload.get("params") or {}
-        request_timeout = self._request_timeout(params if isinstance(params, dict) else {})
+        request_timeout = self._request_timeout(str(payload.get("method") or ""), params if isinstance(params, dict) else {})
         sock.settimeout(request_timeout)
         line = (json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8")
         sock.sendall(line)
@@ -113,8 +114,10 @@ class AbletonBridgeClient:
         self._last_used = time.monotonic()
         return response
 
-    def _request_timeout(self, params: dict[str, Any]) -> float:
+    def _request_timeout(self, method: str, params: dict[str, Any]) -> float:
         request_timeout = self.config.timeout
+        if method in NO_MAIN_THREAD_METHODS:
+            return float(params.get("timeout") or request_timeout)
         if params.get("timeout") is not None:
             effective_timeout = effective_main_thread_timeout(params) + 1.0
             if params.get("strict_timeout") or params.get("timeout_strict"):
@@ -124,7 +127,7 @@ class AbletonBridgeClient:
         return request_timeout
 
     def _timeout_message(self, method: str, params: dict[str, Any]) -> str:
-        request_timeout = self._request_timeout(params)
+        request_timeout = self._request_timeout(method, params)
         return (
             f"Ableton bridge request {method!r} timed out after {request_timeout:g}s waiting for a response. "
             "The request was sent, so it was not retried automatically."
