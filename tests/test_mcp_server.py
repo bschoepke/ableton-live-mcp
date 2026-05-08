@@ -822,6 +822,10 @@ def test_wait_agent_m4l_status_timeout_includes_compact_last_status(tmp_path):
         "webuis": 1,
         "device_width": 900,
         "device_height": 320,
+        "id": "panel",
+        "reason": "webui_read_exhausted",
+        "attempts": 6,
+        "message": "readfile",
         "state": {
             "command_wake_source": "float",
             "command_wake_count": 1,
@@ -840,6 +844,10 @@ def test_wait_agent_m4l_status_timeout_includes_compact_last_status(tmp_path):
     assert result["last_status"]["dynamic_objects"] == 8
     assert result["last_status"]["device_width"] == 900
     assert result["last_status"]["device_height"] == 320
+    assert result["last_status"]["id"] == "panel"
+    assert result["last_status"]["reason"] == "webui_read_exhausted"
+    assert result["last_status"]["attempts"] == 6
+    assert result["last_status"]["message"] == "readfile"
     assert result["last_status"]["state"]["command_wake_source"] == "float"
     assert result["last_status"]["state"]["web_ready"] is None
     assert "level_value" not in result["last_status"].get("state", {})
