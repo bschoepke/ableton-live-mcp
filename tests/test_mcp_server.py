@@ -1359,8 +1359,11 @@ def test_validate_rejects_running_stale_remote_script(tmp_path, monkeypatch, cap
     assert validate_main(["--target-dir", str(tmp_path)]) == 1
     output = capsys.readouterr()
     assert "running Remote Script is stale" in output.err
+    assert "reload the Ableton_Live_MCP Control Surface" in output.err
     assert '"runtime_current": false' in output.out
     assert '"runtime_mismatch": "bridge_hash_mismatch"' in output.out
+    assert '"runtime_reload_required": true' in output.out
+    assert "Reload the Ableton_Live_MCP Control Surface" in output.out
 
 
 def test_validate_live_checks_are_compact_and_timed(tmp_path, monkeypatch, capsys):

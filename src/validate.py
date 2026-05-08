@@ -13,7 +13,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Validate the Ableton Live MCP install and connection.")
     parser.add_argument("--target-dir", type=Path, default=None, help="Ableton Remote Scripts directory to check.")
     parser.add_argument("--skip-live", action="store_true", help="Only validate local Remote Script freshness.")
-    parser.add_argument("--allow-stale-remote-script", action="store_true", help="Do not fail when the installed Remote Script differs from this checkout.")
+    parser.add_argument("--allow-stale-remote-script", action="store_true", help="Do not fail when the installed or running Remote Script differs from this checkout.")
     args = parser.parse_args(argv)
 
     results = {"remote_script": remote_script_status(target_dir=args.target_dir)}
@@ -42,9 +42,11 @@ def main(argv: list[str] | None = None) -> int:
     results["remote_script"]["runtime_current"] = runtime_ok
     if runtime_reason:
         results["remote_script"]["runtime_mismatch"] = runtime_reason
+        results["remote_script"]["runtime_reload_required"] = True
+        results["remote_script"]["runtime_next_action"] = "Reload the Ableton_Live_MCP Control Surface or restart Ableton Live, then rerun ableton-live-mcp-validate."
     if not runtime_ok and not args.allow_stale_remote_script:
         print(json.dumps(results, indent=2, sort_keys=True))
-        print("Ableton Live MCP validation failed: running Remote Script is stale or unverified", file=sys.stderr)
+        print("Ableton Live MCP validation failed: running Remote Script is stale or unverified; reload the Ableton_Live_MCP Control Surface or restart Ableton Live", file=sys.stderr)
         return 1
     print(json.dumps(results, indent=2, sort_keys=True))
     return 0
