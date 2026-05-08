@@ -140,7 +140,16 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "readPendingWebUis" in source
     assert "web_read_scheduled" in source
     assert "web_read_attempts" in source
-    assert 'obj.message("read", reads[i].path)' in source
+    assert "WEBUI_READ_DELAYS" in source
+    assert "web_read_pending" in source
+    assert "webui_read_exhausted" in source
+    assert 'reads[i].obj.message("read", reads[i].path)' in source
+    assert "handleTaggedWebUiMessage" in source
+    assert "webUiIdByTag" in source
+    assert "markWebUiLoaded" in source
+    assert "safeStateKey" in source
+    assert '"prepend", tag' in source
+    assert 'state["web_" + safeStateKey(id) + "_loaded"] = 1' in source
     assert "presentation_rect" in source
     assert "scriptSendBox" in source
     assert "setBoxOnlyAttr" in source

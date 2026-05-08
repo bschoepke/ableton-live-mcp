@@ -14,6 +14,8 @@ var dynamicObjects = [];
 var objectById = {};
 var objectSpecById = {};
 var webObjects = [];
+var webUiIdByTag = {};
+var loadedWebUis = {};
 var state = {};
 var uiBindings = {};
 var uiBindingUpdating = false;
@@ -21,6 +23,7 @@ var statusPadSize = 65536;
 var lastConnectionErrors = [];
 var lastReloadCommandId = "";
 var pendingWebUiReads = [];
+var WEBUI_READ_DELAYS = [100, 250, 500, 1000, 2000, 4000];
 var DEFAULT_DEVICE_WIDTH = 420;
 var MIN_DEVICE_WIDTH = 260;
 var DEVICE_WIDTH_PADDING = 20;
@@ -67,18 +70,60 @@ function anything() {
         applyValues(valuesFromAtoms(atoms), true);
     } else if (messagename === "set_many_silent" || messagename === "param_many_silent") {
         applyValues(valuesFromAtoms(atoms), false);
+    } else if (webUiIdByTag[messagename]) {
+        handleTaggedWebUiMessage(messagename, atoms);
     } else if (messagename === "url" || messagename === "title") {
-        handleWebUiLoadMessage(messagename, atoms);
+        handleWebUiLoadMessage(messagename, atoms, "");
     } else {
         applyRaw([messagename].concat(atoms).join(" "));
     }
 }
 
-function handleWebUiLoadMessage(name, atoms) {
+function handleTaggedWebUiMessage(tag, atoms) {
+    if (!atoms.length) {
+        return;
+    }
+    var id = webUiIdByTag[tag] || "";
+    var name = String(atoms[0]);
+    var rest = atoms.slice(1);
+    markWebUiLoaded(id);
+    if (name === "url" || name === "title") {
+        handleWebUiLoadMessage(name, rest, id);
+    } else if (name === "set" || name === "param") {
+        applyValues([{ id: String(rest[0]), value: rest[1] }], true);
+    } else if (name === "set_silent" || name === "param_silent") {
+        applyValues([{ id: String(rest[0]), value: rest[1] }], false);
+    } else if (name === "set_many" || name === "param_many") {
+        applyValues(valuesFromAtoms(rest), true);
+    } else if (name === "set_many_silent" || name === "param_many_silent") {
+        applyValues(valuesFromAtoms(rest), false);
+    } else if (uiBindings[name]) {
+        if (!uiBindingUpdating) {
+            applyUiBinding(name, rest);
+        }
+    } else {
+        applyRaw([name].concat(rest).join(" "));
+    }
+}
+
+function handleWebUiLoadMessage(name, atoms, id) {
     var value = shortStatusText(atoms.length ? atoms[0] : "");
+    if (id) {
+        markWebUiLoaded(id);
+        state["web_" + safeStateKey(id) + "_" + String(name)] = value;
+    }
     state["web_" + String(name)] = value;
-    report("webui", { message: String(name), value: value });
+    report("webui", { id: String(id || ""), message: String(name), value: value });
     pushWebState();
+}
+
+function markWebUiLoaded(id) {
+    if (!id) {
+        return;
+    }
+    loadedWebUis[String(id)] = 1;
+    state["web_" + safeStateKey(id) + "_loaded"] = 1;
+    state.web_loaded = countKeys(loadedWebUis);
 }
 
 function handleOsc(args) {
@@ -349,8 +394,19 @@ function createWebUi(webui, index, byId) {
     objectById[id] = obj;
     objectSpecById[id] = webui;
     byId[id] = obj;
+    var tag = "__webui_" + safeScriptName(id);
+    webUiIdByTag[tag] = id;
+    var router = createNamedDefault(safeScriptName(tag), Number(patchRect[0]), Number(patchRect[1]) + 30, ["prepend", tag]);
+    if (router) {
+        dynamicObjects.push(router);
+    }
     try {
-        this.patcher.connect(obj, webMessageOutlet(objectName), this.box, 0);
+        if (router) {
+            this.patcher.connect(obj, webMessageOutlet(objectName), router, 0);
+            this.patcher.connect(router, 0, this.box, 0);
+        } else {
+            this.patcher.connect(obj, webMessageOutlet(objectName), this.box, 0);
+        }
     } catch (err) {
         lastConnectionErrors.push({ from: id, to: "js", outlet: webMessageOutlet(objectName), inlet: 0, reason: String(err) });
     }
@@ -364,12 +420,14 @@ function createWebUi(webui, index, byId) {
             }
         }
     }
-    scheduleWebUiRead(obj, path, id);
+    scheduleWebUiRead(obj, path, id, 0);
 }
 
-function scheduleWebUiRead(obj, path, id) {
-    pendingWebUiReads.push({ obj: obj, path: String(path), id: String(id) });
+function scheduleWebUiRead(obj, path, id, attempt) {
+    attempt = Number(attempt || 0);
+    pendingWebUiReads.push({ obj: obj, path: String(path), id: String(id), attempt: attempt });
     state.web_read_scheduled = (state.web_read_scheduled || 0) + 1;
+    state.web_read_pending = pendingWebUiReads.length;
     if (!webReadTask) {
         webReadTask = new Task(readPendingWebUis, this);
     }
@@ -377,20 +435,38 @@ function scheduleWebUiRead(obj, path, id) {
         webReadTask.cancel();
     } catch (errCancel) {
     }
-    webReadTask.schedule(100);
+    webReadTask.schedule(webUiReadDelay(attempt));
 }
 
 function readPendingWebUis() {
     var reads = pendingWebUiReads;
     pendingWebUiReads = [];
-    state.web_read_attempts = (state.web_read_attempts || 0) + reads.length;
+    state.web_read_pending = 0;
     for (var i = 0; i < reads.length; i++) {
+        var id = String(reads[i].id);
+        if (loadedWebUis[id]) {
+            continue;
+        }
+        var key = safeStateKey(id);
+        state.web_read_attempts = (state.web_read_attempts || 0) + 1;
+        state["web_" + key + "_read_attempts"] = (state["web_" + key + "_read_attempts"] || 0) + 1;
         try {
             reads[i].obj.message("read", reads[i].path);
         } catch (err) {
-            report("error", { reason: "webui_load_failed", id: reads[i].id, detail: String(err) });
+            report("error", { reason: "webui_load_failed", id: id, detail: String(err) });
+        }
+        if (!loadedWebUis[id] && reads[i].attempt + 1 < WEBUI_READ_DELAYS.length) {
+            scheduleWebUiRead(reads[i].obj, reads[i].path, id, reads[i].attempt + 1);
+        } else if (!loadedWebUis[id]) {
+            state["web_" + key + "_read_exhausted"] = 1;
+            report("error", { reason: "webui_read_exhausted", id: id, attempts: reads[i].attempt + 1 });
         }
     }
+}
+
+function webUiReadDelay(attempt) {
+    var index = Math.max(0, Math.min(Number(attempt || 0), WEBUI_READ_DELAYS.length - 1));
+    return WEBUI_READ_DELAYS[index];
 }
 
 function webObjectArgs(webui, objectName) {
@@ -799,6 +875,20 @@ function safeScriptName(value) {
     return String(value || "obj").replace(/[^A-Za-z0-9_.-]+/g, "_") || "obj";
 }
 
+function safeStateKey(value) {
+    return safeScriptName(value);
+}
+
+function countKeys(value) {
+    var count = 0;
+    for (var key in value) {
+        if (value.hasOwnProperty(key)) {
+            count += 1;
+        }
+    }
+    return count;
+}
+
 function seedStaticObjects() {
     var byId = {};
     var names = ["plugin", "plugout", "midiin", "midiout"];
@@ -1038,6 +1128,8 @@ function clearDynamic() {
     objectById = {};
     objectSpecById = {};
     webObjects = [];
+    webUiIdByTag = {};
+    loadedWebUis = {};
     state = {};
     uiBindings = {};
     lastConnectionErrors = [];
