@@ -840,6 +840,55 @@ def test_agent_m4l_device_tool_can_return_compact_status(tmp_path):
     assert "gain" not in status.get("state", {})
 
 
+def test_agent_m4l_device_tool_can_return_compact_status_alias(tmp_path):
+    class StatusBridge(FakeBridge):
+        def request(self, method, params):
+            self.calls.append((method, params))
+            status_file = Path(params["status_file"])
+            status_file.write_text(json.dumps({
+                "event": "set",
+                "command_id": "cmd1",
+                "dynamic_objects": 4,
+                "changed": 1,
+                "state": {
+                    "gain": 0.5,
+                    "web_read_pending": 0,
+                    "web_panel_ready": 1,
+                },
+            }), encoding="utf-8")
+            return {"method": method, "command_id": "cmd1", "status_file": str(status_file), "params": params}
+
+    bridge = StatusBridge()
+    mcp = make_server(bridge)
+    args = {
+        "role": "audio_effect",
+        "instance_id": "CompactAlias",
+        "build": False,
+        "command": "set",
+        "values": [{"id": "dial", "value": 0.5}],
+        "command_file": str(tmp_path / "command.json"),
+        "status_file": str(tmp_path / "status.json"),
+        "ref": {"path": "live_set tracks 0"},
+        "wait_status": True,
+        "compact_status": True,
+    }
+
+    response = mcp.handle({
+        "jsonrpc": "2.0",
+        "id": 49,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": args},
+    })
+
+    forwarded = bridge.calls[0][1]
+    status = response["result"]["structuredContent"]["status"]
+    assert "compact_status" not in forwarded
+    assert status["event"] == "set"
+    assert status["changed"] == 1
+    assert status["state"]["web_panel_ready"] == 1
+    assert "gain" not in status.get("state", {})
+
+
 def test_agent_m4l_status_timeout_defaults_longer_for_webui():
     assert agent_m4l_status_timeout(None, False) == 2.0
     assert agent_m4l_status_timeout(None, True) == 9.0
