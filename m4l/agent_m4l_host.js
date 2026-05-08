@@ -50,6 +50,10 @@ function startStaticPolling() {
     } catch (errStart) {
     }
     try {
+        metro.message("int", 1);
+    } catch (errIntStart) {
+    }
+    try {
         metro.message("start");
     } catch (errStartMessage) {
     }
@@ -549,6 +553,10 @@ function createDynamicPoller() {
     try {
         poller.message(1);
     } catch (errStart) {
+    }
+    try {
+        poller.message("int", 1);
+    } catch (errIntStart) {
     }
     try {
         poller.message("start");
