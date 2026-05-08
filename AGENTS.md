@@ -93,6 +93,8 @@ Use the host's `web_read_scheduled`, `web_read_attempts`, `web_read_pending`, `w
 
 `webui_read` status events are diagnostic delivery checkpoints, not proof that the browser page ran. Treat `webui_read` as evidence that the host attempted a `readfile`/`read`; require `web_loaded`, panel-specific loaded/ready/title/url state, or custom readiness telemetry before considering a web UI validated.
 
+When `wait_status` returns `reload_seen: true` with `webui_status: read_exhausted`, the generated patch did hot reload, but the embedded browser did not acknowledge after the read retry series. Treat that as a web UI validation failure, not as a general M4L command-delivery failure.
+
 For generated MIDI effects, validate the transformed MIDI itself, not only downstream audio. Put the MIDI effect before a known-good instrument, expose compact telemetry with `ui_bind` on message-rate objects such as input pitch, output pitch, gate, or velocity, and verify both the MIDI effect status and the downstream instrument status agree on the transformed note values while the track meters are nonzero.
 
 For rich web UI, put large libraries, models, images, fonts, or generated bundles in the webui `assets` map/list and reference the written relative files from HTML/JS. After materialization, command patches should carry only paths and small metadata, not bulky `html`, `css`, `js`, `controls`, or asset source content. This keeps creative UIs such as Three.js scenes practical without making M4L command files slow or fragile.
@@ -113,7 +115,7 @@ For parameterized MSP patches, do not rely on sending agent values directly into
 
 Use `jbrowser~`/`jbrowser` as compatibility aliases for control-panel web UI. If a generated device explicitly needs web-audio signal outlets, request `jweb~` deliberately and wire signal/message outlets in the generated patch instead of assuming the control-panel default.
 
-When validating a generated M4L command, pass `wait_status: true` with a short `status_timeout` so the bridge returns the host's reload/set status in the same tool call instead of using separate sleeps and file reads. Treat the command file as the reliable delivery path for all M4L commands; UDP is only a low-latency hint because multiple loaded Max devices on one UDP port are not a sufficient reliability guarantee.
+When validating a generated M4L command, pass `wait_status: true` so the bridge returns the host's reload/set status in the same tool call instead of using separate sleeps and file reads. For web UI updates, omit `status_timeout` unless deliberately probing latency; the MCP server uses a longer default so the web-read retry series can finish or report terminal exhaustion. For value-only/non-web commands, a short explicit timeout is still appropriate. Treat the command file as the reliable delivery path for all M4L commands; UDP is only a low-latency hint because multiple loaded Max devices on one UDP port are not a sufficient reliability guarantee.
 
 Generated hosts should use deterministic per-instance `udpreceive` ports derived from the instance id, not one shared M4L port. Value-only UDP hints should stay slim and omit recovery patches; the command file must still contain the full patch/spec so JS reload and set reopen recovery keep working. Large generated update payloads may skip UDP entirely and rely on the host's command-file poll rather than failing the command with an OS datagram-size error.
 
