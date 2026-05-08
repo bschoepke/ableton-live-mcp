@@ -528,7 +528,7 @@ function configureUiBindings(spec, objects, byId) {
 
 function createDynamicPoller() {
     var id = "__agent_m4l_poll";
-    var poller = createNamedDefault(id, 20, 300, ["metro", 50, "@active", 1, "@defer", 1]);
+    var poller = createNamedDefault(id, 20, 300, ["qmetro", 50]);
     if (!poller) {
         return;
     }
