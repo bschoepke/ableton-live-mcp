@@ -111,7 +111,8 @@ def test_initialize_includes_general_model_instructions():
     assert "ack/state throttles" in instructions
     assert "Agent must visually verify M4L device UI" in instructions
     assert "Ableton-window-only" in instructions
-    assert "never capture arbitrary apps/windows" in instructions
+    assert "no arbitrary apps/windows" in instructions
+    assert "select target then device-detail crop" in instructions
     assert "device-detail crop" in instructions
     assert "blank_capture invalid" in instructions
     assert "locked/asleep display blocks capture/e2e" in instructions

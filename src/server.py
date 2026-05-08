@@ -41,9 +41,9 @@ ABLETON_MCP_INSTRUCTIONS = (
     "find_similar_sounds requires Live 12+. "
     "AgentAudioTap: master tap+solo; start with path. "
     "Validate runtime_current/live_mutations_safe; no-arg tool schema=stale MCP, reload. No parallel Live API. Idle sockets auto-retry; sent-call timeouts fail closed; client/RS cooldown+serialize; live_bridge_status timeout=wedged. Save/recover modals: inspect UI, no retry mutations. "
-    "Agent must visually verify M4L device UI: Ableton-window-only, never capture arbitrary apps/windows, device-detail crop, blank_capture invalid; locked/asleep display blocks capture/e2e. "
+    "Agent must visually verify M4L device UI: Ableton-window-only, no arbitrary apps/windows, select target then device-detail crop, blank_capture invalid; locked/asleep display blocks capture/e2e. "
     "M4L: free native/web/mixed UI hot-reloads; wait_status/compact_result+command_id. Reuse hosts/IDs; host_runtime_version; avoid renderer buildup/fps; cleanup dry-run. Supports preflight, sidecar recovery+slim set/status, UDP hints, throttled fallback wakes, load:false/set/status skip build, host_not_woken=no ack, midiin+midiparse, origin rect/openrect, bounds, ui_bindings, agent-settable UI, telemetry report:false, ack/state throttles, web assets/source_path, webui_read diagnostics, set_silent/batch/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web: prove signal telemetry+visual delta. No web ack/shrink: reload/simplify or fresh host. "
-    "Avoid broad dumps. Gotchas: eval expr-only; use exec; JSON nums; Simpler.sample not settable; ids from summaries. "
+    "Avoid broad dumps. Gotchas: eval expr-only; use exec; JSON nums; Simpler.sample not settable. "
     "full Live object model remains available."
 )
 AGENT_M4L_TOOL_DESCRIPTION = (
