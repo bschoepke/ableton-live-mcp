@@ -13,7 +13,7 @@ from benchmark import run_benchmark
 from bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig, effective_main_thread_timeout
 from install_remote_script import install_remote_script, main as install_remote_script_main, remote_script_root, remote_script_status
 from prompt_audit import run_prompt_audit
-from server import agent_m4l_status_timeout, expected_agent_m4l_status_event, make_server, should_build_agent_m4l, wait_agent_m4l_status
+from server import agent_m4l_status_timeout, expected_agent_m4l_status_event, make_server, should_build_agent_m4l, summarize_agent_m4l_status, wait_agent_m4l_status
 from validate import main as validate_main
 from similar_sounds import encode_feature
 from smoke import run_smoke
@@ -1070,6 +1070,31 @@ def test_wait_agent_m4l_status_timeout_includes_compact_last_status(tmp_path):
     assert result["last_status"]["state"]["web_payload"]["key_count"] == 14
     assert result["last_status"]["state"]["web_payload"]["keys"] == ["k%02d" % index for index in range(12)]
     assert "level_value" not in result["last_status"].get("state", {})
+
+
+def test_compact_agent_m4l_status_preserves_timeout_diagnostics():
+    status = summarize_agent_m4l_status({
+        "timed_out": True,
+        "path": "/tmp/status.json",
+        "expected_command_id": "new",
+        "expected_event": "status",
+        "mismatch": "command_id_mismatch",
+        "last_status": {
+            "event": "set",
+            "command_id": "old",
+            "dynamic_objects": 76,
+            "state_keys": ["web_read_pending"],
+            "state": {"web_read_pending": 5},
+        },
+    })
+
+    assert status["timed_out"] is True
+    assert status["expected_command_id"] == "new"
+    assert status["expected_event"] == "status"
+    assert status["mismatch"] == "command_id_mismatch"
+    assert status["last_status"]["command_id"] == "old"
+    assert status["last_status"]["dynamic_objects"] == 76
+    assert status["last_status"]["state"]["web_read_pending"] == 5
 
 
 def test_agent_m4l_expected_status_event_tracks_command_intent():
