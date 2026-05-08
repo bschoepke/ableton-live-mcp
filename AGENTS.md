@@ -119,6 +119,8 @@ For generated `jweb`/`jbrowser~` panels, issue the first `read` immediately afte
 
 Pending web UI reads should also be serviced by ordinary device activity such as UI bindings, value updates, MIDI wakes, and audio meter telemetry, but activity wakes must respect retry backoff and must not collapse all retries into one burst. Do not make browser startup depend on a single timer path; creative devices with reactive meters or sequencers should help wake their own web panel while remaining fully general purpose.
 
+The command-file poll path must also service due web UI reads, even when no command file exists or no new command is applied. Browser retry progress should not require a separate Max JS `Task` to fire in stressed sets.
+
 When a generated web panel has a local `html_path`, pass that filesystem path to the Max `readfile` message first and keep `url`/`html_url` available for fallback `read` attempts. The host alternates to URL-style `read` on retries when a local page does not acknowledge, because different Max/CEF states can prefer different load paths.
 
 For direct generated audio-effect graphs, connect `plugin` outlet 0/1 through the generated processing objects and into `plugout` inlet 0/1. The static `audio-in-l`, `audio-in-r`, `audio-out-l`, and `audio-out-r` objects are named send/receive bus endpoints for cross-patcher routing, not direct signal sources/destinations for a simple pass-through chain.

@@ -84,6 +84,7 @@ function start_polling() {
 function pollCommandFile() {
     var file = new File(commandFile, "read");
     if (!file.isopen) {
+        drainPendingWebUiReads();
         return;
     }
     var raw = file.readstring(1048576);
@@ -91,6 +92,7 @@ function pollCommandFile() {
     if (raw) {
         applyRaw(raw);
     }
+    drainPendingWebUiReads();
 }
 
 function scheduleLiveParameterObserverRefresh(delay) {
