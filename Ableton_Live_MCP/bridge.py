@@ -386,23 +386,7 @@ class AbletonLiveMCP(ControlSurface):
         if target_track is not None and params.get("load", True):
             try:
                 if not self._track_has_device(target_track, device_name, role):
-                    item = self._find_browser_item_named(device_name)
-                    before_devices = list(getattr(target_track, "devices", []))
-                    before_ids = set([self._object_id(device) for device in before_devices])
-                    if item is not None:
-                        self.song().view.selected_track = target_track
-                        Live.Application.get_application().browser.load_item(item)
-                    elif hasattr(target_track, "insert_device"):
-                        target_track.insert_device(device_name, int(params.get("device_index") if params.get("device_index") is not None else -1))
-                    else:
-                        raise KeyError("Could not find %s in the Live browser; build/install it with live_agent_m4l_device first or reload Live's browser" % device_name)
-                    new_device = self._find_new_track_device(target_track, before_ids)
-                    if new_device is not None:
-                        try:
-                            new_device.name = device_name
-                        except Exception:
-                            pass
-                    loaded = True
+                    loaded = self._load_agent_m4l_device(target_track, device_name, role, params)
             except Exception as exc:
                 load_error = str(exc)
         triggered = False
@@ -432,6 +416,67 @@ class AbletonLiveMCP(ControlSurface):
         if target_track is not None:
             result["track"] = self._track_summary(target_track, None, 0, 16, 0)
         return result
+
+    def _load_agent_m4l_device(self, target_track, device_name, role, params):
+        errors = []
+        if hasattr(target_track, "insert_device") and not params.get("prefer_browser_load"):
+            try:
+                self._insert_track_device(target_track, device_name, role, params)
+                return True
+            except Exception as exc:
+                errors.append(str(exc))
+        item = self._find_browser_item_named(device_name)
+        if item is not None:
+            before_devices = list(getattr(target_track, "devices", []))
+            before_ids = set([self._object_id(device) for device in before_devices])
+            self.song().view.selected_track = target_track
+            Live.Application.get_application().browser.load_item(item)
+            self._rename_new_track_device(target_track, before_ids, device_name)
+            return True
+        if hasattr(target_track, "insert_device") and params.get("prefer_browser_load"):
+            try:
+                self._insert_track_device(target_track, device_name, role, params)
+                return True
+            except Exception as exc:
+                errors.append(str(exc))
+        detail = "; ".join([error for error in errors if error])
+        if detail:
+            raise RuntimeError(detail)
+        raise KeyError("Could not find %s in the Live browser; build/install it with live_agent_m4l_device first or reload Live's browser" % device_name)
+
+    def _insert_track_device(self, target_track, device_name, role, params):
+        before_devices = list(getattr(target_track, "devices", []))
+        before_ids = set([self._object_id(device) for device in before_devices])
+        target_track.insert_device(device_name, self._agent_m4l_insert_index(target_track, role, params))
+        self._rename_new_track_device(target_track, before_ids, device_name)
+
+    def _rename_new_track_device(self, target_track, before_ids, device_name):
+        new_device = self._find_new_track_device(target_track, before_ids)
+        if new_device is not None:
+            try:
+                new_device.name = device_name
+            except Exception:
+                pass
+
+    def _agent_m4l_insert_index(self, track, role, params):
+        if params.get("device_index") is not None:
+            return int(params.get("device_index"))
+        devices = list(getattr(track, "devices", []))
+        if role == "midi_effect":
+            for index, device in enumerate(devices):
+                if self._device_class_name(device) in ("MxDeviceInstrument", "MxDeviceAudioEffect"):
+                    return index
+        if role == "instrument":
+            for index, device in enumerate(devices):
+                if self._device_class_name(device) == "MxDeviceAudioEffect":
+                    return index
+        return -1
+
+    def _device_class_name(self, device):
+        try:
+            return str(device.class_name)
+        except Exception:
+            return ""
 
     def _agent_m4l_port(self, instance_id):
         digest = hashlib.sha1(self._agent_m4l_slug(instance_id).encode("utf-8")).hexdigest()

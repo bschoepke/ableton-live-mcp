@@ -311,6 +311,12 @@ class FakeTrack:
     def insert_device(self, device_name, device_index=-1):
         device = FakeDevice()
         device.name = device_name
+        if "midi_effect" in device_name:
+            device.class_name = "MxDeviceMidiEffect"
+        elif "instrument" in device_name:
+            device.class_name = "MxDeviceInstrument"
+        elif "audio_effect" in device_name:
+            device.class_name = "MxDeviceAudioEffect"
         if device_index is None or device_index < 0 or device_index >= len(self.devices):
             self.devices.append(device)
         else:
@@ -578,7 +584,8 @@ def test_agent_m4l_device_writes_command_sends_udp_and_loads(monkeypatch):
 
     assert result["sent"] is True
     assert result["loaded"] is True
-    assert app.browser.loaded == ["AgentM4L_audio_effect_Wobble"]
+    assert app.browser.loaded == []
+    assert song.tracks[1].devices[-1].name == "AgentM4L_audio_effect_Wobble"
     assert written["path"] == module._temp_file("agent_m4l_Wobble.json")
     assert '"instance_id":"Wobble"' in written["value"]
     assert '"cycle~ 110"' in written["value"]
@@ -989,6 +996,28 @@ def test_agent_m4l_device_falls_back_to_track_insert_device_when_browser_is_stal
     assert song.tracks[1].devices[-1].name == "AgentM4L_audio_effect_Fresh"
 
 
+def test_agent_m4l_device_prefers_track_insert_device_before_browser_load(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    device_name = "AgentM4L_instrument_Prism_Loom_Keys"
+    item = FakeBrowserItem(device_name, loadable=True, device=True)
+    bridge._find_browser_item_named = lambda name: item if name == device_name else None
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "instrument",
+        "instance_id": "prism_loom_keys_001",
+        "name": "Prism Loom Keys",
+        "target_track": {"path": "live_set tracks 1"},
+        "patch": {"objects": []},
+        "udp": False,
+        "id": "prism1",
+    })
+
+    assert result["loaded"] is True
+    assert app.browser.loaded == []
+    assert song.tracks[1].devices[-1].name == device_name
+    assert song.tracks[1].devices[-1].class_name == "MxDeviceInstrument"
+
+
 def test_agent_m4l_device_renames_new_device_inserted_before_existing_chain(monkeypatch):
     bridge, song, app = make_bridge(monkeypatch)
     target = song.tracks[1]
@@ -1000,17 +1029,7 @@ def test_agent_m4l_device_renames_new_device_inserted_before_existing_chain(monk
     audio_effect.class_name = "MxDeviceAudioEffect"
     target.devices = FakeVector([instrument, audio_effect])
     device_name = "AgentM4L_midi_effect_Pulse_Router_MIDI"
-    item = FakeBrowserItem(device_name, loadable=True, device=True)
-    bridge._find_browser_item_named = lambda _name: item
-
-    def load_item(loaded_item):
-        app.browser.loaded.append(loaded_item.name)
-        new_device = FakeDevice()
-        new_device.name = "Untitled MIDI Effect"
-        new_device.class_name = "MxDeviceMidiEffect"
-        target.devices.insert(0, new_device)
-
-    app.browser.load_item = load_item
+    app.browser.load_item = lambda _item: (_ for _ in ()).throw(AssertionError("browser.load_item should not be needed"))
 
     result = bridge._rpc_agent_m4l_device({
         "role": "midi_effect",
@@ -1023,6 +1042,7 @@ def test_agent_m4l_device_renames_new_device_inserted_before_existing_chain(monk
     })
 
     assert result["loaded"] is True
+    assert app.browser.loaded == []
     assert [device.name for device in target.devices] == [
         device_name,
         "Existing Instrument",
@@ -1038,17 +1058,6 @@ def test_agent_m4l_device_name_match_requires_matching_role_when_available(monke
     wrong_role.name = device_name
     wrong_role.class_name = "MxDeviceAudioEffect"
     target.devices = FakeVector([wrong_role])
-    item = FakeBrowserItem(device_name, loadable=True, device=True)
-    bridge._find_browser_item_named = lambda _name: item
-
-    def load_item(loaded_item):
-        app.browser.loaded.append(loaded_item.name)
-        new_device = FakeDevice()
-        new_device.name = "Untitled MIDI Effect"
-        new_device.class_name = "MxDeviceMidiEffect"
-        target.devices.insert(0, new_device)
-
-    app.browser.load_item = load_item
 
     result = bridge._rpc_agent_m4l_device({
         "role": "midi_effect",
@@ -1061,7 +1070,7 @@ def test_agent_m4l_device_name_match_requires_matching_role_when_available(monke
     })
 
     assert result["loaded"] is True
-    assert app.browser.loaded == [device_name]
+    assert app.browser.loaded == []
     assert target.devices[0].name == device_name
     assert target.devices[0].class_name == "MxDeviceMidiEffect"
     assert target.devices[1].class_name == "MxDeviceAudioEffect"
@@ -1085,7 +1094,8 @@ def test_agent_m4l_device_name_uses_title_when_instance_is_stable(monkeypatch):
 
     assert result["device_name"] == device_name
     assert result["loaded"] is True
-    assert app.browser.loaded == [device_name]
+    assert app.browser.loaded == []
+    assert _song.tracks[1].devices[-1].name == device_name
 
 
 def test_agent_m4l_device_reports_load_error_without_dropping_command(monkeypatch):
