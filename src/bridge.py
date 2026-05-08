@@ -116,7 +116,11 @@ class AbletonBridgeClient:
     def _request_timeout(self, params: dict[str, Any]) -> float:
         request_timeout = self.config.timeout
         if params.get("timeout") is not None:
-            request_timeout = max(request_timeout, effective_main_thread_timeout(params) + 1.0)
+            effective_timeout = effective_main_thread_timeout(params) + 1.0
+            if params.get("strict_timeout") or params.get("timeout_strict"):
+                request_timeout = effective_timeout
+            else:
+                request_timeout = max(request_timeout, effective_timeout)
         return request_timeout
 
     def _timeout_message(self, method: str, params: dict[str, Any]) -> str:

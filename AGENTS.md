@@ -50,6 +50,8 @@ Keep TCP connection failure bounded separately from Live work. `ABLETON_MCP_CONN
 
 After a request has been written to the bridge socket, response timeouts must fail closed rather than retrying automatically. Treat the mutation status as unknown until a later compact status/summary check proves whether Live applied it; blind retry can duplicate clips, devices, transport actions, or generated M4L commands.
 
+When using `strict_timeout: true` for a deliberate latency probe, the Python client response deadline should honor that shorter timeout too. Non-strict calls may keep the longer default because stressed Live sets often respond late but correctly.
+
 ## Max for Live devices
 This repo includes `m4l/AgentAudioTap.amxd`, a Max for Live audio effect that lets an agent record the audio signal at the device's insertion point for analysis. Build/install it with:
 

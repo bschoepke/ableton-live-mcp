@@ -1490,6 +1490,38 @@ def test_bridge_client_clamps_short_non_strict_timeout_for_socket(monkeypatch):
     assert created[0].timeouts[-1] == 31.0
 
 
+def test_bridge_client_honors_short_strict_timeout_for_socket(monkeypatch):
+    created = []
+
+    class FakeSocket:
+        def __init__(self):
+            self.timeouts = []
+            self.responses = [b'{"jsonrpc":"2.0","id":1,"result":{"ok":true}}\n']
+
+        def settimeout(self, timeout):
+            self.timeouts.append(timeout)
+
+        def sendall(self, _line):
+            pass
+
+        def recv(self, _size):
+            return self.responses.pop(0)
+
+        def close(self):
+            pass
+
+    def connect(*_args, **_kwargs):
+        sock = FakeSocket()
+        created.append(sock)
+        return sock
+
+    monkeypatch.setattr("socket.create_connection", connect)
+    client = AbletonBridgeClient(BridgeConfig(timeout=30.0))
+
+    assert client.request("ping", {"timeout": 3.0, "strict_timeout": True}) == {"ok": True}
+    assert created[0].timeouts[-1] == 4.0
+
+
 def test_bridge_client_reconnects_before_remote_idle_timeout(monkeypatch):
     created = []
     now = [100.0]
