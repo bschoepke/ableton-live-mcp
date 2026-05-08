@@ -75,7 +75,7 @@ For web UI, `webui` may be an object or array of objects; each entry can choose 
 
 For rich web UI, put large libraries, models, images, fonts, or generated bundles in the webui `assets` map/list and reference the written relative files from HTML/JS. After materialization, command patches should carry only paths and small metadata, not bulky `html`, `css`, `js`, `controls`, or asset source content. This keeps creative UIs such as Three.js scenes practical without making M4L command files slow or fragile.
 
-For high-rate web UI gestures, animation clocks, piano rolls, sequencers, and meters, send `set_silent` or `param_silent` from the web panel instead of `set`/`param`; then use explicit status commands for validation snapshots. Use normal `set` when an event should acknowledge through the status file.
+For high-rate web UI gestures, animation clocks, piano rolls, sequencers, and meters, send `set_silent`/`param_silent` or batched `set_many_silent`/`param_many_silent` from the web panel instead of `set`/`param`; then use explicit status commands for validation snapshots. Use normal `set` when an event should acknowledge through the status file.
 
 For long generated-device soaks, track transport state separately from command/device failures. If Live transport stops, relaunch the target clip and count that as a transport event; do not let every later silent meter sample inflate the device failure count. Keep command acknowledgements, connection errors, transport stops, restarts, and meter readings as separate counters.
 

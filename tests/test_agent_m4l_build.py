@@ -159,6 +159,9 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "applyValues" in source
     assert "set_silent" in source
     assert "param_silent" in source
+    assert "set_many_silent" in source
+    assert "valuesFromAtoms" in source
+    assert "valuesFromJson" in source
     assert "applyValues([{ id: String(atoms[0]), value: atoms[1] }], false)" in source
     assert "sendNumericValue" in source
     assert "function bang()" in source

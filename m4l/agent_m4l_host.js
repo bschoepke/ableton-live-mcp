@@ -60,6 +60,10 @@ function anything() {
         applyValues([{ id: String(atoms[0]), value: atoms[1] }], true);
     } else if (messagename === "set_silent" || messagename === "param_silent") {
         applyValues([{ id: String(atoms[0]), value: atoms[1] }], false);
+    } else if (messagename === "set_many" || messagename === "param_many") {
+        applyValues(valuesFromAtoms(atoms), true);
+    } else if (messagename === "set_many_silent" || messagename === "param_many_silent") {
+        applyValues(valuesFromAtoms(atoms), false);
     } else {
         applyRaw([messagename].concat(atoms).join(" "));
     }
@@ -785,6 +789,43 @@ function numberOr(value, fallback) {
 
 function clamp(value, minimum, maximum) {
     return Math.max(minimum, Math.min(maximum, value));
+}
+
+function valuesFromAtoms(atoms) {
+    if (atoms.length === 1) {
+        var parsed = valuesFromJson(atoms[0]);
+        if (parsed.length) {
+            return parsed;
+        }
+    }
+    var values = [];
+    for (var i = 0; i + 1 < atoms.length; i += 2) {
+        values.push({ id: String(atoms[i]), value: atoms[i + 1] });
+    }
+    return values;
+}
+
+function valuesFromJson(raw) {
+    var parsed;
+    try {
+        parsed = JSON.parse(String(raw));
+    } catch (err) {
+        return [];
+    }
+    if (parsed instanceof Array) {
+        return parsed;
+    }
+    var values = parsed.values || parsed.parameters;
+    if (values instanceof Array) {
+        return values;
+    }
+    var result = [];
+    for (var id in parsed) {
+        if (parsed.hasOwnProperty(id)) {
+            result.push({ id: id, value: parsed[id] });
+        }
+    }
+    return result;
 }
 
 function restoreState(previousState) {
