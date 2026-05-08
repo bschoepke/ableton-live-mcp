@@ -1372,6 +1372,37 @@ def test_clip_add_notes_can_create_slot_clip_and_launch(monkeypatch):
     assert [note["pitch"] for note in notes["notes"]] == [60, 67]
 
 
+def test_clip_add_notes_detects_empty_slot_without_touching_clip(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+
+    class EmptySlot:
+        has_clip = False
+
+        @property
+        def clip(self):
+            if not self.has_clip:
+                raise RuntimeError("clip is unavailable until create_clip")
+            return self._clip
+
+        def create_clip(self, length):
+            self._clip = FakeClip("Created Clip", end_time=float(length))
+            self._clip._notes = []
+            self.has_clip = True
+
+    slot = EmptySlot()
+    monkeypatch.setattr(bridge, "_resolve", lambda _ref: slot)
+
+    result = bridge._rpc_clip_add_notes({
+        "ref": {"path": "live_set tracks 0 clip_slots 0"},
+        "create_clip_length": 4.0,
+        "notes": [{"pitch": 72, "start_time": 0.0, "duration": 0.5, "velocity": 90}],
+    })
+
+    assert result["created_clip"] is True
+    assert result["note_api"] == "extended"
+    assert slot.has_clip is True
+
+
 def test_clip_add_notes_can_replace_slot_clip(monkeypatch):
     bridge, song, _app = make_bridge(monkeypatch)
     slot = song.tracks[0].clip_slots[0]

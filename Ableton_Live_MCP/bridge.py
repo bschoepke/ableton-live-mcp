@@ -908,24 +908,28 @@ class AbletonLiveMCP(ControlSurface):
         replaced_clip = False
         launched = False
         legacy_note_api = False
-        if hasattr(target, "has_clip") and hasattr(target, "clip"):
+        is_clip_slot, target_has_clip = self._clip_slot_state(target)
+        if is_clip_slot:
             if params.get("replace_existing_clip"):
                 length = params.get("create_clip_length")
                 if length is None:
                     raise ValueError("clip_add_notes requires create_clip_length when replacing an existing clip")
-                if getattr(target, "has_clip", False):
+                if target_has_clip:
                     if not hasattr(target, "delete_clip"):
                         raise ValueError("clip_add_notes replace_existing_clip requires a clip slot with delete_clip")
                     target.delete_clip()
                     replaced_clip = True
+                    target_has_clip = False
                 target.create_clip(float(length))
                 created_clip = True
-            if not getattr(target, "has_clip", False):
+                target_has_clip = True
+            if not target_has_clip:
                 length = params.get("create_clip_length")
                 if length is None:
                     raise ValueError("clip_add_notes requires create_clip_length when ref is an empty clip slot")
                 target.create_clip(float(length))
                 created_clip = True
+                target_has_clip = True
             clip = target.clip
         else:
             if params.get("replace_existing_clip"):
@@ -994,6 +998,18 @@ class AbletonLiveMCP(ControlSurface):
             "legacy_note_api": legacy_note_api,
             "note_count": len(list(clip.get_all_notes_extended())),
         }
+
+    def _clip_slot_state(self, target):
+        try:
+            has_clip = bool(target.has_clip)
+            return True, has_clip
+        except Exception:
+            pass
+        try:
+            clip = target.clip
+            return True, clip is not None
+        except Exception:
+            return False, False
 
     def _rpc_clip_duplicate_to_arrangement(self, params):
         track = self._resolve(params.get("track"))
