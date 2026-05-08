@@ -397,7 +397,7 @@ def write_webui(instance_id: str, webui: dict[str, Any]) -> dict[str, Any]:
     js_path = directory / "device.js"
     css = str(webui.get("css") or DEFAULT_WEBUI_CSS)
     js = str(webui.get("js") or DEFAULT_WEBUI_JS)
-    html = str(webui.get("html") or default_webui_html(str(webui.get("title") or slug), webui.get("controls") or []))
+    html = inject_webui_bootstrap(str(webui.get("html") or default_webui_html(str(webui.get("title") or slug), webui.get("controls") or [])))
     css_path.write_text(css, encoding="utf-8")
     js_path.write_text(js, encoding="utf-8")
     html_path.write_text(html, encoding="utf-8")
@@ -504,6 +504,35 @@ def default_webui_html(title: str, controls: list[dict[str, Any]]) -> str:
 </body>
 </html>
 """ % (title, title, "\n    ".join(rows))
+
+
+def inject_webui_bootstrap(html: str) -> str:
+    """Add load/error telemetry without constraining the page's custom UI."""
+    if "agent-m4l-bootstrap" in html:
+        return html
+    script = '<script id="agent-m4l-bootstrap">%s</script>' % AGENT_M4L_WEBUI_BOOTSTRAP_JS
+    lower = html.lower()
+    head_index = lower.find("</head>")
+    if head_index >= 0:
+        return html[:head_index] + script + html[head_index:]
+    script_index = lower.find("<script")
+    if script_index >= 0:
+        return html[:script_index] + script + html[script_index:]
+    return html + script
+
+
+AGENT_M4L_WEBUI_BOOTSTRAP_JS = (
+    "(function(){"
+    "if(window.__agentM4LBootstrap)return;"
+    "window.__agentM4LBootstrap=1;"
+    "function o(){if(window.max&&window.max.outlet){try{window.max.outlet.apply(window.max,arguments)}catch(_e){}}}"
+    "window.agentM4L=window.agentM4L||{};"
+    "window.agentM4L.outlet=o;"
+    "o('web_ready',Date.now()%1000000000);"
+    "window.addEventListener('error',function(e){o('web_error',String(e&&e.message||e&&e.error||'error').slice(0,240))});"
+    "window.addEventListener('unhandledrejection',function(e){o('web_error',String(e&&e.reason||'unhandledrejection').slice(0,240))});"
+    "})();"
+)
 
 
 DEFAULT_WEBUI_CSS = """

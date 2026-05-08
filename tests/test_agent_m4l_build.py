@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import agent_m4l
-from agent_m4l import audio_bus_names, build_amxd, build_pool, command_file, infer_device_width, make_host_patch, replace_ptch_chunk, status_file, udp_port, write_webui
+from agent_m4l import audio_bus_names, build_amxd, build_pool, command_file, infer_device_width, inject_webui_bootstrap, make_host_patch, replace_ptch_chunk, status_file, udp_port, write_webui
 
 
 def test_agent_m4l_host_patch_contains_runtime_and_role_io():
@@ -231,6 +231,10 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "param_silent" in source
     assert "set_many_silent" in source
     assert "handleWebUiLoadMessage" in source
+    assert "handleWebUiReadyMessage" in source
+    assert "handleWebUiErrorMessage" in source
+    assert "web_ready" in source
+    assert "web_error" in source
     assert "shortStatusText" in source
     assert "valuesFromAtoms" in source
     assert "valuesFromJson" in source
@@ -287,6 +291,9 @@ def test_agent_m4l_write_webui_generates_jweb_page(tmp_path, monkeypatch):
     })
     html = Path(result["html_path"]).read_text(encoding="utf-8")
     js = Path(result["js_path"]).read_text(encoding="utf-8")
+    assert "agent-m4l-bootstrap" in html
+    assert "web_ready" in html
+    assert "web_error" in html
     assert 'data-param="cutoff"' in html
     assert "window.max.outlet" in js
     assert "bindInlet(\"state\"" in js
@@ -294,6 +301,12 @@ def test_agent_m4l_write_webui_generates_jweb_page(tmp_path, monkeypatch):
     assert Path(result["assets"][0]["path"]).read_text(encoding="utf-8") == "export const scene = true;"
     assert result["assets"][0]["relative_path"] == "lib/scene.js"
     assert result["assets"][1]["relative_path"] == "unsafe_name.txt"
+
+
+def test_agent_m4l_webui_bootstrap_preserves_custom_html_order():
+    html = inject_webui_bootstrap('<html><body><script src="device.js"></script></body></html>')
+    assert html.index("agent-m4l-bootstrap") < html.index('src="device.js"')
+    assert inject_webui_bootstrap(html) == html
 
 
 def test_agent_m4l_build_pool_creates_stable_slots(tmp_path, monkeypatch):

@@ -253,6 +253,10 @@ function anything() {
         handleLiveParameterObserverMessage(messagename, atoms);
     } else if (messagename === "url" || messagename === "title") {
         handleWebUiLoadMessage(messagename, atoms, "");
+    } else if (messagename === "web_ready" || messagename === "webReady" || messagename === "agent_web_ready") {
+        handleWebUiReadyMessage(atoms, "");
+    } else if (messagename === "web_error" || messagename === "webError") {
+        handleWebUiErrorMessage(atoms, "");
     } else {
         applyRaw([messagename].concat(atoms).join(" "));
     }
@@ -283,6 +287,10 @@ function handleTaggedWebUiMessage(tag, atoms) {
     markWebUiLoaded(id);
     if (name === "url" || name === "title") {
         handleWebUiLoadMessage(name, rest, id);
+    } else if (name === "web_ready" || name === "webReady" || name === "agent_web_ready") {
+        handleWebUiReadyMessage(rest, id);
+    } else if (name === "web_error" || name === "webError" || name === "error") {
+        handleWebUiErrorMessage(rest, id);
     } else if (name === "set" || name === "param") {
         applyValues([{ id: String(rest[0]), value: rest[1] }], true);
     } else if (name === "set_silent" || name === "param_silent") {
@@ -308,6 +316,28 @@ function handleWebUiLoadMessage(name, atoms, id) {
     }
     state["web_" + String(name)] = value;
     report("webui", { id: String(id || ""), message: String(name), value: value });
+    pushWebState();
+}
+
+function handleWebUiReadyMessage(atoms, id) {
+    var value = atoms.length ? atoms[0] : 1;
+    if (id) {
+        markWebUiLoaded(id);
+        state["web_" + safeStateKey(id) + "_ready"] = value;
+    }
+    state.web_ready = value;
+    report("webui", { id: String(id || ""), message: "ready", value: shortStatusText(value) });
+    pushWebState();
+}
+
+function handleWebUiErrorMessage(atoms, id) {
+    var value = shortStatusText(atoms.length ? atoms.join(" ") : "unknown");
+    if (id) {
+        markWebUiLoaded(id);
+        state["web_" + safeStateKey(id) + "_error"] = value;
+    }
+    state.web_error = value;
+    report("webui_error", { id: String(id || ""), message: "error", value: value });
     pushWebState();
 }
 
