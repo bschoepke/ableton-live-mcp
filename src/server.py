@@ -922,7 +922,7 @@ def summarize_agent_m4l_status(status: dict[str, Any]) -> dict[str, Any]:
     if isinstance(state, dict):
         summary["state_keys"] = sorted(str(key) for key in state.keys())[:40]
         focused = {
-            str(key): value for key, value in state.items()
+            str(key): compact_agent_m4l_status_value(value) for key, value in state.items()
             if str(key).startswith(("web_", "command_wake", "filewatch", "live_parameter"))
         }
         if focused:
@@ -930,6 +930,17 @@ def summarize_agent_m4l_status(status: dict[str, Any]) -> dict[str, Any]:
     if status.get("connection_errors"):
         summary["connection_errors"] = status.get("connection_errors")
     return summary
+
+
+def compact_agent_m4l_status_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return value if len(value) <= 240 else value[:237] + "..."
+    if isinstance(value, list):
+        return value if len(value) <= 12 else {"items": len(value), "preview": value[:12]}
+    if isinstance(value, dict):
+        keys = sorted(str(key) for key in value.keys())
+        return value if len(keys) <= 12 else {"keys": keys[:12], "key_count": len(keys)}
+    return value
 
 
 def agent_m4l_status_mismatch(status: dict[str, Any], command_id: str, expected_event: str | None) -> str:

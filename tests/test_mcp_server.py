@@ -986,6 +986,9 @@ def test_wait_agent_m4l_status_timeout_includes_compact_last_status(tmp_path):
             "command_wake_source": "float",
             "command_wake_count": 1,
             "web_ready": None,
+            "web_error": "x" * 260,
+            "web_history": list(range(20)),
+            "web_payload": {("k%02d" % index): index for index in range(14)},
             "level_value": 0.5,
         },
     }), encoding="utf-8")
@@ -1006,6 +1009,12 @@ def test_wait_agent_m4l_status_timeout_includes_compact_last_status(tmp_path):
     assert result["last_status"]["message"] == "readfile"
     assert result["last_status"]["state"]["command_wake_source"] == "float"
     assert result["last_status"]["state"]["web_ready"] is None
+    assert result["last_status"]["state"]["web_error"].endswith("...")
+    assert len(result["last_status"]["state"]["web_error"]) == 240
+    assert result["last_status"]["state"]["web_history"]["items"] == 20
+    assert result["last_status"]["state"]["web_history"]["preview"] == list(range(12))
+    assert result["last_status"]["state"]["web_payload"]["key_count"] == 14
+    assert result["last_status"]["state"]["web_payload"]["keys"] == ["k%02d" % index for index in range(12)]
     assert "level_value" not in result["last_status"].get("state", {})
 
 
