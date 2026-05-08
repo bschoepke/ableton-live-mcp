@@ -317,6 +317,7 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
             _box("signal-wake-threshold", "newobj", ">~ 0.5", 320.0, 280.0),
             _box("signal-wake-edge", "newobj", "edge~", 420.0, 280.0),
             _box("signal-wake-prepend", "newobj", "prepend __signal_wake", 520.0, 280.0),
+            _box("signal-wake-sink", "newobj", "*~ 0.", 660.0, 280.0),
         ]
         lines += [
             _line("plugin", 0, "audio-in-l", 0),
@@ -327,6 +328,8 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
             _line("signal-wake-threshold", 0, "signal-wake-edge", 0),
             _line("signal-wake-edge", 0, "signal-wake-prepend", 0),
             _line("signal-wake-prepend", 0, "js", 0),
+            _line("signal-wake-threshold", 0, "signal-wake-sink", 0),
+            _line("signal-wake-sink", 0, "plugout", 0),
         ]
     elif preset["io"] == "instrument":
         boxes += [
@@ -339,6 +342,7 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
             _box("signal-wake-threshold", "newobj", ">~ 0.5", 520.0, 220.0),
             _box("signal-wake-edge", "newobj", "edge~", 620.0, 220.0),
             _box("signal-wake-prepend", "newobj", "prepend __signal_wake", 720.0, 220.0),
+            _box("signal-wake-sink", "newobj", "*~ 0.", 860.0, 220.0),
         ]
         lines += [
             _line("audio-out-l", 0, "plugout", 0),
@@ -347,6 +351,8 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
             _line("signal-wake-threshold", 0, "signal-wake-edge", 0),
             _line("signal-wake-edge", 0, "signal-wake-prepend", 0),
             _line("signal-wake-prepend", 0, "js", 0),
+            _line("signal-wake-threshold", 0, "signal-wake-sink", 0),
+            _line("signal-wake-sink", 0, "plugout", 0),
             _line("midiin", 0, "js", 0),
         ]
     else:

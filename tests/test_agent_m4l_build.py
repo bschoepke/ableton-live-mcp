@@ -20,6 +20,7 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert ">~ 0.5" in texts
     assert "edge~" in texts
     assert "prepend __signal_wake" in texts
+    assert "*~ 0." in texts
     buses = audio_bus_names("Lead")
     assert "receive~ %s" % buses["output_left"] in texts
     assert "receive~ %s" % buses["output_right"] in texts
@@ -66,6 +67,8 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert {"patchline": {"source": ["signal-wake-threshold", 0], "destination": ["signal-wake-edge", 0]}} in lines
     assert {"patchline": {"source": ["signal-wake-edge", 0], "destination": ["signal-wake-prepend", 0]}} in lines
     assert {"patchline": {"source": ["signal-wake-prepend", 0], "destination": ["js", 0]}} in lines
+    assert {"patchline": {"source": ["signal-wake-threshold", 0], "destination": ["signal-wake-sink", 0]}} in lines
+    assert {"patchline": {"source": ["signal-wake-sink", 0], "destination": ["plugout", 0]}} in lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["midiout", 0]}} not in lines
     assert "jweb~ @rendermode 1" not in texts
@@ -99,6 +102,7 @@ def test_agent_m4l_host_does_not_impose_fixed_pass_through():
     assert {"patchline": {"source": ["audio-out-l", 0], "destination": ["plugout", 0]}} in audio_lines
     assert {"patchline": {"source": ["signal-wake-clock", 0], "destination": ["signal-wake-threshold", 0]}} in audio_lines
     assert {"patchline": {"source": ["signal-wake-prepend", 0], "destination": ["js", 0]}} in audio_lines
+    assert {"patchline": {"source": ["signal-wake-sink", 0], "destination": ["plugout", 0]}} in audio_lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["js", 0]}} in midi_lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["midiout", 0]}} not in midi_lines
 
