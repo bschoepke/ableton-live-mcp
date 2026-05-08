@@ -1050,6 +1050,11 @@ def test_tool_list_stays_compact():
     transport = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_transport")
     assert "continue" in transport["description"]
     assert {"action", "time", "timeout", "strict_timeout"} <= set(transport["inputSchema"]["properties"])
+    tap = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_agent_audio_tap")
+    assert "start with path" in tap["description"]
+    assert "UDP optional" in tap["description"]
+    tap_setup = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_agent_audio_tap_setup")
+    assert "solo target track" in tap_setup["description"]
 
 
 def test_bridge_error_omits_traceback_by_default(monkeypatch):

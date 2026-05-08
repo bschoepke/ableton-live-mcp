@@ -40,6 +40,8 @@ AGENT_M4L_TOOL_DESCRIPTION = (
     "jweb/jbrowser web UI, or mixed UI; supports wait_status, file-backed command updates, "
     "device bounds, ui_bindings, and set/status fast paths."
 )
+AGENT_AUDIO_TAP_DESCRIPTION = "Command AgentAudioTap capture: use start with path, then stop/status; file command reliable, UDP optional."
+AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap on master or target; optionally solo target track and reset transport."
 
 
 def schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -241,8 +243,8 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "device_index": {"type": "integer"},
         **mutation_controls,
     }, ["ref", "device_name"]), forward("track_insert_device")))
-    server.add_tool(Tool("live_agent_audio_tap", "", loose_schema(), forward("agent_audio_tap")))
-    server.add_tool(Tool("live_agent_audio_tap_setup", "", loose_schema(), forward("agent_audio_tap_setup")))
+    server.add_tool(Tool("live_agent_audio_tap", AGENT_AUDIO_TAP_DESCRIPTION, loose_schema(), forward("agent_audio_tap")))
+    server.add_tool(Tool("live_agent_audio_tap_setup", AGENT_AUDIO_TAP_SETUP_DESCRIPTION, loose_schema(), forward("agent_audio_tap_setup")))
     def agent_m4l_device(args):
         built = None
         webui = None
