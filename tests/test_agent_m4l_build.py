@@ -161,15 +161,17 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "jweb~" in source
     assert "createWebUi" in source
     assert "createWebUis" in source
-    assert "webui.url || webui.html_url || webui.html_path" in source
+    assert "webui.html_path || webui.path || webui.url || webui.html_url" in source
+    assert '? "readfile" : "read"' in source
     assert "scheduleWebUiRead" in source
     assert "readPendingWebUis" in source
+    assert "if (attempt === 0)" in source
     assert "web_read_scheduled" in source
     assert "web_read_attempts" in source
     assert "WEBUI_READ_DELAYS" in source
     assert "web_read_pending" in source
     assert "webui_read_exhausted" in source
-    assert 'reads[i].obj.message("read", reads[i].path)' in source
+    assert 'reads[i].obj.message(reads[i].read_message || "read", reads[i].path)' in source
     assert "handleTaggedWebUiMessage" in source
     assert "webUiIdByTag" in source
     assert "markWebUiLoaded" in source
@@ -252,6 +254,7 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "obj.message(\"set\", value)" in source
     assert "obj.message(\"bang\")" in source
     assert "connectPatchlines" in source
+    assert '"audio-in-l", "audio-in-r", "audio-out-l", "audio-out-r"' in source
     assert "connection_errors" in source
     assert "lastConnectionErrors.push" in source
     assert "lastConnectionErrors.concat(errors)" in source

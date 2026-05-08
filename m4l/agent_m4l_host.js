@@ -589,7 +589,8 @@ function createWebUis(webuiSpec, byId) {
 
 function createWebUi(webui, index, byId) {
     var rect = webui.presentation_rect || [0, 0, 320, 160];
-    var path = webui.url || webui.html_url || webui.html_path || webui.path;
+    var path = webui.html_path || webui.path || webui.url || webui.html_url;
+    var readMessage = webui.read_message || webui.readMessage || ((webui.html_path || webui.path) ? "readfile" : "read");
     if (!path) {
         return;
     }
@@ -639,14 +640,18 @@ function createWebUi(webui, index, byId) {
             }
         }
     }
-    scheduleWebUiRead(obj, path, id, 0);
+    scheduleWebUiRead(obj, path, id, 0, readMessage);
 }
 
-function scheduleWebUiRead(obj, path, id, attempt) {
+function scheduleWebUiRead(obj, path, id, attempt, readMessage) {
     attempt = Number(attempt || 0);
-    pendingWebUiReads.push({ obj: obj, path: String(path), id: String(id), attempt: attempt });
+    pendingWebUiReads.push({ obj: obj, path: String(path), id: String(id), attempt: attempt, read_message: String(readMessage || "read") });
     state.web_read_scheduled = (state.web_read_scheduled || 0) + 1;
     state.web_read_pending = pendingWebUiReads.length;
+    if (attempt === 0) {
+        readPendingWebUis();
+        return;
+    }
     if (!webReadTask) {
         webReadTask = new Task(readPendingWebUis, this);
     }
@@ -670,12 +675,12 @@ function readPendingWebUis() {
         state.web_read_attempts = (state.web_read_attempts || 0) + 1;
         state["web_" + key + "_read_attempts"] = (state["web_" + key + "_read_attempts"] || 0) + 1;
         try {
-            reads[i].obj.message("read", reads[i].path);
+            reads[i].obj.message(reads[i].read_message || "read", reads[i].path);
         } catch (err) {
             report("error", { reason: "webui_load_failed", id: id, detail: String(err) });
         }
         if (!loadedWebUis[id] && reads[i].attempt + 1 < WEBUI_READ_DELAYS.length) {
-            scheduleWebUiRead(reads[i].obj, reads[i].path, id, reads[i].attempt + 1);
+            scheduleWebUiRead(reads[i].obj, reads[i].path, id, reads[i].attempt + 1, reads[i].read_message);
         } else if (!loadedWebUis[id]) {
             state["web_" + key + "_read_exhausted"] = 1;
             report("error", { reason: "webui_read_exhausted", id: id, attempts: reads[i].attempt + 1 });
@@ -1193,7 +1198,7 @@ function countKeys(value) {
 
 function seedStaticObjects() {
     var byId = {};
-    var names = ["plugin", "plugout", "midiin", "midiout"];
+    var names = ["plugin", "plugout", "midiin", "midiout", "audio-in-l", "audio-in-r", "audio-out-l", "audio-out-r"];
     for (var i = 0; i < names.length; i++) {
         var obj = getNamed(names[i]);
         if (obj) {

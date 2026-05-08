@@ -105,6 +105,12 @@ When validating a generated M4L command, pass `wait_status: true` with a short `
 
 Generated hosts should use deterministic per-instance `udpreceive` ports derived from the instance id, not one shared M4L port. Value-only UDP hints should stay slim and omit recovery patches; the command file must still contain the full patch/spec so JS reload and set reopen recovery keep working. Large generated update payloads may skip UDP entirely and rely on the host's command-file poll rather than failing the command with an OS datagram-size error.
 
+For generated `jweb`/`jbrowser~` panels, issue the first `read` immediately after object creation; use scheduled retries only after that first read. In stressed sets, Max JS `Task` scheduling can lag or stall, so the initial web UI load must not depend solely on a later task callback.
+
+When a generated web panel has a local `html_path`, pass that filesystem path to the Max `readfile` message before trying URL-based `read`. Keep `url`/`html_url` plus `read` as fallback for externally hosted panels; local paths have been more reliable with Max's embedded web objects.
+
+For direct generated audio-effect graphs, connect `plugin` outlet 0/1 through the generated processing objects and into `plugout` inlet 0/1. The static `audio-in-l`, `audio-in-r`, `audio-out-l`, and `audio-out-r` objects are named send/receive bus endpoints for cross-patcher routing, not direct signal sources/destinations for a simple pass-through chain.
+
 When `live_agent_m4l_device` does not need to build or resolve a Live track/device, the MCP server may write the command file directly and then wait for host status. This is the preferred fast path for value-only `set`, `status`, `clear`, and `build: false` hot-reload commands.
 
 For iterative generated M4L updates, reuse the installed role host. `live_agent_m4l_device` skips rebuilds by default for `set`, `status`, `clear`, and value-only calls; pass `build: true` only when creating/replacing the host AMXD.
