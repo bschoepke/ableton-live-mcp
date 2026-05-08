@@ -27,10 +27,11 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert "udpreceive %d" % udp_port("Lead") in texts
     assert "metro 50 @active 1 @defer 1" in texts
     assert "live.thisdevice" in texts
-    assert "live.path" in texts
+    assert "live.path this_device" in texts
     assert "path this_device" in texts
     assert "prepend __self_device" in texts
     assert "path this_device parameters 1" in texts
+    assert "live.path this_device parameters 1" in texts
     assert "live.observer value" in texts
     assert "prepend __command_trigger" in texts
     assert "filewatch %s" % command_file("Lead") in texts
@@ -45,10 +46,14 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["poll-start", 0]}} in lines
     assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["poll-delay", 0]}} in lines
     assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["self-path-message", 0]}} in lines
+    assert {"patchline": {"source": ["poll-loadbang", 0], "destination": ["self-path", 0]}} in lines
+    assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["self-path", 0]}} in lines
     assert {"patchline": {"source": ["self-path-message", 0], "destination": ["self-path", 0]}} in lines
     assert {"patchline": {"source": ["self-path", 0], "destination": ["self-prepend", 0]}} in lines
     assert {"patchline": {"source": ["self-prepend", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["trigger-path-message", 0]}} in lines
+    assert {"patchline": {"source": ["poll-loadbang", 0], "destination": ["trigger-path", 0]}} in lines
+    assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["trigger-path", 0]}} in lines
     assert {"patchline": {"source": ["trigger-path-message", 0], "destination": ["trigger-path", 0]}} in lines
     assert {"patchline": {"source": ["trigger-path", 0], "destination": ["trigger-observer", 1]}} in lines
     assert {"patchline": {"source": ["trigger-observer", 0], "destination": ["trigger-prepend", 0]}} in lines
