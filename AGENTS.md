@@ -117,7 +117,7 @@ Generated hosts should use deterministic per-instance `udpreceive` ports derived
 
 For generated `jweb`/`jbrowser~` panels, issue the first `read` immediately after object creation; use scheduled retries only after that first read. In stressed sets, Max JS `Task` scheduling can lag or stall, so the initial web UI load must not depend solely on a later task callback.
 
-Pending web UI reads should also be serviced by ordinary device activity such as UI bindings, value updates, MIDI wakes, and audio meter telemetry. Do not make browser startup depend on a single timer path; creative devices with reactive meters or sequencers should help wake their own web panel while remaining fully general purpose.
+Pending web UI reads should also be serviced by ordinary device activity such as UI bindings, value updates, MIDI wakes, and audio meter telemetry, but activity wakes must respect retry backoff and must not collapse all retries into one burst. Do not make browser startup depend on a single timer path; creative devices with reactive meters or sequencers should help wake their own web panel while remaining fully general purpose.
 
 When a generated web panel has a local `html_path`, pass that filesystem path to the Max `readfile` message first and keep `url`/`html_url` available for fallback `read` attempts. The host alternates to URL-style `read` on retries when a local page does not acknowledge, because different Max/CEF states can prefer different load paths.
 

@@ -825,13 +825,18 @@ function containsObject(list, obj) {
 
 function scheduleWebUiRead(obj, path, id, attempt, readMessage, fallbackPath) {
     attempt = Number(attempt || 0);
-    pendingWebUiReads.push({ obj: obj, path: String(path), id: String(id), attempt: attempt, read_message: String(readMessage || "read"), fallback_path: String(fallbackPath || "") });
+    var delay = attempt === 0 ? 0 : webUiReadDelay(attempt);
+    pendingWebUiReads.push({ obj: obj, path: String(path), id: String(id), attempt: attempt, read_message: String(readMessage || "read"), fallback_path: String(fallbackPath || ""), due_time: nowMs() + delay });
     state.web_read_scheduled = (state.web_read_scheduled || 0) + 1;
     state.web_read_pending = pendingWebUiReads.length;
     if (attempt === 0) {
         readPendingWebUis();
         return;
     }
+    scheduleNextPendingWebRead();
+}
+
+function scheduleWebReadTask(delay) {
     if (!webReadTask) {
         webReadTask = new Task(readPendingWebUis, this);
     }
@@ -839,13 +844,35 @@ function scheduleWebUiRead(obj, path, id, attempt, readMessage, fallbackPath) {
         webReadTask.cancel();
     } catch (errCancel) {
     }
-    webReadTask.schedule(webUiReadDelay(attempt));
+    webReadTask.schedule(Math.max(1, Number(delay || 1)));
+}
+
+function scheduleNextPendingWebRead() {
+    if (!pendingWebUiReads.length) {
+        return;
+    }
+    var now = nowMs();
+    var delay = WEBUI_READ_DELAYS[WEBUI_READ_DELAYS.length - 1];
+    for (var i = 0; i < pendingWebUiReads.length; i++) {
+        delay = Math.min(delay, Math.max(1, Number(pendingWebUiReads[i].due_time || now) - now));
+    }
+    scheduleWebReadTask(delay);
 }
 
 function readPendingWebUis() {
-    var reads = pendingWebUiReads;
+    var now = nowMs();
+    var reads = [];
+    var deferred = [];
+    for (var pendingIndex = 0; pendingIndex < pendingWebUiReads.length; pendingIndex++) {
+        var pending = pendingWebUiReads[pendingIndex];
+        if (Number(pending.due_time || 0) <= now) {
+            reads.push(pending);
+        } else {
+            deferred.push(pending);
+        }
+    }
     pendingWebUiReads = [];
-    state.web_read_pending = 0;
+    state.web_read_pending = deferred.length;
     for (var i = 0; i < reads.length; i++) {
         var id = String(reads[i].id);
         if (loadedWebUis[id]) {
@@ -868,6 +895,13 @@ function readPendingWebUis() {
             report("error", { reason: "webui_read_exhausted", id: id, attempts: reads[i].attempt + 1 });
         }
     }
+    pendingWebUiReads = deferred.concat(pendingWebUiReads);
+    state.web_read_pending = pendingWebUiReads.length;
+    scheduleNextPendingWebRead();
+}
+
+function nowMs() {
+    return (new Date()).getTime();
 }
 
 function webUiReadRequest(read) {
