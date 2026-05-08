@@ -20,8 +20,11 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert "receive~ %s" % buses["output_right"] in texts
     assert "udpreceive %d" % udp_port("Lead") in texts
     assert "metro 50 @active 1 @defer 1" in texts
+    assert "live.thisdevice" in texts
     assert "deferlow" in texts
     assert "delay 100" in texts
+    assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["poll-start", 0]}} in lines
+    assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["poll-delay", 0]}} in lines
     assert {"patchline": {"source": ["poll-delay", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["midiout", 0]}} not in lines
     assert "jweb~ @rendermode 1" not in texts
