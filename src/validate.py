@@ -61,7 +61,10 @@ def main(argv: list[str] | None = None) -> int:
                 raise AbletonBridgeError("%s validation failed: %s" % (method, item.get("error", "unknown error")))
             results[name] = item.get("result")
     except AbletonBridgeError as exc:
-        failure_type, next_action = _live_failure_diagnostics(exc)
+        bridge_status = _probe_bridge_status(live_timeout)
+        if bridge_status:
+            results["bridge_status"] = bridge_status
+        failure_type, next_action = _live_failure_diagnostics(exc, bridge_status)
         results["live_error"] = str(exc)
         results["live_failure_type"] = failure_type
         results["remote_script"]["runtime_current"] = False
@@ -98,7 +101,18 @@ def _check_running_remote_script(results: dict) -> tuple[bool, str]:
     return True, ""
 
 
-def _live_failure_diagnostics(exc: Exception) -> tuple[str, str]:
+def _probe_bridge_status(timeout: float) -> dict:
+    probe_timeout = max(1.0, min(float(timeout), 3.0))
+    try:
+        status = AbletonBridgeClient().request("bridge_status", {"timeout": probe_timeout, "strict_timeout": True})
+        if isinstance(status, dict):
+            return status
+        return {"ok": True, "result": status}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _live_failure_diagnostics(exc: Exception, bridge_status: dict | None = None) -> tuple[str, str]:
     message = str(exc)
     lower = message.lower()
     if "connection refused" in lower:
@@ -112,6 +126,11 @@ def _live_failure_diagnostics(exc: Exception) -> tuple[str, str]:
             "Confirm Ableton Live is running and the Ableton_Live_MCP Control Surface is selected; reload the Control Surface if the bridge never starts listening.",
         )
     if "timed out waiting for live main thread" in lower:
+        if bridge_status and bridge_status.get("server_thread_responsive"):
+            return (
+                "live_main_thread_hung",
+                "The Remote Script socket thread is responsive, but Live's main thread did not execute scheduled work. Stop sending Live API mutations; save/recover the set if possible, then restart Ableton Live or reload the Control Surface with user authorization and rerun validation.",
+            )
         return (
             "live_main_thread_timeout",
             "Check Ableton Live for modal dialogs, permission prompts, browser/indexing stalls, or heavy UI work; resolve the blocker, then rerun validation before sending more mutations.",

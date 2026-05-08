@@ -23,6 +23,7 @@ DEFAULT_MAX_DEPTH = 8
 DEFAULT_MAX_STRING_LENGTH = 4096
 DEFAULT_CHILD_LIMIT = 200
 DEFAULT_MAIN_THREAD_TIMEOUT = 30
+DEFAULT_MAIN_THREAD_STALL_COOLDOWN = 10
 DEFAULT_BROWSER_ROOTS = ("instruments", "audio_effects", "midi_effects", "drums", "samples", "sounds", "packs", "plugins", "user_library", "user_folders", "current_project")
 AGENT_AUDIO_TAP_HOST = "127.0.0.1"
 AGENT_AUDIO_TAP_PORT = 17654
@@ -66,6 +67,11 @@ class AbletonLiveMCP(ControlSurface):
         self._server = None
         self._running = True
         self._main_thread_id = threading.current_thread().ident
+        self._main_thread_timeout_count = 0
+        self._main_thread_last_timeout_at = 0.0
+        self._main_thread_last_timeout_method = None
+        self._main_thread_last_success_at = 0.0
+        self._main_thread_stall_until = 0.0
         self._handler_slots = threading.BoundedSemaphore(16)
         with self.component_guard():
             self._start_server()
@@ -166,7 +172,10 @@ class AbletonLiveMCP(ControlSurface):
         method = request.get("method")
         params = request.get("params") or {}
         try:
-            result = self._run_on_main(method, params)
+            if method == "bridge_status":
+                result = self._rpc_bridge_status(params)
+            else:
+                result = self._run_on_main(method, params)
             return {"jsonrpc": "2.0", "id": req_id, "result": result}
         except Exception as exc:
             error = {"code": -32000, "message": str(exc)}
@@ -181,6 +190,7 @@ class AbletonLiveMCP(ControlSurface):
             if isinstance(value, _EncodedResult):
                 return value
             return self._encode(value, self._encode_options(params))
+        self._raise_if_main_thread_in_stall_cooldown(method, params)
         done = threading.Event()
         result = {"value": None, "error": None}
         abandoned = {"value": False}
@@ -196,6 +206,7 @@ class AbletonLiveMCP(ControlSurface):
                     result["value"] = value
                 else:
                     result["value"] = self._encode(value, self._encode_options(params))
+                self._mark_main_thread_success()
             except Exception:
                 result["error"] = sys.exc_info()
             finally:
@@ -205,11 +216,60 @@ class AbletonLiveMCP(ControlSurface):
         timeout = self._main_thread_timeout(params)
         if not done.wait(timeout):
             abandoned["value"] = True
-            raise RuntimeError("Timed out waiting for Live main thread")
+            self._mark_main_thread_timeout(method, params)
+            raise RuntimeError("Timed out waiting for Live main thread during %s after %.3gs" % (method, timeout))
         if result["error"]:
             exc_type, exc, tb = result["error"]
             raise exc.with_traceback(tb)
         return result["value"]
+
+    def _rpc_bridge_status(self, _params):
+        now = time.time()
+        last_timeout_at = getattr(self, "_main_thread_last_timeout_at", 0.0)
+        last_success_at = getattr(self, "_main_thread_last_success_at", 0.0)
+        stall_until = getattr(self, "_main_thread_stall_until", 0.0)
+        main_thread = {
+            "thread_id": getattr(self, "_main_thread_id", None),
+            "timeouts": getattr(self, "_main_thread_timeout_count", 0),
+            "last_timeout_method": getattr(self, "_main_thread_last_timeout_method", None),
+            "stall_cooldown_remaining": max(0.0, stall_until - now),
+        }
+        if last_timeout_at:
+            main_thread["last_timeout_age"] = max(0.0, now - last_timeout_at)
+        if last_success_at:
+            main_thread["last_success_age"] = max(0.0, now - last_success_at)
+        return {
+            "ok": True,
+            "running": bool(getattr(self, "_running", False)),
+            "server_thread_responsive": True,
+            "handler_thread_id": threading.current_thread().ident,
+            "main_thread": main_thread,
+        }
+
+    def _raise_if_main_thread_in_stall_cooldown(self, method, params):
+        if params.get("force_main_thread_probe"):
+            return
+        remaining = getattr(self, "_main_thread_stall_until", 0.0) - time.time()
+        if remaining > 0:
+            previous = getattr(self, "_main_thread_last_timeout_method", None) or "unknown"
+            raise RuntimeError(
+                "Live main thread is in stall cooldown after %s timed out; refusing to enqueue %s for %.1fs. "
+                "Use live_bridge_status for socket-thread health, wait for cooldown, or restart/reload Live before sending mutations."
+                % (previous, method, remaining)
+            )
+
+    def _mark_main_thread_success(self):
+        self._main_thread_last_success_at = time.time()
+        self._main_thread_stall_until = 0.0
+
+    def _mark_main_thread_timeout(self, method, params):
+        now = time.time()
+        self._main_thread_timeout_count = getattr(self, "_main_thread_timeout_count", 0) + 1
+        self._main_thread_last_timeout_at = now
+        self._main_thread_last_timeout_method = method
+        cooldown = float(params.get("stall_cooldown") or DEFAULT_MAIN_THREAD_STALL_COOLDOWN)
+        if cooldown > 0:
+            self._main_thread_stall_until = max(getattr(self, "_main_thread_stall_until", 0.0), now + cooldown)
 
     def _main_thread_timeout(self, params):
         timeout = float(params.get("timeout") or DEFAULT_MAIN_THREAD_TIMEOUT)

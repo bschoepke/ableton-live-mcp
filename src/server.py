@@ -31,15 +31,15 @@ AGENT_M4L_STATIC_OBJECTS_BY_ROLE = {
 }
 AGENT_M4L_RESERVED_IDS = {"js", "script", "status", "udp", "out", "poll-metro", "command-trigger"}
 ABLETON_MCP_INSTRUCTIONS = (
-    "General Live bridge; not a limited recipe API. "
+    "General Live bridge; not a recipe API. "
     "Prefer installed Packs/user assets/samples/presets/devices/plugins unless asked. "
-    "Discover with live_browser_capabilities/live_browser_roots/live_browser_search roots:['plugins']; SKU/indexing vary. "
+    "Discover via browser tools roots:['plugins']; SKU/indexing vary. "
     "Existing sets: start with live_set_summary; use expected_set_signature for destructive edits. "
     "Prefer compact live_exec/live_batch, property lists, child limits, and JSON-safe clip helpers. "
     "find_similar_sounds requires Live 12+ analysis data. "
     "AgentAudioTap: prefer master tap + solo target; start with path. "
-    "Idle sockets auto-retry; sent-call timeouts fail closed; check status before retry; AMXD loads retry. "
-    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status/compact_result and require matching command_id/last_reload_command_id. Supports preflight, file updates, UDP hints, set/status skip build, midiin+midiparse, rect-driven sizing, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batches/list values, audio buses, jweb/jbrowser aliases. In stressed sets, no web ack means reload/simplify or validate a fresh host. "
+    "Idle sockets auto-retry; sent-call timeouts fail closed; live_bridge_status diagnoses socket-vs-main hangs; check status before retry; AMXD loads retry. "
+    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status/compact_result and require matching command_id. Supports preflight, files, UDP hints, set/status skip build, midiin+midiparse, rect sizing, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batches/list values, audio buses, jweb/jbrowser aliases. In stressed sets, no web ack means reload/simplify or validate a fresh host. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args are JSON numbers; Simpler.sample is not generally settable; use ids from summaries, not raw _live_ptr values. "
     "Hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
@@ -77,6 +77,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
 
     timeout_control = {"timeout": {"type": "number", "description": "Wait seconds."}}
     server.add_tool(Tool("live_ping", "Bridge health/version.", schema(timeout_control), forward("ping")))
+    server.add_tool(Tool("live_bridge_status", "Socket-thread status; no Live API/main-thread scheduling.", schema(timeout_control), forward("bridge_status")))
     response_controls = {
         "detail": {"type": "boolean"},
         "max_items": {"type": "integer"},

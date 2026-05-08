@@ -417,6 +417,11 @@ def make_bridge(monkeypatch):
     bridge._events = []
     bridge._running = True
     bridge._main_thread_id = threading.current_thread().ident
+    bridge._main_thread_timeout_count = 0
+    bridge._main_thread_last_timeout_at = 0.0
+    bridge._main_thread_last_timeout_method = None
+    bridge._main_thread_last_success_at = 0.0
+    bridge._main_thread_stall_until = 0.0
     bridge.song = lambda: song
     return bridge, song, app
 
@@ -1778,6 +1783,43 @@ def test_run_on_main_abandons_request_that_has_not_started(monkeypatch):
     assert invoked == []
     callbacks[0]()
     assert invoked == []
+
+
+def test_bridge_status_does_not_schedule_on_main_thread(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    bridge._main_thread_id = -1
+    bridge.schedule_message = lambda _delay, _callback: (_ for _ in ()).throw(AssertionError("scheduled main thread"))
+
+    response = bridge._dispatch({"jsonrpc": "2.0", "id": 1, "method": "bridge_status", "params": {}})
+
+    assert response["result"]["ok"] is True
+    assert response["result"]["server_thread_responsive"] is True
+    assert response["result"]["main_thread"]["timeouts"] == 0
+
+
+def test_run_on_main_circuit_breaker_after_timeout(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    callbacks = []
+    bridge._main_thread_id = -1
+    bridge.schedule_message = lambda _delay, callback: callbacks.append(callback)
+    bridge._rpc_marker = lambda _params: True
+
+    try:
+        bridge._run_on_main("marker", {"timeout": 0.001, "strict_timeout": True})
+    except RuntimeError as exc:
+        assert "Timed out waiting for Live main thread" in str(exc)
+    else:
+        raise AssertionError("expected timeout")
+
+    try:
+        bridge._run_on_main("marker", {"timeout": 0.001, "strict_timeout": True})
+    except RuntimeError as exc:
+        assert "stall cooldown" in str(exc)
+        assert "refusing to enqueue marker" in str(exc)
+    else:
+        raise AssertionError("expected circuit breaker refusal")
+
+    assert len(callbacks) == 1
 
 
 def test_run_on_main_clamps_short_non_strict_timeouts(monkeypatch):

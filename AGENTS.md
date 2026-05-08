@@ -46,6 +46,8 @@ Reloading the Control Surface or restarting Live can interrupt playback and the 
 
 If validation fails with `live_error`, preserve `live_failure_type`, `runtime_mismatch`, and `runtime_next_action` in the investigation notes. `live_main_thread_timeout` often means a modal dialog or heavy UI/indexing work is blocking Live; inspect the UI before sending more mutations. `bridge_not_listening` means the Control Surface bridge is not accepting localhost connections. Installed files may still be current in either case, so do not infer current-runtime behavior from source tests alone.
 
+When the bridge socket still responds but Live's main thread does not execute scheduled work, validation reports `live_failure_type: "live_main_thread_hung"` and may include `bridge_status.server_thread_responsive: true`. Treat this as a real Live hang, not a retryable command failure: stop sending Live API mutations, avoid piling up queued callbacks, and ask for explicit authorization before reloading the Control Surface or restarting Live. Use `live_bridge_status` only for no-Live-API socket-thread diagnostics while the set is wedged.
+
 ## Repository operations
 
 Never push commits, branches, or tags to a remote without explicit user authorization.
@@ -186,6 +188,8 @@ Hot reloads should preserve current values for matching generated parameter IDs.
 In large or stressed Live sets, do not pass short `timeout` values such as `10` to `live_batch`, transport, browser, or generated-device operations unless deliberately probing latency. The Remote Script and Python client default to a longer main-thread timeout so ordinary playback/control commands can survive Live UI stalls.
 
 Short `timeout` values are non-strict by default: the Remote Script and Python client clamp them to the default main-thread wait to avoid accidental failures in stressed sets. Use `strict_timeout: true` only for deliberate latency probes where a timeout failure is the expected signal.
+
+After a Live main-thread timeout, the Remote Script enters a short stall cooldown and refuses to enqueue more Live API work while still answering `live_bridge_status` from the socket thread. This prevents repeated agents from accumulating abandoned callbacks in an already hung set. Wait for cooldown only for a deliberate health probe; for ordinary work, recover Live first and then rerun validation.
 
 A build/install can succeed before Live's browser has indexed the new AMXD. In that case `live_agent_m4l_device` may return `loaded: false` with `load_error` while still returning `built`, `command_file`, and `status_file`. Treat that as a recoverable indexing/load condition: reuse an already loaded compatible host for immediate validation, or retry loading after the browser catches up.
 
