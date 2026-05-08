@@ -87,6 +87,7 @@ def test_initialize_includes_general_model_instructions():
     assert "agent-settable UI" in instructions
     assert "webui_read diagnostics" in instructions
     assert "throttled fallback wakes" in instructions
+    assert "load:false/set/status skip build" in instructions
     assert "Agent must visually verify M4L device UI" in instructions
     assert "Ableton-window-only" in instructions
     assert "never capture arbitrary apps/windows" in instructions
@@ -968,6 +969,41 @@ def test_agent_m4l_device_tool_writes_recovery_sidecar_for_forwarded_patch(tmp_p
     assert recovered["device_height"] == 170
 
 
+def test_agent_m4l_device_tool_load_false_patch_uses_direct_update(tmp_path):
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    command_file = tmp_path / "command.json"
+    status_file = tmp_path / "status.json"
+    patch = {"objects": [{"id": "dial", "text": "flonum"}], "connections": []}
+
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 54,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "instance_id": "Wobble",
+            "command": "update",
+            "load": False,
+            "udp": False,
+            "patch": patch,
+            "command_file": str(command_file),
+            "status_file": str(status_file),
+        }},
+    })
+
+    result = response["result"]["structuredContent"]
+    payload = json.loads(command_file.read_text(encoding="utf-8"))
+    assert bridge.calls == []
+    assert result["direct"] is True
+    assert result["loaded"] is False
+    assert "built" not in result
+    assert payload["patch"]["objects"] == patch["objects"]
+    assert payload["patch"]["connections"] == patch["connections"]
+    assert payload["patch"]["device_width"] == 420
+    assert payload["patch"]["device_height"] == 170
+
+
 def test_agent_m4l_device_tool_materializes_webui_arrays(monkeypatch, tmp_path):
     import agent_m4l
 
@@ -1660,6 +1696,8 @@ def test_agent_m4l_build_default_tracks_command_intent():
     assert should_build_agent_m4l({"patch": {"objects": []}}) is True
     assert should_build_agent_m4l({"webui": {"html_path": "/tmp/x.html"}}) is True
     assert should_build_agent_m4l({"webuis": [{"html_path": "/tmp/x.html"}]}) is True
+    assert should_build_agent_m4l({"patch": {"objects": []}, "load": False}) is False
+    assert should_build_agent_m4l({"patch": {"objects": []}, "load": False, "target_track": {"path": "live_set tracks 0"}}) is True
     assert should_build_agent_m4l({"values": [{"id": "dial", "value": 0.5}]}) is False
     assert should_build_agent_m4l({"command": "set"}) is False
     assert should_build_agent_m4l({"command": "status"}) is False

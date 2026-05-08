@@ -111,6 +111,8 @@ For complex generated specs, run `live_agent_m4l_device` with `preflight_only: t
 
 For value-only updates, preflight can recover the last patch from `command_file`/sidecar and verify set IDs against generated objects and binding targets before writing another command. Use it when iterating many controls or web gestures so unknown IDs fail locally instead of burning a Live command round trip.
 
+For hot-reloading an existing generated device without a target track/ref, pass `load: false` so the MCP takes the direct command-file path instead of rebuilding or scheduling Live main-thread work. Use explicit `build: true` only when the goal is to create or refresh an AMXD wrapper without loading it; use a target track/ref when you want Live to also poke the device's `Agent Poll` parameter for lower-latency delivery.
+
 Native and web UI binding sources must be agent-settable, not only user-settable. When a control has `ui_bind`/`ui_bindings`, validate both directions: move the UI source and confirm the target state changes, then send an agent `set` to the source ID and confirm the host reports `changed: 1`, updates the visible source, and writes the intended target value in status `state`.
 
 If a native source control needs a nonstandard write-back message to stay visually synchronized, set `source_message`/`source_set_message` and optional `source_args` on the binding. Keep this per-binding and data-driven; do not special-case particular UI layouts or control types in the MCP.
