@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from bridge import AbletonBridgeClient, BridgeConfig
-from agent_m4l import build_device, command_file as agent_m4l_command_file, device_name as agent_m4l_device_name, infer_device_width, normalize_role, slugify, status_file as agent_m4l_status_file, udp_port as agent_m4l_udp_port, write_webui
+from agent_m4l import build_device, command_file as agent_m4l_command_file, device_name as agent_m4l_device_name, infer_device_width, normalize_role, slugify, status_file as agent_m4l_status_file, udp_port as agent_m4l_udp_port, write_webui, write_webui_asset_files
 from mcp import StdioMcpServer, Tool
 from similar_sounds import find_similar_sounds
 
@@ -467,6 +467,10 @@ def materialize_agent_m4l_webui(instance_id: str, webui: Any) -> Any:
     if _should_write_agent_m4l_webui(result):
         rendered = write_webui(instance_id, result)
         result = materialized_agent_m4l_webui(result, rendered)
+    elif _has_agent_m4l_webui_source_assets(result):
+        result = materialized_agent_m4l_webui(result, {
+            "assets": write_webui_asset_files(instance_id, result.get("assets")),
+        })
     return result
 
 
@@ -485,6 +489,11 @@ def materialized_agent_m4l_webui(source: dict[str, Any], rendered: dict[str, Any
         "text",
         "audio_out",
         "rendermode",
+        "html_path",
+        "css_path",
+        "js_path",
+        "url",
+        "path",
     )
     result = {key: source[key] for key in keep if key in source}
     result.update(rendered)
@@ -495,6 +504,19 @@ def _should_write_agent_m4l_webui(webui: dict[str, Any]) -> bool:
     if any(key in webui for key in ("html", "css", "js", "controls", "title")):
         return True
     return not any(key in webui for key in ("html_path", "path", "url"))
+
+
+def _has_agent_m4l_webui_source_assets(webui: dict[str, Any]) -> bool:
+    assets = webui.get("assets")
+    if isinstance(assets, dict):
+        return True
+    if isinstance(assets, list):
+        for asset in assets:
+            if not isinstance(asset, dict):
+                continue
+            if any(key in asset for key in ("content", "text", "base64")):
+                return True
+    return False
 
 
 def summarize_agent_m4l_webui(webui: Any) -> Any:

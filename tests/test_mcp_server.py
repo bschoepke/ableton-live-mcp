@@ -607,6 +607,42 @@ def test_agent_m4l_device_tool_materializes_webui_arrays(monkeypatch, tmp_path):
     assert response["result"]["structuredContent"]["webui"]["webuis"][0]["url"].startswith("file://")
 
 
+def test_agent_m4l_device_tool_materializes_existing_webui_assets(monkeypatch, tmp_path):
+    import agent_m4l
+
+    monkeypatch.setattr(agent_m4l, "GENERATED_DIR", tmp_path)
+    monkeypatch.setattr(agent_m4l, "WEBUI_DIR", tmp_path / "webui")
+    existing = tmp_path / "existing.html"
+    existing.write_text("<html><script src=\"lib/scene.js\"></script></html>", encoding="utf-8")
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {
+        "role": "audio_effect",
+        "instance_id": "Asset Existing",
+        "patch": {"objects": []},
+        "webui": {
+            "id": "asset_panel",
+            "object": "jbrowser~",
+            "html_path": str(existing),
+            "presentation_rect": [0, 0, 360, 140],
+            "assets": {"lib/scene.js": "window.sceneReady = true;"},
+        },
+        "install": False,
+    }
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 52,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": args},
+    })
+
+    forwarded = bridge.calls[0][1]
+    assert forwarded["patch"]["webui"]["html_path"] == str(existing)
+    assert forwarded["patch"]["webui"]["assets"][0]["relative_path"] == "lib/scene.js"
+    assert Path(forwarded["patch"]["webui"]["assets"][0]["path"]).read_text(encoding="utf-8") == "window.sceneReady = true;"
+    assert response["result"]["structuredContent"]["webui"]["assets"][0]["bytes"] == 25
+
+
 def test_agent_m4l_device_tool_materializes_patch_webui(monkeypatch, tmp_path):
     import agent_m4l
 

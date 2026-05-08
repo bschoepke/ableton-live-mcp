@@ -365,7 +365,7 @@ def write_webui(instance_id: str, webui: dict[str, Any]) -> dict[str, Any]:
     css_path.write_text(css, encoding="utf-8")
     js_path.write_text(js, encoding="utf-8")
     html_path.write_text(html, encoding="utf-8")
-    assets = write_webui_assets(directory, webui.get("assets"))
+    assets = write_webui_asset_files(instance_id, webui.get("assets"))
     return {
         "html_path": str(html_path),
         "css_path": str(css_path),
@@ -373,6 +373,12 @@ def write_webui(instance_id: str, webui: dict[str, Any]) -> dict[str, Any]:
         "url": html_path.resolve().as_uri(),
         "assets": assets,
     }
+
+
+def write_webui_asset_files(instance_id: str, assets: Any) -> list[dict[str, Any]]:
+    directory = WEBUI_DIR / slugify(instance_id)
+    directory.mkdir(parents=True, exist_ok=True)
+    return write_webui_assets(directory, assets)
 
 
 def write_webui_assets(directory: Path, assets: Any) -> list[dict[str, Any]]:
