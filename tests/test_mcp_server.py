@@ -90,6 +90,7 @@ def test_initialize_includes_general_model_instructions():
     assert "start with path" in instructions
     assert "Idle sockets auto-retry" in instructions
     assert "Validate runtime_current" in instructions
+    assert "live_mutations_safe" in instructions
     assert "no-arg known-tool schema=stale MCP" in instructions
     assert "sent-call timeouts fail closed" in instructions
     assert "client/RS cooldown" in instructions
@@ -2841,7 +2842,10 @@ def test_validate_rejects_running_stale_remote_script(tmp_path, monkeypatch, cap
     output = capsys.readouterr()
     assert "running Remote Script is stale" in output.err
     assert "reload the Ableton_Live_MCP Control Surface" in output.err
+    assert '"installed_files_current": true' in output.out
     assert '"runtime_current": false' in output.out
+    assert '"live_mutations_safe": false' in output.out
+    assert '"loaded_runtime_state": "loaded_code_mismatch"' in output.out
     assert '"runtime_mismatch": "bridge_hash_mismatch"' in output.out
     assert '"runtime_reload_required": true' in output.out
     assert "Reload the Ableton_Live_MCP Control Surface" in output.out
@@ -2865,6 +2869,8 @@ def test_validate_rejects_running_remote_script_without_runtime_version(tmp_path
     assert validate_main(["--target-dir", str(tmp_path)]) == 1
     output = capsys.readouterr()
     assert '"runtime_current": false' in output.out
+    assert '"live_mutations_safe": false' in output.out
+    assert '"loaded_runtime_state": "loaded_code_stale_or_unverified"' in output.out
     assert '"runtime_mismatch": "missing_runtime_version"' in output.out
     assert '"runtime_reload_required": true' in output.out
 
@@ -2890,6 +2896,8 @@ def test_validate_rejects_running_remote_script_without_runtime_code_hash(tmp_pa
     assert validate_main(["--target-dir", str(tmp_path)]) == 1
     output = capsys.readouterr()
     assert '"runtime_current": false' in output.out
+    assert '"live_mutations_safe": false' in output.out
+    assert '"loaded_runtime_state": "loaded_code_stale_or_unverified"' in output.out
     assert '"runtime_mismatch": "missing_runtime_code_hash"' in output.out
     assert '"runtime_reload_required": true' in output.out
 
@@ -2942,7 +2950,10 @@ def test_validate_live_checks_are_compact_and_timed(tmp_path, monkeypatch, capsy
     monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
 
     assert validate_main(["--target-dir", str(tmp_path)]) == 0
-    capsys.readouterr()
+    output = capsys.readouterr()
+    assert '"runtime_current": true' in output.out
+    assert '"live_mutations_safe": true' in output.out
+    assert '"loaded_runtime_state": "current"' in output.out
     assert len(calls) == 1
     assert calls[0][0] == "batch"
     assert calls[0][1]["timeout"] == 45.0

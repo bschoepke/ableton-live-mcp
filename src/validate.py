@@ -32,6 +32,7 @@ def main(argv: list[str] | None = None) -> int:
     }
     mcp_tools_ok = bool(results["mcp_tools"].get("ok"))
     remote_ok = bool(results["remote_script"].get("current"))
+    results["remote_script"]["installed_files_current"] = remote_ok
     m4l_host_ok = bool(results["m4l_host"].get("current"))
     visual_ok = bool(results["visual_capture"].get("ok"))
     if not mcp_tools_ok:
@@ -83,25 +84,47 @@ def main(argv: list[str] | None = None) -> int:
         failure_type, next_action = _live_failure_diagnostics(exc, bridge_status)
         results["live_error"] = str(exc)
         results["live_failure_type"] = failure_type
-        results["remote_script"]["runtime_current"] = False
-        results["remote_script"]["runtime_mismatch"] = failure_type
-        results["remote_script"]["runtime_reload_required"] = True
-        results["remote_script"]["runtime_next_action"] = next_action
+        _record_runtime_status(results, False, failure_type, next_action)
         print(json.dumps(results, indent=2, sort_keys=True))
         print(f"Ableton Live MCP validation failed: {exc}", file=sys.stderr)
         return 1
     runtime_ok, runtime_reason = _check_running_remote_script(results)
-    results["remote_script"]["runtime_current"] = runtime_ok
-    if runtime_reason:
-        results["remote_script"]["runtime_mismatch"] = runtime_reason
-        results["remote_script"]["runtime_reload_required"] = True
-        results["remote_script"]["runtime_next_action"] = "Reload the Ableton_Live_MCP Control Surface or restart Ableton Live, then rerun ableton-live-mcp-validate."
+    _record_runtime_status(
+        results,
+        runtime_ok,
+        runtime_reason,
+        "Reload the Ableton_Live_MCP Control Surface or restart Ableton Live, then rerun ableton-live-mcp-validate.",
+    )
     if not runtime_ok and not args.allow_stale_remote_script:
         print(json.dumps(results, indent=2, sort_keys=True))
         print("Ableton Live MCP validation failed: running Remote Script is stale or unverified; reload the Ableton_Live_MCP Control Surface or restart Ableton Live", file=sys.stderr)
         return 1
     print(json.dumps(results, indent=2, sort_keys=True))
     return 0
+
+
+def _record_runtime_status(results: dict, runtime_ok: bool, runtime_reason: str, next_action: str | None = None) -> None:
+    remote_script = results["remote_script"]
+    remote_script["runtime_current"] = runtime_ok
+    remote_script["live_mutations_safe"] = runtime_ok
+    remote_script["loaded_runtime_state"] = _loaded_runtime_state(runtime_reason)
+    if runtime_reason:
+        remote_script["runtime_mismatch"] = runtime_reason
+        remote_script["runtime_reload_required"] = True
+        if next_action:
+            remote_script["runtime_next_action"] = next_action
+
+
+def _loaded_runtime_state(runtime_reason: str) -> str:
+    if not runtime_reason:
+        return "current"
+    if runtime_reason in {"missing_runtime_version", "missing_runtime_code_hash", "missing_runtime_bridge_hash"}:
+        return "loaded_code_stale_or_unverified"
+    if runtime_reason in {"runtime_version_mismatch", "runtime_code_hash_mismatch", "bridge_hash_mismatch"}:
+        return "loaded_code_mismatch"
+    if runtime_reason.startswith("live_") or runtime_reason.startswith("bridge_"):
+        return "live_unavailable"
+    return "unverified"
 
 
 def _check_running_remote_script(results: dict) -> tuple[bool, str]:
