@@ -1526,6 +1526,8 @@ def test_prompt_audit_runs_expected_bridge_methods():
                 return {"track_path": "live_set tracks 1", "track": "Audit Library Sample"}
             if method == "exec":
                 return {"ok": True}
+            if method == "agent_m4l_device":
+                return {"command": params.get("command"), "command_file_written": True, "loaded": False}
             if method == "set_summary":
                 return {"tracks": [
                     {"index": 0, "name": "Audit Automation", "clips": [{"id": 201, "name": "MCP Prompt Audit Automation"}], "arrangement_clips": []},
@@ -1546,4 +1548,10 @@ def test_prompt_audit_runs_expected_bridge_methods():
     assert code == 0
     assert output["ok"] is True
     assert output["destructive"] is True
-    assert {"batch", "exec", "set_summary", "get", "clip_notes", "clip_update_notes", "clip_envelope", "clip_warp_markers", "track_create_audio_clip", "browser_search", "browser_load"} <= set(methods)
+    assert {"batch", "exec", "set_summary", "get", "clip_notes", "clip_update_notes", "clip_envelope", "clip_warp_markers", "track_create_audio_clip", "browser_search", "browser_load", "agent_m4l_device"} <= set(methods)
+    agent_m4l_calls = [params for method, params in bridge.calls if method == "agent_m4l_device"]
+    assert agent_m4l_calls[0]["load"] is False
+    assert agent_m4l_calls[0]["udp"] is False
+    assert agent_m4l_calls[0]["patch"]["webui"]["object"] == "jbrowser~"
+    assert agent_m4l_calls[0]["patch"]["webui"]["url"] == "about:blank"
+    assert agent_m4l_calls[0]["patch"]["device_height"] == 170

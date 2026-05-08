@@ -184,6 +184,31 @@ def _scenario_audio_vocal_import(client: AbletonBridgeClient) -> dict[str, Any]:
     return _scenario_result("audio_vocal_import", "I want audio vocals", calls)
 
 
+def _scenario_generated_m4l_device(client: AbletonBridgeClient) -> dict[str, Any]:
+    calls = [_call(client, "agent_m4l_device", {
+        "role": "audio_effect",
+        "instance_id": "Prompt Audit M4L Direct",
+        "command": "update",
+        "load": False,
+        "udp": False,
+        "id": "prompt-audit-m4l-update",
+        "patch": {
+            "device_width": 520,
+            "device_height": 170,
+            "objects": [
+                {"id": "macro_value", "text": "flonum", "presentation_rect": [12, 12, 90, 24]},
+                {"id": "label", "text": "comment Prompt Audit Generated M4L", "presentation_rect": [116, 12, 220, 24]},
+            ],
+            "webui": {"id": "audit_panel", "object": "jbrowser~", "url": "about:blank", "presentation_rect": [12, 48, 480, 100]},
+            "ui_bindings": [
+                {"source": "macro_value", "target": "macro_value", "source_min": 0, "source_max": 1, "target_min": 0, "target_max": 1}
+            ],
+            "connections": [],
+        },
+    }, "write_generated_m4l_native_web_patch")]
+    return _scenario_result("generated_m4l_device", "Make a custom Max for Live device with bespoke UI", calls)
+
+
 def _scenario_plugin_discovery(client: AbletonBridgeClient) -> dict[str, Any]:
     calls = [_call(client, "browser_search", {
         "query": "",
@@ -240,6 +265,7 @@ def run_prompt_audit(client: AbletonBridgeClient | None = None, *, include_optio
         (_scenario_clip_automation_edit, False),
         (_scenario_audio_warp_edit, False),
         (_scenario_audio_vocal_import, False),
+        (_scenario_generated_m4l_device, False),
         (_scenario_plugin_discovery, True),
     ]
     checks = []
