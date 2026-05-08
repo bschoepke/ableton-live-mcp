@@ -21,6 +21,7 @@ class BridgeConfig:
     host: str = "127.0.0.1"
     port: int = 8765
     timeout: float = 30.0
+    connect_timeout: float = 2.0
     idle_timeout: float = 8.0
     max_response_bytes: int = 8 * 1024 * 1024
 
@@ -30,6 +31,7 @@ class BridgeConfig:
             host=os.environ.get("ABLETON_MCP_HOST", cls.host),
             port=int(os.environ.get("ABLETON_MCP_PORT", str(cls.port))),
             timeout=float(os.environ.get("ABLETON_MCP_TIMEOUT", str(cls.timeout))),
+            connect_timeout=float(os.environ.get("ABLETON_MCP_CONNECT_TIMEOUT", str(cls.connect_timeout))),
             idle_timeout=float(os.environ.get("ABLETON_MCP_IDLE_TIMEOUT", str(cls.idle_timeout))),
             max_response_bytes=int(os.environ.get("ABLETON_MCP_MAX_RESPONSE_BYTES", str(cls.max_response_bytes))),
         )
@@ -104,7 +106,7 @@ class AbletonBridgeClient:
             if time.monotonic() - self._last_used >= self.config.idle_timeout:
                 self.close()
         if self._sock is None:
-            self._sock = socket.create_connection((self.config.host, self.config.port), self.config.timeout)
+            self._sock = socket.create_connection((self.config.host, self.config.port), self.config.connect_timeout)
             self._sock.settimeout(self.config.timeout)
             self._last_used = time.monotonic()
         return self._sock

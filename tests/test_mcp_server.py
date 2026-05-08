@@ -1318,6 +1318,7 @@ def test_bridge_client_defaults_can_be_configured_from_env(monkeypatch):
     monkeypatch.setenv("ABLETON_MCP_HOST", "127.0.0.2")
     monkeypatch.setenv("ABLETON_MCP_PORT", "9876")
     monkeypatch.setenv("ABLETON_MCP_TIMEOUT", "45")
+    monkeypatch.setenv("ABLETON_MCP_CONNECT_TIMEOUT", "3")
     monkeypatch.setenv("ABLETON_MCP_MAX_RESPONSE_BYTES", "123456")
 
     config = AbletonBridgeClient().config
@@ -1326,9 +1327,40 @@ def test_bridge_client_defaults_can_be_configured_from_env(monkeypatch):
         host="127.0.0.2",
         port=9876,
         timeout=45.0,
+        connect_timeout=3.0,
         idle_timeout=8.0,
         max_response_bytes=123456,
     )
+
+
+def test_bridge_client_uses_short_connect_timeout(monkeypatch):
+    connect_calls = []
+
+    class FakeSocket:
+        def __init__(self):
+            self.responses = [b'{"jsonrpc":"2.0","id":1,"result":{"ok":true}}\n']
+
+        def settimeout(self, _timeout):
+            pass
+
+        def sendall(self, _line):
+            pass
+
+        def recv(self, _size):
+            return self.responses.pop(0)
+
+        def close(self):
+            pass
+
+    def connect(address, timeout):
+        connect_calls.append((address, timeout))
+        return FakeSocket()
+
+    monkeypatch.setattr("socket.create_connection", connect)
+    client = AbletonBridgeClient(BridgeConfig(timeout=45.0, connect_timeout=1.5))
+
+    assert client.request("ping") == {"ok": True}
+    assert connect_calls == [(("127.0.0.1", 8765), 1.5)]
 
 
 def test_bridge_client_reuses_socket(monkeypatch):

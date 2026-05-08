@@ -46,6 +46,8 @@ Never push commits, branches, or tags to a remote without explicit user authoriz
 
 Persistent localhost bridge sockets can be closed after an idle period. The client should proactively reconnect with `ABLETON_MCP_IDLE_TIMEOUT` and retry stale `id: null` `"timed out"` responses from older Remote Scripts. The Remote Script should close idle clients silently, without sending JSON-RPC timeout errors that can be misread as the next request's response. Use per-call `timeout` only for work that genuinely needs longer on Live's main thread.
 
+Keep TCP connection failure bounded separately from Live work. `ABLETON_MCP_CONNECT_TIMEOUT` controls the short localhost connect attempt, while `ABLETON_MCP_TIMEOUT` and per-call `timeout` control how long to wait for operations that are already connected and running inside Live.
+
 ## Max for Live devices
 This repo includes `m4l/AgentAudioTap.amxd`, a Max for Live audio effect that lets an agent record the audio signal at the device's insertion point for analysis. Build/install it with:
 
