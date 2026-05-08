@@ -203,6 +203,8 @@ When validating a generated M4L command, pass `wait_status: true` so the bridge 
 
 Use `status_detail: "summary"` or `compact_status: true` when you only need command acknowledgement, web-read diagnostics, dimensions, and binding source/target metadata. Use the default full status when validating exact generated state values.
 
+When validating a small number of audio/MIDI telemetry values, combine `compact_status: true` with `status_state_keys` such as `["level_meter"]` so the response includes only the requested state values plus standard web/wake diagnostics. Do not read or print the full status JSON just to prove one meter or probe changed.
+
 Use `compact_result: true` or `result_detail: "summary"` for iterative generated-device work that only needs command proof, built file paths, load state, web UI materialization, preflight, status, and a short track/device preview. This is especially useful for creative web/native devices whose source specs, assets, or Live track summaries would otherwise dominate the MCP response.
 
 Generated hosts should use deterministic per-instance `udpreceive` ports derived from the instance id, not one shared M4L port. Value-only UDP hints should stay slim and omit recovery patches; the command file must still contain the full patch/spec so JS reload and set reopen recovery keep working. Large generated update payloads may skip UDP entirely and rely on the host's command-file poll rather than failing the command with an OS datagram-size error.

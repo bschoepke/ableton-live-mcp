@@ -42,12 +42,12 @@ ABLETON_MCP_INSTRUCTIONS = (
     "AgentAudioTap: master tap+solo; start with path. "
     "Validate runtime_current/live_mutations_safe; no-arg tool schema=stale MCP, reload. No parallel Live API. Idle sockets auto-retry; sent-call timeouts fail closed; client/RS cooldown+serialize; live_bridge_status timeout=wedged. Save/recover modals: inspect UI, no retry mutations. "
     "Agent must visually verify M4L device UI: Ableton-window-only, no arbitrary apps/windows, select target then device-detail crop, blank_capture invalid; locked/asleep display blocks capture/e2e. "
-    "M4L: free native/web/mixed UI hot-reloads; wait_status/compact_result+command_id. Reuse hosts/IDs; host_runtime_version; avoid renderer buildup/fps; cleanup dry-run. Supports preflight, sidecar recovery+slim set/status, UDP hints, throttled fallback wakes, load:false/set/status skip build, host_not_woken=no ack, midiin+midiparse, origin rect/openrect, bounds, ui_bindings, agent-settable UI, telemetry report:false, ack/state throttles, web assets/source_path, webui_read diagnostics, set_silent/batch/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web: prove signal telemetry+visual delta. No web ack/shrink: reload/simplify or fresh host. "
+    "M4L: free native/web/mixed UI hot-reloads; wait_status/compact_result+command_id. Reuse hosts/IDs; host_runtime_version; avoid renderer buildup/fps; cleanup dry-run. Supports preflight, sidecar recovery+slim set/status, UDP hints, throttled fallback wakes, load:false/set/status skip build, host_not_woken=no ack, midiin+midiparse, origin rect/openrect, bounds, ui_bindings, agent-settable UI, telemetry report:false, ack/state throttles, web assets/source_path, webui/status_state_keys diag, set_silent/batch/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web: prove signal telemetry+visual delta. No web ack/shrink: reload/simplify or fresh host. "
     "Avoid broad dumps. Gotchas: eval expr-only; use exec; JSON nums; Simpler.sample not settable. "
     "full Live object model remains available."
 )
 AGENT_M4L_TOOL_DESCRIPTION = (
-    "arbitrary native UI, jweb/jbrowser web UI; wait_status compact_status compact_result, web diag."
+    "arbitrary native UI, jweb/jbrowser web UI; wait_status compact_status status_state_keys compact_result web diag."
 )
 AGENT_M4L_CLEANUP_DESCRIPTION = "Dry-run/delete AgentM4L; ask before delete."
 AGENT_AUDIO_TAP_DESCRIPTION = "AgentAudioTap: command open/start/stop/status; start with path; UDP optional."
@@ -293,6 +293,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         wait_status = bool(params.pop("wait_status", False))
         status_detail = str(params.pop("status_detail", "full") or "full").lower()
         compact_status = bool(params.pop("compact_status", False))
+        status_state_keys = normalize_agent_m4l_state_keys(params.pop("status_state_keys", None))
         result_detail = str(params.pop("result_detail", "full") or "full").lower()
         compact_result = bool(params.pop("compact_result", False)) or result_detail in ("summary", "compact")
         status_timeout_arg = params.pop("status_timeout", None)
@@ -385,7 +386,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
                 status_poll_interval,
                 expected_agent_m4l_status_event(str(result.get("command") or agent_m4l_command(params))),
             )
-            result["status"] = summarize_agent_m4l_status(status) if compact_status or status_detail in ("summary", "compact") else status
+            result["status"] = summarize_agent_m4l_status(status, status_state_keys) if compact_status or status_detail in ("summary", "compact") else status
         if built is not None:
             result["built"] = built
         if preflight is not None:
@@ -466,7 +467,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         **guarded_response_controls,
         **strict_timeout_control,
     }, ["code"]), forward("exec")))
-    server.add_tool(Tool("live_observe", "Add or remove a listener for an object's property.", schema({
+    server.add_tool(Tool("live_observe", "Add/remove property listener.", schema({
         "ref": ref,
         "property": {"type": "string"},
         "enabled": {"type": "boolean"},
@@ -1340,20 +1341,31 @@ def parse_agent_m4l_status_text(text: str) -> dict[str, Any]:
     return status
 
 
-def summarize_agent_m4l_status(status: dict[str, Any]) -> dict[str, Any]:
+def normalize_agent_m4l_state_keys(value: Any) -> set[str]:
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        return {item.strip() for item in value.split(",") if item.strip()}
+    if isinstance(value, (list, tuple, set)):
+        return {str(item) for item in value if str(item)}
+    return {str(value)}
+
+
+def summarize_agent_m4l_status(status: dict[str, Any], state_keys: set[str] | None = None) -> dict[str, Any]:
+    state_keys = state_keys or set()
     summary: dict[str, Any] = {}
     for key in ("event", "command_id", "last_reload_command_id", "host_runtime_version", "host_runtime_status", "dynamic_objects", "webuis", "device_width", "device_height", "id", "reason", "attempt", "attempts", "message", "reload_seen", "webui_status", "changed", "source", "target", "connection_errors_truncated", "timed_out", "expected_command_id", "expected_event", "mismatch", "timeout_reason", "error", "path", "last_status_age_seconds", "status_file_updated_after_command", "state_keys"):
         if key in status:
             summary[key] = status.get(key)
     last_status = status.get("last_status")
     if isinstance(last_status, dict):
-        summary["last_status"] = summarize_agent_m4l_status(last_status)
+        summary["last_status"] = summarize_agent_m4l_status(last_status, state_keys)
     state = status.get("state")
     if isinstance(state, dict):
         summary["state_keys"] = sorted(str(key) for key in state.keys())[:40]
         focused = {
             str(key): compact_agent_m4l_status_value(value) for key, value in state.items()
-            if str(key).startswith(("web_", "command_wake", "filewatch", "live_parameter"))
+            if str(key) in state_keys or str(key).startswith(("web_", "command_wake", "filewatch", "live_parameter"))
         }
         if focused:
             summary["state"] = focused
