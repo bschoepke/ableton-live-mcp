@@ -1337,6 +1337,31 @@ def test_validate_rejects_running_stale_remote_script(tmp_path, monkeypatch, cap
     assert '"runtime_mismatch": "bridge_hash_mismatch"' in output.out
 
 
+def test_validate_live_checks_are_compact_and_timed(tmp_path, monkeypatch, capsys):
+    install_remote_script("Ableton_Live_MCP", tmp_path)
+    status = remote_script_status(target_dir=tmp_path)
+    calls = []
+
+    class FakeClient:
+        def request(self, method, params):
+            calls.append((method, params))
+            if method == "ping":
+                return {"ok": True, "remote_script": {"bridge_sha256": status["source_bridge_sha256"]}}
+            return {"ok": True}
+
+    monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
+
+    assert validate_main(["--target-dir", str(tmp_path)]) == 0
+    capsys.readouterr()
+    assert calls[1] == ("get", {
+        "ref": {"path": "live_set"},
+        "properties": ["tempo", "signature_numerator", "signature_denominator"],
+        "timeout": 45,
+    })
+    assert calls[2][0] == "eval"
+    assert calls[2][1]["timeout"] == 45
+
+
 def test_remote_script_resources_available_from_source_checkout():
     root = remote_script_root()
     assert (root / "Ableton_Live_MCP" / "bridge.py").exists()

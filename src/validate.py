@@ -29,8 +29,8 @@ def main(argv: list[str] | None = None) -> int:
     client = AbletonBridgeClient()
     checks = [
         ("ping", "ping", {}),
-        ("song", "get", {"ref": {"path": "live_set"}, "properties": ["tempo", "signature_numerator", "signature_denominator"], "children": ["tracks", "scenes"], "child_limit": 5}),
-        ("application", "eval", {"expr": "app.get_major_version() if hasattr(app, 'get_major_version') else app.get_version_string().split('.')[0]"}),
+        ("song", "get", {"ref": {"path": "live_set"}, "properties": ["tempo", "signature_numerator", "signature_denominator"], "timeout": 45}),
+        ("application", "eval", {"expr": "app.get_major_version() if hasattr(app, 'get_major_version') else app.get_version_string().split('.')[0]", "timeout": 45}),
     ]
     try:
         for name, method, params in checks:
