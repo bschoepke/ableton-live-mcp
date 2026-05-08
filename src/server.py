@@ -928,7 +928,7 @@ def summarize_agent_m4l_status(status: dict[str, Any]) -> dict[str, Any]:
         if focused:
             summary["state"] = focused
     if status.get("connection_errors"):
-        summary["connection_errors"] = status.get("connection_errors")
+        summary["connection_errors"] = compact_agent_m4l_status_value(status.get("connection_errors"))
     return summary
 
 
