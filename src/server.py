@@ -41,10 +41,10 @@ ABLETON_MCP_INSTRUCTIONS = (
     "find_similar_sounds requires Live 12+ analysis data. "
     "AgentAudioTap: master tap + solo target; start with path. "
     "Idle sockets auto-retry; sent-call timeouts fail closed; live_bridge_status diagnoses hangs; check before retry. "
-    "Agent must visually verify M4L device UI with live_visual_capture after UI changes; Ableton-window-only, never capture arbitrary apps/windows; use device-detail crop/max; blank_capture invalid. "
-    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status/compact_result, require matching command_id. Supports preflight files, UDP hints, set/status skip build, midiin+midiparse, origin-aligned rect/openrect, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batches/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web must prove signal telemetry. No web ack or width shrink: reload/simplify or validate fresh host. "
+    "Agent must visually verify M4L device UI via live_visual_capture; Ableton-window-only, never capture arbitrary apps/windows; device-detail crop/max; blank_capture invalid. "
+    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; wait_status/compact_result, matching command_id required. Supports preflight files, UDP hints, throttled fallback wakes, set/status skip build, midiin+midiparse, origin-aligned rect/openrect, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batches/list vals, audio buses, jweb/jbrowser aliases; audio-reactive web must prove signal telemetry+nonblank visual delta. No web ack/width shrink: reload/simplify or validate fresh host. "
     "Avoid broad dumps. Gotchas: live_eval expression-only; use live_exec for statements; Live numeric args are JSON numbers; Simpler.sample is not generally settable; use ids from summaries. "
-    "Hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
+    "Hints only; full Live object model remains available through paths, ids, calls, props, children, listeners, eval."
 )
 AGENT_M4L_TOOL_DESCRIPTION = (
     "arbitrary native UI, jweb/jbrowser web UI/mixed; "

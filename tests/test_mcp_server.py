@@ -86,12 +86,13 @@ def test_initialize_includes_general_model_instructions():
     assert "web assets/source_path" in instructions
     assert "agent-settable UI" in instructions
     assert "webui_read diagnostics" in instructions
+    assert "throttled fallback wakes" in instructions
     assert "Agent must visually verify M4L device UI" in instructions
     assert "Ableton-window-only" in instructions
     assert "never capture arbitrary apps/windows" in instructions
     assert "device-detail crop" in instructions
     assert "blank_capture invalid" in instructions
-    assert "audio-reactive web must prove signal telemetry" in instructions
+    assert "audio-reactive web must prove signal telemetry+nonblank visual delta" in instructions
     assert "full Live object model remains available" in instructions
     assert len(instructions) < 1600
 

@@ -35,7 +35,8 @@ var lastConnectionErrors = [];
 var lastReloadCommandId = "";
 var pendingWebUiReads = [];
 var WEBUI_READ_DELAYS = [100, 250, 500, 1000, 2000, 4000];
-var FALLBACK_POLL_INTERVAL = 200;
+var FALLBACK_POLL_INTERVAL = 1500;
+var ACTIVITY_WAKE_MIN_INTERVAL = 1000;
 var DEFAULT_DEVICE_WIDTH = 420;
 var MIN_DEVICE_WIDTH = 260;
 var DEVICE_WIDTH_PADDING = 20;
@@ -44,6 +45,7 @@ var MIN_DEVICE_HEIGHT = 120;
 var DEVICE_HEIGHT_PADDING = 20;
 var currentDeviceWidth = DEFAULT_DEVICE_WIDTH;
 var currentDeviceHeight = DEFAULT_DEVICE_HEIGHT;
+var lastActivityWakeAt = 0;
 
 function loadbang() {
     startStaticPolling();
@@ -311,11 +313,7 @@ function handleFilewatchWake(atoms) {
 }
 
 function handleSignalWake() {
-    markCommandWake("signal");
-    pollCommandFile();
-    if (pendingWebUiReads.length) {
-        readPendingWebUis();
-    }
+    handleActivityWake("signal");
 }
 
 function handleLiveParameterObserverMessage(tag, atoms) {
@@ -428,34 +426,41 @@ function msg_string(value) {
 }
 
 function msg_int(value) {
-    markCommandWake("int");
-    pollCommandFile();
-    if (pendingWebUiReads.length) {
-        readPendingWebUis();
-    }
+    handleActivityWake("int");
 }
 
 function msg_float(value) {
-    markCommandWake("float");
-    pollCommandFile();
-    if (pendingWebUiReads.length) {
-        readPendingWebUis();
-    }
+    handleActivityWake("float");
 }
 
 function list() {
-    markCommandWake("list");
+    handleActivityWake("list");
+}
+
+function bang() {
+    handleActivityWake("bang");
+}
+
+function handleActivityWake(source) {
+    var now = currentTimeMs();
+    if (lastActivityWakeAt && now - lastActivityWakeAt < ACTIVITY_WAKE_MIN_INTERVAL) {
+        state.command_wake_skipped = (state.command_wake_skipped || 0) + 1;
+        state.command_wake_skip_source = source;
+        return;
+    }
+    lastActivityWakeAt = now;
+    markCommandWake(source);
     pollCommandFile();
     if (pendingWebUiReads.length) {
         readPendingWebUis();
     }
 }
 
-function bang() {
-    markCommandWake("bang");
-    pollCommandFile();
-    if (pendingWebUiReads.length) {
-        readPendingWebUis();
+function currentTimeMs() {
+    try {
+        return new Date().getTime();
+    } catch (err) {
+        return 0;
     }
 }
 

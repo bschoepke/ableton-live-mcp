@@ -17,7 +17,7 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert not any(str(text or "").startswith("print AgentM4L_") for text in texts)
     assert "midiin" in texts
     assert "plugout~ 1 2" in texts
-    assert "phasor~ 4" in texts
+    assert "phasor~ 1" in texts
     assert ">~ 0.5" in texts
     assert "edge~" in texts
     assert "prepend __signal_wake" in texts
@@ -26,7 +26,7 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert "receive~ %s" % buses["output_left"] in texts
     assert "receive~ %s" % buses["output_right"] in texts
     assert "udpreceive %d" % udp_port("Lead") in texts
-    assert "metro 200 @active 1 @defer 1" in texts
+    assert "metro 1500 @active 1 @defer 1" in texts
     assert "live.thisdevice" in texts
     assert "live.path this_device" in texts
     assert "path this_device" in texts
@@ -264,6 +264,9 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "function list()" in source
     assert "handleSignalWake" in source
     assert "__signal_wake" in source
+    assert "ACTIVITY_WAKE_MIN_INTERVAL" in source
+    assert "handleActivityWake" in source
+    assert "command_wake_skipped" in source
     assert "handleLiveParameterObserverMessage" in source
     assert "applyUiBinding(source, [liveApiObservedValue(atoms)])" in source
     assert "createLiveParameterObserverForSource" in source
@@ -332,6 +335,9 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "applyValues([{ id: String(atoms[0]), value: atoms[1] }], false)" in source
     assert "sendNumericValue" in source
     assert "function bang()" in source
+    assert 'handleActivityWake("bang")' in source
+    assert 'handleActivityWake("signal")' in source
+    assert 'handleActivityWake("list")' in source
     assert "startStaticPolling" in source
     assert 'getNamed("poll-metro")' in source
     assert 'metro.message("active", 1)' in source

@@ -24,6 +24,8 @@ DEFAULT_DEVICE_HEIGHT = 170
 MIN_DEVICE_HEIGHT = 120
 DEVICE_HEIGHT_PADDING = 20
 STATUS_PATH_PREVIEW_LIMIT = 24
+FALLBACK_POLL_INTERVAL_MS = 1500
+SIGNAL_WAKE_RATE_HZ = 1
 
 ROLE_PRESETS = {
     "audio_effect": {
@@ -297,7 +299,7 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
         _box("udp", "newobj", "udpreceive %d" % udp_port(instance_id), 220.0, 20.0),
         _box("poll-loadbang", "newobj", "loadbang", 220.0, 58.0),
         _box("poll-start", "message", "1", 220.0, 96.0),
-        _box("poll-metro", "newobj", "metro 200 @active 1 @defer 1", 220.0, 134.0),
+        _box("poll-metro", "newobj", "metro %d @active 1 @defer 1" % FALLBACK_POLL_INTERVAL_MS, 220.0, 134.0),
         _box("poll-live-device", "newobj", "live.thisdevice", 340.0, 58.0),
         _box("poll-defer", "newobj", "deferlow", 340.0, 96.0),
         _box("poll-delay", "newobj", "delay 100", 340.0, 134.0),
@@ -368,7 +370,7 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
             _box("audio-out-l", "newobj", "receive~ %s" % audio_buses["output_left"], 20.0, 220.0),
             _box("audio-out-r", "newobj", "receive~ %s" % audio_buses["output_right"], 120.0, 220.0),
             _box("plugout", "newobj", "plugout~ 1 2", 20.0, 250.0),
-            _box("signal-wake-clock", "newobj", "phasor~ 4", 220.0, 280.0),
+            _box("signal-wake-clock", "newobj", "phasor~ %d" % SIGNAL_WAKE_RATE_HZ, 220.0, 280.0),
             _box("signal-wake-threshold", "newobj", ">~ 0.5", 320.0, 280.0),
             _box("signal-wake-edge", "newobj", "edge~", 420.0, 280.0),
             _box("signal-wake-prepend", "newobj", "prepend __signal_wake", 520.0, 280.0),
@@ -393,7 +395,7 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
             _box("audio-out-l", "newobj", "receive~ %s" % audio_buses["output_left"], 220.0, 220.0),
             _box("audio-out-r", "newobj", "receive~ %s" % audio_buses["output_right"], 320.0, 220.0),
             _box("plugout", "newobj", "plugout~ 1 2", 220.0, 250.0),
-            _box("signal-wake-clock", "newobj", "phasor~ 4", 420.0, 220.0),
+            _box("signal-wake-clock", "newobj", "phasor~ %d" % SIGNAL_WAKE_RATE_HZ, 420.0, 220.0),
             _box("signal-wake-threshold", "newobj", ">~ 0.5", 520.0, 220.0),
             _box("signal-wake-edge", "newobj", "edge~", 620.0, 220.0),
             _box("signal-wake-prepend", "newobj", "prepend __signal_wake", 720.0, 220.0),
