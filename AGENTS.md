@@ -1,5 +1,7 @@
 # Ableton Live MCP Setup
 
+MCP initialize instructions are intentionally compact; when they point to `AGENTS.md`, use this file for repo-specific Ableton, Max for Live, reliability, validation, and recovery guidance.
+
 1. From this repository checkout, install the package into the agent environment:
 
    ```sh

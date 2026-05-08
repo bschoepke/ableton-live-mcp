@@ -34,7 +34,7 @@ AGENT_M4L_STATIC_OBJECTS_BY_ROLE = {
 }
 AGENT_M4L_RESERVED_IDS = {"js", "script", "status", "udp", "out", "poll-metro", "command-trigger"}
 ABLETON_MCP_INSTRUCTIONS = (
-    "General Live bridge; review AGENTS.md as needed. "
+    "General Live bridge; review AGENTS.md for tips as needed. "
     "Prefer installed Packs/user assets/samples/presets/devices/plugins unless asked; roots:['plugins']. "
     "Sets: live_set_summary first; expected_set_signature for destructive edits. "
     "Compact live_exec/live_batch; limit props/children/strings. "
