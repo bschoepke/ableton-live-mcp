@@ -17,7 +17,7 @@ __version__ = "0.1.0"
 
 
 ABLETON_AGENT_GUIDE = "General Live object-model bridge; examples are heuristics, not limits."
-AGENT_M4L_MAX_UDP_BYTES = 60000
+AGENT_M4L_MAX_UDP_BYTES = 8192
 ABLETON_MCP_INSTRUCTIONS = (
     "General Live object-model bridge, not a limited recipe API. "
     "Prefer installed content/Packs/user assets/samples/presets/devices and indexed third-party audio plugins before generated assets unless asked. "
