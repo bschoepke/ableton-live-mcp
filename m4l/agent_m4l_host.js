@@ -1595,15 +1595,23 @@ function shouldOutputStoredValue(spec) {
 function pushWebState() {
     var raw = JSON.stringify(state);
     for (var i = 0; i < webObjects.length; i++) {
-        try {
-            webObjects[i].message("state", raw);
-        } catch (err) {
-            try {
-                webObjects[i].message("executejavascript", "window.dispatchEvent(new CustomEvent('agentm4lstate',{detail:" + raw + "}));");
-            } catch (err2) {
-            }
-        }
+        sendWebState(webObjects[i], raw);
     }
+}
+
+function sendWebState(obj, raw) {
+    try {
+        obj.message("state", raw);
+    } catch (errStateMessage) {
+    }
+    try {
+        obj.message("executejavascript", webStateDispatchScript(raw));
+    } catch (errDispatch) {
+    }
+}
+
+function webStateDispatchScript(raw) {
+    return "(function(s){window.agentM4L=window.agentM4L||{};window.agentM4L.state=s;window.dispatchEvent(new CustomEvent('agentm4lstate',{detail:s}));if(typeof window.agentM4L.onstate==='function'){window.agentM4L.onstate(s)}})(" + raw + ");";
 }
 
 function clearDynamic(preserveWebIds) {

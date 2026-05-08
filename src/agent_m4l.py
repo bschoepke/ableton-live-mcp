@@ -657,13 +657,19 @@ if (maxApi && maxApi.bindInlet) {
   maxApi.bindInlet("state", (raw) => {
     let state = {};
     try { state = typeof raw === "string" ? JSON.parse(raw) : raw; } catch (_err) {}
-    Object.keys(state).forEach((id) => {
-      const el = document.querySelector(`[data-param="${id}"]`);
-      if (!el) return;
-      el.value = state[id];
-      const output = el.parentElement.querySelector("output");
-      if (output) output.value = state[id];
-    });
+    applyState(state);
+  });
+}
+window.addEventListener("agentm4lstate", (event) => applyState(event.detail || {}));
+window.agentM4L = window.agentM4L || {};
+window.agentM4L.onstate = applyState;
+function applyState(state) {
+  Object.keys(state).forEach((id) => {
+    const el = document.querySelector(`[data-param="${id}"]`);
+    if (!el) return;
+    el.value = state[id];
+    const output = el.parentElement.querySelector("output");
+    if (output) output.value = state[id];
   });
 }
 """

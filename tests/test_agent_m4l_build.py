@@ -273,7 +273,10 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "restoreState" in source
     assert "reapplyStateValues" in source
     assert "restored_state" in source
-    assert "webObjects[i].message(\"state\"" in source
+    assert "sendWebState(webObjects[i], raw)" in source
+    assert "webStateDispatchScript" in source
+    assert "window.agentM4L.state=s" in source
+    assert "new CustomEvent('agentm4lstate'" in source
     assert "reusableWebIdsForSpec" in source
     assert "reusableWebObject" in source
     assert "rememberWebObject" in source
@@ -360,6 +363,8 @@ def test_agent_m4l_write_webui_generates_jweb_page(tmp_path, monkeypatch):
     assert 'data-param="cutoff"' in html
     assert "window.agentM4L" in js
     assert "bindInlet(\"state\"" in js
+    assert "agentm4lstate" in js
+    assert "window.agentM4L.onstate = applyState" in js
     assert result["url"].startswith("file://")
     assert Path(result["assets"][0]["path"]).read_text(encoding="utf-8") == "export const scene = true;"
     assert result["assets"][0]["relative_path"] == "lib/scene.js"
