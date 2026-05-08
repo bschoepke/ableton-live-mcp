@@ -21,10 +21,6 @@ def main() -> int:
         print(f"Ableton Live MCP validation failed: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(results, indent=2, sort_keys=True))
-    version_text = json.dumps(results).lower()
-    if '"major": 12' not in version_text and '"12' not in version_text and "live 12" not in version_text:
-        print("Validation reached Ableton, but could not confirm Ableton Live 12 from version data.", file=sys.stderr)
-        return 2
     return 0
 
 

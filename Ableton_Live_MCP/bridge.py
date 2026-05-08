@@ -2,9 +2,11 @@ from __future__ import absolute_import, print_function
 
 import json
 import hashlib
+import os
 import socket
 import sys
 import threading
+import time
 import traceback
 
 import Live
@@ -24,6 +26,17 @@ DEFAULT_MAIN_THREAD_TIMEOUT = 10
 DEFAULT_BROWSER_ROOTS = ("instruments", "audio_effects", "midi_effects", "drums", "samples", "sounds", "packs", "plugins", "user_library", "user_folders", "current_project")
 AGENT_AUDIO_TAP_HOST = "127.0.0.1"
 AGENT_AUDIO_TAP_PORT = 17654
+AGENT_M4L_HOST = "127.0.0.1"
+AGENT_M4L_PORT = 17655
+
+
+def _temp_file(name):
+    root = os.environ.get("ABLETON_MCP_STATE_DIR") or os.path.join(os.path.expanduser("~"), ".ableton-live-mcp")
+    try:
+        os.makedirs(root)
+    except OSError:
+        pass
+    return os.path.join(root, name)
 
 
 class AbletonLiveMCP(ControlSurface):
@@ -93,6 +106,8 @@ class AbletonLiveMCP(ControlSurface):
                 request = json.loads(data.decode("utf-8"))
                 response = self._dispatch(request)
                 client.sendall((json.dumps(response, separators=(",", ":")) + "\n").encode("utf-8"))
+        except socket.timeout:
+            pass
         except Exception as exc:
             err = {"jsonrpc": "2.0", "id": None, "error": {"code": -32000, "message": str(exc)}}
             try:
@@ -188,16 +203,21 @@ class AbletonLiveMCP(ControlSurface):
         if path:
             args.append(path)
         command_id = params.get("id") or hashlib.sha1(json.dumps({"command": command, "path": path}, sort_keys=True).encode("utf-8")).hexdigest()
-        command_file = params.get("command_file") or "/tmp/agent_audio_tap_command.json"
+        command_file = params.get("command_file") or _temp_file("agent_audio_tap_command.json")
         with open(command_file, "w") as handle:
             json.dump({"id": command_id, "command": command, "path": path}, handle, separators=(",", ":"))
-        payload = self._osc_message("/agent_audio_tap", args)
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            sock.sendto(payload, (AGENT_AUDIO_TAP_HOST, int(params.get("port") or AGENT_AUDIO_TAP_PORT)))
-        finally:
-            sock.close()
-        return {"sent": True, "command": command, "path": path, "bytes": len(payload), "command_file": command_file}
+        sent = False
+        payload_size = 0
+        if params.get("udp", False):
+            payload = self._osc_message("/agent_audio_tap", args)
+            payload_size = len(payload)
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                sock.sendto(payload, (AGENT_AUDIO_TAP_HOST, int(params.get("port") or AGENT_AUDIO_TAP_PORT)))
+                sent = True
+            finally:
+                sock.close()
+        return {"sent": sent, "command": command, "path": path, "bytes": payload_size, "command_file": command_file}
 
     def _rpc_agent_audio_tap_setup(self, params):
         song = self.song()
@@ -246,6 +266,130 @@ class AbletonLiveMCP(ControlSurface):
             "playing": bool(getattr(song, "is_playing", False)),
         }
 
+    def _rpc_agent_m4l_device(self, params):
+        instance_id = self._agent_m4l_slug(params.get("instance_id") or params.get("name") or "device")
+        role = self._agent_m4l_role(params.get("role"))
+        device_name = str(params.get("device_name") or ("AgentM4L_%s_%s" % (role, instance_id)))
+        command_file = str(params.get("command_file") or _temp_file("agent_m4l_%s.json" % instance_id))
+        status_file = str(params.get("status_file") or _temp_file("agent_m4l_%s_status.json" % instance_id))
+        command = params.get("command") or ("set" if params.get("values") or params.get("parameters") else ("update" if params.get("patch") or params.get("spec") or params.get("webui") or params.get("webuis") else "status"))
+        patch = params.get("patch") or params.get("spec")
+        if patch is None and (params.get("webui") or params.get("webuis")):
+            patch = {}
+        if patch is not None and params.get("webui"):
+            patch = dict(patch)
+            patch["webui"] = params.get("webui")
+        if patch is not None and params.get("webuis"):
+            patch = dict(patch)
+            patch["webuis"] = params.get("webuis")
+        if patch is None and command in ("set", "status"):
+            patch = self._agent_m4l_recovery_patch(command_file)
+        command_hash = {
+            "command": command,
+            "instance_id": instance_id,
+            "patch": patch,
+            "values": params.get("values"),
+            "parameters": params.get("parameters"),
+            "webui": params.get("webui"),
+            "webuis": params.get("webuis"),
+        }
+        if not params.get("id"):
+            command_hash["nonce"] = time.time()
+        command_id = params.get("id") or hashlib.sha1(json.dumps(command_hash, sort_keys=True).encode("utf-8")).hexdigest()
+        payload = {
+            "id": command_id,
+            "command": command,
+            "role": role,
+            "instance_id": instance_id,
+            "patch": patch,
+            "values": params.get("values"),
+            "parameters": params.get("parameters"),
+            "webui": params.get("webui"),
+            "webuis": params.get("webuis"),
+        }
+        write_command_file = params.get("write_command_file")
+        if write_command_file is None:
+            write_command_file = True
+        if write_command_file:
+            with open(command_file, "w") as handle:
+                json.dump(payload, handle, separators=(",", ":"))
+
+        sent = False
+        if params.get("udp", True):
+            raw = json.dumps(payload, separators=(",", ":"))
+            message = self._osc_message("/agent_m4l", [instance_id, raw])
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                sock.sendto(message, (AGENT_M4L_HOST, int(params.get("port") or AGENT_M4L_PORT)))
+                sent = True
+            finally:
+                sock.close()
+
+        loaded = False
+        load_error = None
+        target_track = None
+        if params.get("target_track"):
+            target_track = self._resolve(params.get("target_track"))
+        elif params.get("ref"):
+            target_track = self._resolve(params.get("ref"))
+        if target_track is not None and params.get("load", True):
+            try:
+                if not self._track_has_device(target_track, device_name, role):
+                    item = self._find_browser_item_named(device_name)
+                    before_devices = list(getattr(target_track, "devices", []))
+                    before_ids = set([self._object_id(device) for device in before_devices])
+                    if item is not None:
+                        self.song().view.selected_track = target_track
+                        Live.Application.get_application().browser.load_item(item)
+                    elif hasattr(target_track, "insert_device"):
+                        target_track.insert_device(device_name, int(params.get("device_index") if params.get("device_index") is not None else -1))
+                    else:
+                        raise KeyError("Could not find %s in the Live browser; build/install it with live_agent_m4l_device first or reload Live's browser" % device_name)
+                    new_device = self._find_new_track_device(target_track, before_ids)
+                    if new_device is not None:
+                        try:
+                            new_device.name = device_name
+                        except Exception:
+                            pass
+                    loaded = True
+            except Exception as exc:
+                load_error = str(exc)
+
+        result = {
+            "sent": sent,
+            "command": command,
+            "role": role,
+            "instance_id": instance_id,
+            "device_name": device_name,
+            "command_id": command_id,
+            "command_file": command_file,
+            "command_file_written": bool(write_command_file),
+            "status_file": status_file,
+            "loaded": loaded,
+        }
+        if load_error:
+            result["load_error"] = load_error
+        if target_track is not None:
+            result["track"] = self._track_summary(target_track, None, 0, 16, 0)
+        return result
+
+    def _agent_m4l_recovery_patch(self, command_file):
+        try:
+            with open(command_file, "r") as handle:
+                existing = json.load(handle)
+        except Exception:
+            return None
+        if not isinstance(existing, dict):
+            return None
+        patch = existing.get("patch") or existing.get("spec")
+        if patch is not None:
+            return patch
+        recovered = {}
+        for key in ("objects", "connections", "ui_bindings", "bindings", "webui", "webuis"):
+            if key in existing:
+                recovered[key] = existing[key]
+        return recovered or None
+
     def _rpc_transport(self, params):
         song = self.song()
         if params.get("time") is not None:
@@ -293,11 +437,56 @@ class AbletonLiveMCP(ControlSurface):
         if getattr(song, "is_playing", False):
             song.stop_playing()
 
-    def _track_has_device(self, track, name):
+    def _track_has_device(self, track, name, role=None):
         for device in getattr(track, "devices", []):
-            if getattr(device, "name", "") == name:
+            if getattr(device, "name", "") == name and self._device_matches_agent_m4l_role(device, role):
                 return True
         return False
+
+    def _find_new_track_device(self, track, before_ids):
+        for device in getattr(track, "devices", []):
+            try:
+                obj_id = self._object_id(device)
+            except Exception:
+                obj_id = id(device)
+            if obj_id not in before_ids:
+                return device
+        return None
+
+    def _device_matches_agent_m4l_role(self, device, role):
+        if role is None:
+            return True
+        expected = {
+            "audio_effect": "MxDeviceAudioEffect",
+            "instrument": "MxDeviceInstrument",
+            "midi_effect": "MxDeviceMidiEffect",
+        }.get(role)
+        if expected is None:
+            return True
+        try:
+            class_name = device.class_name
+        except Exception:
+            return True
+        return class_name == expected
+
+    def _agent_m4l_role(self, role):
+        value = str(role or "audio_effect").lower().replace("-", "_").replace(" ", "_")
+        aliases = {"audio": "audio_effect", "effect": "audio_effect", "fx": "audio_effect", "synth": "instrument", "midi": "midi_effect"}
+        value = aliases.get(value, value)
+        if value not in ("audio_effect", "instrument", "midi_effect"):
+            raise ValueError("role must be audio_effect, instrument, or midi_effect")
+        return value
+
+    def _agent_m4l_slug(self, value):
+        text = str(value or "device")
+        result = []
+        for char in text:
+            if char.isalnum() or char in "_.-":
+                result.append(char)
+            else:
+                result.append("_")
+        slug = "".join(result).strip("._-")
+        return slug[:80] or "device"
 
     def _delete_named_devices(self, name):
         song = self.song()

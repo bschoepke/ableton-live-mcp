@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import socket
 import sys
 import threading
@@ -72,6 +73,12 @@ class FakeBrowser:
                 FakeBrowserItem("Audio Effects", folder=True, children=[
                     FakeBrowserItem("Max Audio Effect", folder=True, children=[
                         FakeBrowserItem("AgentAudioTap", loadable=True, device=True),
+                        FakeBrowserItem("AgentM4L_audio_effect_Wobble", loadable=True, device=True),
+                    ]),
+                ]),
+                FakeBrowserItem("Instruments", folder=True, children=[
+                    FakeBrowserItem("Max Instrument", folder=True, children=[
+                        FakeBrowserItem("AgentM4L_instrument_Lead", loadable=True, device=True),
                     ]),
                 ]),
             ]),
@@ -95,7 +102,7 @@ class FakeApplication:
         self.browser = FakeBrowser()
 
     def get_version_string(self):
-        return "12.3.8"
+        return "test-live-version"
 
 
 class FakeVector(list):
@@ -401,7 +408,7 @@ def test_resolve_get_children_and_call(monkeypatch):
     assert bridge._rpc_call({"ref": {"path": "live_set"}, "method": "get_beats_loop_start"}) == "1.1.1"
 
 
-def test_agent_audio_tap_sends_udp_command(monkeypatch):
+def test_agent_audio_tap_writes_file_command_by_default(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     sent = []
 
@@ -435,16 +442,40 @@ def test_agent_audio_tap_sends_udp_command(monkeypatch):
 
     monkeypatch.setattr(module := load_bridge_module(monkeypatch)[0], "open", lambda path, mode: FakeFile(path, mode), raising=False)
     bridge.__class__ = module.AbletonLiveMCP
-    result = bridge._rpc_agent_audio_tap({"command": "start", "path": "/tmp/tap.wav", "id": "abc"})
+    result = bridge._rpc_agent_audio_tap({"command": "start", "path": "tap.wav", "id": "abc"})
+
+    assert result["sent"] is False
+    assert result["bytes"] == 0
+    assert written == {
+        "path": module._temp_file("agent_audio_tap_command.json"),
+        "mode": "w",
+        "value": '{"id":"abc","command":"start","path":"tap.wav"}',
+    }
+    assert sent == []
+
+
+def test_agent_audio_tap_can_opt_into_udp_command(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    sent = []
+
+    class FakeSocket:
+        def __init__(self, *_args):
+            pass
+
+        def sendto(self, payload, address):
+            sent.append((payload, address))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(socket, "socket", FakeSocket)
+    module = load_bridge_module(monkeypatch)[0]
+    bridge.__class__ = module.AbletonLiveMCP
+    result = bridge._rpc_agent_audio_tap({"command": "start", "path": "tap.wav", "id": "abc", "udp": True})
 
     assert result["sent"] is True
-    assert written == {
-        "path": "/tmp/agent_audio_tap_command.json",
-        "mode": "w",
-        "value": '{"id":"abc","command":"start","path":"/tmp/tap.wav"}',
-    }
     assert sent == [(
-        b"/agent_audio_tap\x00\x00\x00\x00,ss\x00start\x00\x00\x00/tmp/tap.wav\x00\x00\x00\x00",
+        b"/agent_audio_tap\x00\x00\x00\x00,ss\x00start\x00\x00\x00tap.wav\x00",
         ("127.0.0.1", 17654),
     )]
 
@@ -464,7 +495,7 @@ def test_agent_audio_tap_start_can_use_preopened_path(monkeypatch):
             pass
 
     monkeypatch.setattr(socket, "socket", FakeSocket)
-    result = bridge._rpc_agent_audio_tap({"command": "start", "id": "abc"})
+    result = bridge._rpc_agent_audio_tap({"command": "start", "id": "abc", "udp": True})
     assert result["path"] is None
     assert sent == [(b"/agent_audio_tap\x00\x00\x00\x00,s\x00\x00start\x00\x00\x00", ("127.0.0.1", 17654))]
 
@@ -488,6 +519,440 @@ def test_agent_audio_tap_setup_loads_on_master_and_solos_target(monkeypatch):
     assert [device.name for device in song.tracks[1].devices] == []
     assert song.current_song_time == 0.0
     assert song.is_playing is False
+
+
+def test_agent_m4l_device_writes_command_sends_udp_and_loads(monkeypatch):
+    module, app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    sent = []
+    written = {}
+
+    class FakeSocket:
+        def __init__(self, *_args):
+            pass
+
+        def sendto(self, payload, address):
+            sent.append((payload, address))
+
+        def close(self):
+            pass
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            written["path"] = path
+            written["mode"] = mode
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def write(self, value):
+            written["value"] = written.get("value", "") + value
+            return len(value)
+
+    monkeypatch.setattr(socket, "socket", FakeSocket)
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    patch = {
+        "objects": [{"id": "osc", "text": "cycle~ 110", "x": 160, "y": 140}],
+        "connections": [],
+    }
+    result = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Wobble",
+        "device_name": "AgentM4L_audio_effect_Wobble",
+        "target_track": {"path": "live_set tracks 1"},
+        "patch": patch,
+        "webui": {"html_path": "/tmp/wobble/index.html", "presentation_rect": [0, 0, 320, 160]},
+        "id": "cmd1",
+    })
+
+    assert result["sent"] is True
+    assert result["loaded"] is True
+    assert app.browser.loaded == ["AgentM4L_audio_effect_Wobble"]
+    assert written["path"] == module._temp_file("agent_m4l_Wobble.json")
+    assert '"instance_id":"Wobble"' in written["value"]
+    assert '"cycle~ 110"' in written["value"]
+    assert '"webui":{"html_path":"/tmp/wobble/index.html"' in written["value"]
+    assert sent[0][1] == ("127.0.0.1", 17655)
+    assert b"/agent_m4l" in sent[0][0]
+
+
+def test_agent_m4l_device_value_update_does_not_require_patch_or_load(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    written = {}
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            written["path"] = path
+            written["mode"] = mode
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def write(self, value):
+            written["value"] = written.get("value", "") + value
+            return len(value)
+
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Wobble",
+        "command": "set",
+        "values": [{"id": "cutoff", "value": 0.72}],
+        "udp": False,
+        "load": False,
+        "id": "set1",
+    })
+
+    assert result["command"] == "set"
+    assert result["sent"] is False
+    assert result["loaded"] is False
+    assert result["command_file_written"] is True
+    assert '"values":[{"id":"cutoff","value":0.72}]' in written["value"]
+
+
+def test_agent_m4l_value_update_writes_file_with_recovery_patch(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    sent = []
+    stored = {
+        module._temp_file("agent_m4l_Wobble.json"): json.dumps({
+            "id": "patch1",
+            "command": "update",
+            "patch": {"objects": [{"id": "cutoff", "text": "flonum"}], "connections": []},
+        })
+    }
+
+    class FakeSocket:
+        def __init__(self, *_args):
+            pass
+
+        def sendto(self, payload, address):
+            sent.append((payload, address))
+
+        def close(self):
+            pass
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            self.path = path
+            self.mode = mode
+            self.value = "" if "w" in mode else stored.get(path, "")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            if "w" in self.mode:
+                stored[self.path] = self.value
+            return False
+
+        def read(self, *_args):
+            return self.value
+
+        def write(self, value):
+            self.value += value
+            return len(value)
+
+    monkeypatch.setattr(socket, "socket", FakeSocket)
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Wobble",
+        "command": "set",
+        "values": [{"id": "cutoff", "value": 0.72}],
+        "load": False,
+        "id": "set1",
+    })
+    payload = json.loads(stored[module._temp_file("agent_m4l_Wobble.json")])
+
+    assert result["sent"] is True
+    assert result["command_file_written"] is True
+    assert sent and sent[0][1] == ("127.0.0.1", 17655)
+    assert payload["command"] == "set"
+    assert payload["values"] == [{"id": "cutoff", "value": 0.72}]
+    assert payload["patch"]["objects"][0]["id"] == "cutoff"
+
+
+def test_agent_m4l_device_top_level_webuis_trigger_update(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    written = {}
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            written["path"] = path
+            written["mode"] = mode
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def write(self, value):
+            written["value"] = written.get("value", "") + value
+            return len(value)
+
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Panels",
+        "webuis": [
+            {"id": "a", "object": "jbrowser~", "html_path": "/state/a.html"},
+            {"id": "b", "object": "jweb", "html_path": "/state/b.html"},
+        ],
+        "udp": False,
+        "load": False,
+    })
+    payload = json.loads(written["value"])
+
+    assert result["command"] == "update"
+    assert payload["patch"]["webuis"][0]["object"] == "jbrowser~"
+    assert payload["webuis"][1]["html_path"] == "/state/b.html"
+
+
+def test_agent_m4l_device_returns_command_id_without_blocking_for_status(monkeypatch, tmp_path):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    command_file = tmp_path / "command.json"
+    status_file = tmp_path / "status.json"
+    status_file.write_text('{"event":"old"}', encoding="utf-8")
+    before = status_file.stat().st_mtime
+
+    class FakeSocket:
+        def __init__(self, *_args):
+            pass
+
+        def sendto(self, _payload, _address):
+            status_file.write_text('{"event":"set","command_id":"set1","dynamic_objects":3,"webuis":1}', encoding="utf-8")
+            module.os.utime(str(status_file), (before + 1.0, before + 1.0))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(socket, "socket", FakeSocket)
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Wobble",
+        "command_file": str(command_file),
+        "status_file": str(status_file),
+        "command": "set",
+        "values": [{"id": "cutoff", "value": 0.72}],
+        "load": False,
+        "id": "set1",
+    })
+
+    assert status_file.stat().st_mtime >= before
+    assert result["command_id"] == "set1"
+    assert "status" not in result
+
+
+def test_agent_m4l_generated_command_id_includes_values(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    written = []
+
+    class FakeFile:
+        def __init__(self, _path, _mode):
+            self.value = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            written.append(self.value)
+            return False
+
+        def write(self, value):
+            self.value += value
+            return len(value)
+
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    first = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Wobble",
+        "command": "set",
+        "values": [{"id": "cutoff", "value": 0.25}],
+        "udp": False,
+        "load": False,
+    })
+    first_payload = json.loads(written[-1])
+    second = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Wobble",
+        "command": "set",
+        "values": [{"id": "cutoff", "value": 0.75}],
+        "udp": False,
+        "load": False,
+    })
+    second_payload = json.loads(written[-1])
+
+    assert first["command"] == second["command"] == "set"
+    assert first_payload["id"] != second_payload["id"]
+
+
+def test_agent_m4l_device_falls_back_to_track_insert_device_when_browser_is_stale(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    app.browser.user_library = FakeBrowserItem("User Library", folder=True, children=[])
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Fresh",
+        "device_name": "AgentM4L_audio_effect_Fresh",
+        "target_track": {"path": "live_set tracks 1"},
+        "patch": {"objects": []},
+        "udp": False,
+        "id": "fresh1",
+    })
+
+    assert result["loaded"] is True
+    assert app.browser.loaded == []
+    assert song.tracks[1].devices[-1].name == "AgentM4L_audio_effect_Fresh"
+
+
+def test_agent_m4l_device_renames_new_device_inserted_before_existing_chain(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    target = song.tracks[1]
+    instrument = FakeDevice()
+    instrument.name = "Existing Instrument"
+    instrument.class_name = "MxDeviceInstrument"
+    audio_effect = FakeDevice()
+    audio_effect.name = "Existing Audio FX"
+    audio_effect.class_name = "MxDeviceAudioEffect"
+    target.devices = FakeVector([instrument, audio_effect])
+    device_name = "AgentM4L_midi_effect_Pulse_Router_MIDI"
+    item = FakeBrowserItem(device_name, loadable=True, device=True)
+    bridge._find_browser_item_named = lambda _name: item
+
+    def load_item(loaded_item):
+        app.browser.loaded.append(loaded_item.name)
+        new_device = FakeDevice()
+        new_device.name = "Untitled MIDI Effect"
+        new_device.class_name = "MxDeviceMidiEffect"
+        target.devices.insert(0, new_device)
+
+    app.browser.load_item = load_item
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "midi_effect",
+        "instance_id": "Pulse Router MIDI",
+        "device_name": device_name,
+        "target_track": {"path": "live_set tracks 1"},
+        "patch": {"objects": []},
+        "udp": False,
+        "id": "midi1",
+    })
+
+    assert result["loaded"] is True
+    assert [device.name for device in target.devices] == [
+        device_name,
+        "Existing Instrument",
+        "Existing Audio FX",
+    ]
+
+
+def test_agent_m4l_device_name_match_requires_matching_role_when_available(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    target = song.tracks[1]
+    device_name = "AgentM4L_midi_effect_Pulse_Router_MIDI"
+    wrong_role = FakeDevice()
+    wrong_role.name = device_name
+    wrong_role.class_name = "MxDeviceAudioEffect"
+    target.devices = FakeVector([wrong_role])
+    item = FakeBrowserItem(device_name, loadable=True, device=True)
+    bridge._find_browser_item_named = lambda _name: item
+
+    def load_item(loaded_item):
+        app.browser.loaded.append(loaded_item.name)
+        new_device = FakeDevice()
+        new_device.name = "Untitled MIDI Effect"
+        new_device.class_name = "MxDeviceMidiEffect"
+        target.devices.insert(0, new_device)
+
+    app.browser.load_item = load_item
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "midi_effect",
+        "instance_id": "Pulse Router MIDI",
+        "device_name": device_name,
+        "target_track": {"path": "live_set tracks 1"},
+        "patch": {"objects": []},
+        "udp": False,
+        "id": "midi2",
+    })
+
+    assert result["loaded"] is True
+    assert app.browser.loaded == [device_name]
+    assert target.devices[0].name == device_name
+    assert target.devices[0].class_name == "MxDeviceMidiEffect"
+    assert target.devices[1].class_name == "MxDeviceAudioEffect"
+
+
+def test_agent_m4l_device_reports_load_error_without_dropping_command(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    app.browser.user_library = FakeBrowserItem("User Library", folder=True, children=[])
+
+    def fail_insert(_device_name, _device_index=-1):
+        raise RuntimeError("Device AgentM4L_audio_effect_Fresh not found.")
+
+    song.tracks[1].insert_device = fail_insert
+    result = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Fresh",
+        "device_name": "AgentM4L_audio_effect_Fresh",
+        "target_track": {"path": "live_set tracks 1"},
+        "patch": {"objects": []},
+        "udp": False,
+        "id": "fresh1",
+    })
+
+    assert result["sent"] is False
+    assert result["loaded"] is False
+    assert "not found" in result["load_error"]
+    assert result["command_id"] == "fresh1"
 
 
 def test_transport_tool_seeks_and_retries_play(monkeypatch):
@@ -750,7 +1215,7 @@ def test_parameter_set_validates_and_coerces_values(monkeypatch):
 
 def test_app_browser_path_roots_and_stale_id_errors(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
-    assert bridge._resolve_path("app").get_version_string() == "12.3.8"
+    assert bridge._resolve_path("app").get_version_string() == "test-live-version"
     assert bridge._resolve_path("browser instruments").name == "instruments"
     try:
         bridge._resolve({"id": 123456})
@@ -825,6 +1290,29 @@ def test_run_on_main_abandons_request_that_has_not_started(monkeypatch):
     assert invoked == []
     callbacks[0]()
     assert invoked == []
+
+
+def test_handle_client_closes_idle_timeout_without_stale_json_error(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    sent = []
+    bridge._handler_slots = threading.BoundedSemaphore(16)
+
+    class IdleSocket:
+        def settimeout(self, _timeout):
+            pass
+
+        def recv(self, _size):
+            raise socket.timeout("timed out")
+
+        def sendall(self, payload):
+            sent.append(payload)
+
+        def close(self):
+            pass
+
+    bridge._handle_client(IdleSocket())
+
+    assert sent == []
 
 
 def test_exec_returns_result_binding(monkeypatch):

@@ -20,6 +20,7 @@ debug = ["pytest>=8.0"]
 ableton-live-mcp = "server:main"
 ableton-live-mcp-validate = "validate:main"
 ableton-live-mcp-install-remote-script = "install_remote_script:main"
+ableton-live-mcp-build-m4l-device = "agent_m4l:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

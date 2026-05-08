@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
+import time
+from pathlib import Path
 from typing import Any
 
 from bridge import AbletonBridgeClient, BridgeConfig
+from agent_m4l import build_device, slugify, write_webui
 from mcp import StdioMcpServer, Tool
 from similar_sounds import find_similar_sounds
 
@@ -14,12 +18,14 @@ ABLETON_AGENT_GUIDE = "General Live object-model bridge; examples are heuristics
 ABLETON_MCP_INSTRUCTIONS = (
     "General Live object-model bridge, not a limited recipe API. "
     "Prefer installed browser content, Packs, user assets, samples, presets, devices, and indexed third-party audio plugins before generated assets unless asked. "
-    "Discover runtime availability with live_browser_capabilities/live_browser_roots/live_browser_search, including roots:['plugins']; Live SKU, Packs, user folders, and plugin indexing vary. "
-    "For existing projects, start with live_set_summary; for collaborative sessions, pass expected_set_signature to destructive edits and re-read if it changed. "
+    "Discover with live_browser_capabilities/live_browser_roots/live_browser_search, including roots:['plugins']; SKU, Packs, folders, and plugin indexing vary. "
+    "For existing sets, start with live_set_summary; pass expected_set_signature to destructive edits. "
     "For speed, prefer compact live_exec summaries, live_batch, property lists, child limits, max_items, and max_depth. "
-    "For common clip work, prefer JSON-safe helpers like live_clip_add_notes, live_clip_duplicate_to_arrangement, and live_track_create_audio_clip before hand-coding C++ signatures. "
-    "find_similar_sounds requires Live 12.0+ analysis data; Live 12.1+ added 32-bit integer WAV support. "
-    "For AgentAudioTap, prefer master tap + solo target; use track insertion only for pre/post points. "
+    "For clip work, prefer JSON-safe helpers before hand-coding C++ signatures. "
+    "find_similar_sounds requires Live 12+ analysis data. "
+    "For AgentAudioTap, prefer master tap + solo target; start with path. "
+    "Idle sockets auto-retry; set per-call timeout for slow Live work. "
+    "M4L: live_agent_m4l_device hot-reloads native/web UI; file authoritative, UDP hint; set/status skip build; use wait_status, midiin+midiparse, presentation_rect/ui_bindings, audio buses, jweb/jbrowser aliases. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args must be JSON numbers; Simpler.sample is not generally settable, so load samples/devices via browser or create audio clips; use ids from bridge summaries, not raw _live_ptr values. "
     "These are hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
@@ -27,6 +33,10 @@ ABLETON_MCP_INSTRUCTIONS = (
 
 def schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
     return {"type": "object", "properties": properties, "required": required or [], "additionalProperties": False}
+
+
+def loose_schema() -> dict[str, Any]:
+    return {}
 
 
 def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
@@ -218,9 +228,59 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "device_index": {"type": "integer"},
         **mutation_controls,
     }, ["ref", "device_name"]), forward("track_insert_device")))
-    server.add_tool(Tool("live_agent_audio_tap", "", schema({}), forward("agent_audio_tap")))
-    server.add_tool(Tool("live_agent_audio_tap_setup", "", schema({}), forward("agent_audio_tap_setup")))
-    server.add_tool(Tool("live_transport", "", schema({}), forward("transport")))
+    server.add_tool(Tool("live_agent_audio_tap", "", loose_schema(), forward("agent_audio_tap")))
+    server.add_tool(Tool("live_agent_audio_tap_setup", "", loose_schema(), forward("agent_audio_tap_setup")))
+    def agent_m4l_device(args):
+        built = None
+        webui = None
+        params = dict(args)
+        wait_status = bool(params.pop("wait_status", False))
+        status_timeout = float(params.pop("status_timeout", 2.0))
+        status_poll_interval = float(params.pop("status_poll_interval", 0.05))
+        previous_status_mtime = _file_mtime(str(params.get("status_file") or ""))
+        for webui_key in ("webui", "webuis"):
+            if params.get(webui_key):
+                instance_id = str(params.get("instance_id") or params.get("name") or "device")
+                rendered = materialize_agent_m4l_webui(instance_id, params[webui_key])
+                params[webui_key] = rendered
+                if webui is None:
+                    webui = {}
+                webui[webui_key] = rendered
+        if webui is not None:
+            if params.get("patch"):
+                params["patch"] = dict(params["patch"])
+                for webui_key, rendered in webui.items():
+                    params["patch"][webui_key] = rendered
+        if should_build_agent_m4l(params):
+            built = build_device(
+                str(params.get("role") or "audio_effect"),
+                str(params.get("instance_id") or params.get("name") or "device"),
+                params.get("name"),
+                bool(params.get("install", True)),
+            )
+            params["device_name"] = built["name"]
+            params["instance_id"] = built["instance_id"]
+            params["command_file"] = built["command_file"]
+            params["status_file"] = built["status_file"]
+            previous_status_mtime = _file_mtime(params["status_file"])
+        result = bridge.request("agent_m4l_device", params)
+        if wait_status:
+            result["status"] = wait_agent_m4l_status(
+                str(result.get("status_file") or params.get("status_file") or ""),
+                previous_status_mtime,
+                str(result.get("command_id") or ""),
+                status_timeout,
+                status_poll_interval,
+            )
+        if built is not None:
+            result["built"] = built
+        if webui is not None:
+            response_webui = webui["webui"] if set(webui) == {"webui"} else webui
+            result["webui"] = summarize_agent_m4l_webui(response_webui)
+        return result
+
+    server.add_tool(Tool("live_agent_m4l_device", "", loose_schema(), agent_m4l_device))
+    server.add_tool(Tool("live_transport", "", loose_schema(), forward("transport")))
     server.add_tool(Tool("live_batch", "Batch bridge operations.", schema({
         "operations": {"type": "array", "items": {"type": "object", "properties": {
             "method": {"type": "string", "description": "Bridge method name such as get, set, call, children, or eval."},
@@ -263,7 +323,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "item": browser_item_ref,
         "stop": {"type": "boolean"},
     }), forward("browser_preview")))
-    server.add_tool(Tool("find_similar_sounds", "Find similar sounds from Live 12.0+ local sound-analysis DB.", schema({
+    server.add_tool(Tool("find_similar_sounds", "Find similar sounds from Live 12+ local sound-analysis DB.", schema({
         "base": {"type": "string"},
         "query": {"type": "string"},
         "limit": {"type": "integer", "minimum": 1},
@@ -297,6 +357,105 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "limit": {"type": "integer", "minimum": 1},
     }), forward("events")))
     return server
+
+
+def should_build_agent_m4l(params: dict[str, Any]) -> bool:
+    if "build" in params:
+        return bool(params["build"])
+    if params.get("patch") is not None or params.get("spec") is not None or params.get("webui") is not None or params.get("webuis") is not None:
+        return True
+    if params.get("values") is not None or params.get("parameters") is not None:
+        return False
+    if str(params.get("command") or "").lower() in ("set", "status", "clear"):
+        return False
+    return True
+
+
+def materialize_agent_m4l_webui(instance_id: str, webui: Any) -> Any:
+    if isinstance(webui, list):
+        rendered = []
+        for index, item in enumerate(webui):
+            item_id = item.get("id") if isinstance(item, dict) else None
+            suffix = slugify(str(item_id or index))
+            rendered.append(materialize_agent_m4l_webui("%s_%s" % (instance_id, suffix), item))
+        return rendered
+    if not isinstance(webui, dict):
+        return webui
+    result = dict(webui)
+    if _should_write_agent_m4l_webui(result):
+        result.update(write_webui(instance_id, result))
+    return result
+
+
+def _should_write_agent_m4l_webui(webui: dict[str, Any]) -> bool:
+    if any(key in webui for key in ("html", "css", "js", "controls", "title")):
+        return True
+    return not any(key in webui for key in ("html_path", "path", "url"))
+
+
+def summarize_agent_m4l_webui(webui: Any) -> Any:
+    if isinstance(webui, list):
+        return [summarize_agent_m4l_webui(item) for item in webui]
+    if not isinstance(webui, dict):
+        return webui
+    if "webui" in webui or "webuis" in webui:
+        return {key: summarize_agent_m4l_webui(value) for key, value in webui.items()}
+    keep = (
+        "id",
+        "object",
+        "title",
+        "presentation_rect",
+        "patching_rect",
+        "html_path",
+        "css_path",
+        "js_path",
+        "url",
+        "path",
+    )
+    result = {key: webui[key] for key in keep if key in webui}
+    controls = webui.get("controls")
+    if isinstance(controls, list):
+        result["controls"] = len(controls)
+    return result
+
+
+def _file_mtime(path: str) -> float | None:
+    if not path:
+        return None
+    try:
+        return Path(path).stat().st_mtime
+    except OSError:
+        return None
+
+
+def wait_agent_m4l_status(path: str, previous_mtime: float | None, command_id: str, timeout: float, poll_interval: float) -> dict[str, Any]:
+    deadline = time.time() + timeout
+    last_error = None
+    while time.time() <= deadline:
+        status, last_error = _agent_m4l_status_if_ready(path, previous_mtime, command_id, last_error)
+        if status is not None:
+            return status
+        time.sleep(poll_interval)
+    status, last_error = _agent_m4l_status_if_ready(path, previous_mtime, command_id, last_error)
+    if status is not None:
+        return status
+    result: dict[str, Any] = {"timed_out": True, "path": path}
+    if last_error:
+        result["error"] = last_error
+    return result
+
+
+def _agent_m4l_status_if_ready(path: str, previous_mtime: float | None, command_id: str, last_error: str | None = None) -> tuple[dict[str, Any] | None, str | None]:
+    current_mtime = _file_mtime(path)
+    if current_mtime is None or (previous_mtime is not None and current_mtime <= previous_mtime):
+        return None, last_error
+    try:
+        status = json.loads(Path(path).read_text(encoding="utf-8").strip())
+        if not status.get("command_id") or not command_id or status.get("command_id") == command_id:
+            return status, last_error
+    except Exception as exc:
+        last_error = str(exc)
+    return None, last_error
 
 
 def main() -> None:

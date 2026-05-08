@@ -10,7 +10,7 @@ Just tell your AI agent (Codex, Claude Code, Cursor, Copilot, Gemini, etc.) to:
 
 `Set up the https://github.com/bschoepke/ableton-live-mcp MCP server for me`
 
-It should work on Mac and Windows with recent Ableton versions, but I have only tested it on Ableton Live Suite 12.3.8 on macOS Tahoe.
+It should work with recent Ableton versions.
 
 Back up your Live Set before using this. The MCP can edit your set directly and could corrupt it.
 

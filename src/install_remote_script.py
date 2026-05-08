@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import argparse
-import platform
 import shutil
 import sys
 from pathlib import Path
+
+from ableton_paths import remote_scripts_dir
 
 
 DEFAULT_REMOTE_SCRIPT = "Ableton_Live_MCP"
@@ -29,9 +30,7 @@ def remote_script_root() -> Path:
 
 
 def default_install_dir() -> Path:
-    if platform.system() == "Windows":
-        return Path.home() / "Documents" / "Ableton" / "User Library" / "Remote Scripts"
-    return Path.home() / "Music" / "Ableton" / "User Library" / "Remote Scripts"
+    return remote_scripts_dir()
 
 
 def install_remote_script(name: str = DEFAULT_REMOTE_SCRIPT, target_dir: Path | None = None, force: bool = False) -> Path:

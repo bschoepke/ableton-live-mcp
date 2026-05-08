@@ -5,6 +5,7 @@ import os
 import socket
 import itertools
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,6 +19,7 @@ class BridgeConfig:
     host: str = "127.0.0.1"
     port: int = 8765
     timeout: float = 10.0
+    idle_timeout: float = 8.0
     max_response_bytes: int = 8 * 1024 * 1024
 
     @classmethod
@@ -26,6 +28,7 @@ class BridgeConfig:
             host=os.environ.get("ABLETON_MCP_HOST", cls.host),
             port=int(os.environ.get("ABLETON_MCP_PORT", str(cls.port))),
             timeout=float(os.environ.get("ABLETON_MCP_TIMEOUT", str(cls.timeout))),
+            idle_timeout=float(os.environ.get("ABLETON_MCP_IDLE_TIMEOUT", str(cls.idle_timeout))),
             max_response_bytes=int(os.environ.get("ABLETON_MCP_MAX_RESPONSE_BYTES", str(cls.max_response_bytes))),
         )
 
@@ -36,6 +39,7 @@ class AbletonBridgeClient:
         self._ids = itertools.count(1)
         self._sock: socket.socket | None = None
         self._lock = threading.Lock()
+        self._last_used = 0.0
 
     def request(self, method: str, params: dict[str, Any] | None = None) -> Any:
         params = params or {}
@@ -56,6 +60,15 @@ class AbletonBridgeClient:
                     self.close()
                     raise AbletonBridgeError(f"Could not connect to Ableton bridge at {self.config.host}:{self.config.port}: {exc}") from exc
         message = json.loads(response.decode("utf-8"))
+        if self._is_stale_idle_timeout(message, payload["id"]):
+            self.close()
+            with self._lock:
+                try:
+                    response = self._send(payload)
+                except OSError as exc:
+                    self.close()
+                    raise AbletonBridgeError(f"Could not connect to Ableton bridge at {self.config.host}:{self.config.port}: {exc}") from exc
+            message = json.loads(response.decode("utf-8"))
         if "error" in message:
             err = message["error"]
             detail = err.get("data") if os.environ.get("ABLETON_MCP_TRACEBACK") else ""
@@ -80,13 +93,28 @@ class AbletonBridgeClient:
         sock.settimeout(request_timeout)
         line = (json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8")
         sock.sendall(line)
-        return self._read_line(sock, self.config.max_response_bytes)
+        response = self._read_line(sock, self.config.max_response_bytes)
+        self._last_used = time.monotonic()
+        return response
 
     def _socket(self) -> socket.socket:
+        if self._sock is not None and self.config.idle_timeout > 0:
+            if time.monotonic() - self._last_used >= self.config.idle_timeout:
+                self.close()
         if self._sock is None:
             self._sock = socket.create_connection((self.config.host, self.config.port), self.config.timeout)
             self._sock.settimeout(self.config.timeout)
+            self._last_used = time.monotonic()
         return self._sock
+
+    @staticmethod
+    def _is_stale_idle_timeout(message: dict[str, Any], request_id: int) -> bool:
+        if message.get("id") == request_id:
+            return False
+        error = message.get("error")
+        if not isinstance(error, dict):
+            return False
+        return message.get("id") is None and str(error.get("message", "")).lower() == "timed out"
 
     @staticmethod
     def _read_line(sock: socket.socket, max_bytes: int = 8 * 1024 * 1024) -> bytes:

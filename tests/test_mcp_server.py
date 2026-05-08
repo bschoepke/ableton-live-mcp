@@ -10,7 +10,7 @@ from benchmark import run_benchmark
 from bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig
 from install_remote_script import install_remote_script, remote_script_root
 from prompt_audit import run_prompt_audit
-from server import make_server
+from server import make_server, should_build_agent_m4l, wait_agent_m4l_status
 from similar_sounds import encode_feature
 from smoke import run_smoke
 
@@ -48,6 +48,7 @@ def test_lists_general_purpose_tools():
         "live_track_insert_device",
         "live_agent_audio_tap",
         "live_agent_audio_tap_setup",
+        "live_agent_m4l_device",
         "live_transport",
         "live_eval",
         "live_exec",
@@ -69,7 +70,10 @@ def test_initialize_includes_general_model_instructions():
     instructions = response["result"]["instructions"]
     assert "third-party audio plugins" in instructions
     assert "roots:['plugins']" in instructions
-    assert "find_similar_sounds requires Live 12.0+" in instructions
+    assert "find_similar_sounds requires Live 12+" in instructions
+    assert "start with path" in instructions
+    assert "Idle sockets auto-retry" in instructions
+    assert "jweb/jbrowser aliases" in instructions
     assert "full Live object model remains available" in instructions
     assert len(instructions) < 1500
 
@@ -385,6 +389,182 @@ def test_track_audio_and_device_tools_forward_to_bridge():
     assert response["result"]["structuredContent"]["method"] == "track_insert_device"
 
 
+def test_agent_m4l_device_tool_builds_and_forwards(monkeypatch, tmp_path):
+    import agent_m4l
+
+    monkeypatch.setattr(agent_m4l, "GENERATED_DIR", tmp_path)
+    monkeypatch.setattr(agent_m4l, "WEBUI_DIR", tmp_path / "webui")
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {
+        "role": "audio_effect",
+        "instance_id": "Wobble",
+        "name": "Wobble",
+        "target_track": {"path": "live_set tracks 0"},
+        "patch": {
+            "objects": [
+                {"id": "dial", "text": "live.dial", "presentation_rect": [12, 12, 48, 48]},
+                {"id": "gain", "text": "*~ 0.5"},
+            ],
+            "connections": [{"from": "dial", "to": "gain", "inlet": 1}],
+        },
+        "webui": {
+            "title": "Wobble",
+            "presentation_rect": [0, 0, 320, 160],
+            "controls": [{"id": "dial", "label": "Amount", "value": 0.5}],
+        },
+        "install": False,
+    }
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 44,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": args},
+    })
+    forwarded = bridge.calls[0][1]
+    assert bridge.calls[0][0] == "agent_m4l_device"
+    assert forwarded["device_name"] == "AgentM4L_audio_effect_Wobble"
+    assert forwarded["command_file"] == agent_m4l.command_file("Wobble")
+    assert forwarded["status_file"] == agent_m4l.status_file("Wobble")
+    assert forwarded["patch"]["objects"][0]["presentation_rect"] == [12, 12, 48, 48]
+    assert forwarded["patch"]["webui"]["html_path"].endswith("index.html")
+    assert forwarded["webui"]["url"].startswith("file://")
+    assert response["result"]["structuredContent"]["built"]["installed_path"] == ""
+    assert response["result"]["structuredContent"]["webui"]["html_path"].endswith("index.html")
+
+
+def test_agent_m4l_device_tool_forwards_value_updates_without_build():
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {
+        "role": "audio_effect",
+        "instance_id": "Wobble",
+        "command": "set",
+        "values": [{"id": "dial", "value": 0.4}],
+    }
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 45,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": args},
+    })
+    assert bridge.calls == [("agent_m4l_device", args)]
+    assert "built" not in response["result"]["structuredContent"]
+    assert response["result"]["structuredContent"]["method"] == "agent_m4l_device"
+
+
+def test_agent_m4l_device_tool_materializes_webui_arrays(monkeypatch, tmp_path):
+    import agent_m4l
+
+    monkeypatch.setattr(agent_m4l, "GENERATED_DIR", tmp_path)
+    monkeypatch.setattr(agent_m4l, "WEBUI_DIR", tmp_path / "webui")
+    existing = tmp_path / "existing.html"
+    existing.write_text("<html></html>", encoding="utf-8")
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    args = {
+        "role": "audio_effect",
+        "instance_id": "Panel Test",
+        "patch": {"objects": []},
+        "webuis": [
+            {
+                "id": "left",
+                "object": "jbrowser~",
+                "title": "Left",
+                "presentation_rect": [0, 0, 240, 120],
+                "controls": [{"id": "mix", "label": "Mix", "value": 0.4}],
+            },
+            {
+                "id": "right",
+                "object": "jweb",
+                "html_path": str(existing),
+                "presentation_rect": [240, 0, 240, 120],
+            },
+        ],
+        "install": False,
+    }
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 47,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": args},
+    })
+
+    forwarded = bridge.calls[0][1]
+    assert len(forwarded["webuis"]) == 2
+    assert forwarded["webuis"][0]["object"] == "jbrowser~"
+    assert forwarded["webuis"][0]["html_path"].endswith("Panel_Test_left/index.html")
+    assert forwarded["webuis"][1]["html_path"] == str(existing)
+    assert forwarded["patch"]["webuis"] == forwarded["webuis"]
+    assert response["result"]["structuredContent"]["webui"]["webuis"][0]["url"].startswith("file://")
+
+
+def test_agent_m4l_device_tool_waits_for_status_without_forwarding_wait_args(tmp_path):
+    class StatusBridge(FakeBridge):
+        def request(self, method, params):
+            self.calls.append((method, params))
+            status_file = Path(params["status_file"])
+            status_file.write_text('{"event":"set","command_id":"cmd1","dynamic_objects":4,"webuis":1}', encoding="utf-8")
+            return {
+                "method": method,
+                "command_id": "cmd1",
+                "status_file": str(status_file),
+                "params": params,
+            }
+
+    bridge = StatusBridge()
+    server = make_server(bridge)
+    status_file = tmp_path / "status.json"
+    args = {
+        "role": "audio_effect",
+        "instance_id": "Wobble",
+        "build": False,
+        "command": "set",
+        "values": [{"id": "dial", "value": 0.4}],
+        "command_file": str(tmp_path / "command.json"),
+        "status_file": str(status_file),
+        "wait_status": True,
+        "status_timeout": 0.2,
+    }
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 46,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": args},
+    })
+
+    forwarded = bridge.calls[0][1]
+    assert "wait_status" not in forwarded
+    assert "status_timeout" not in forwarded
+    assert response["result"]["structuredContent"]["status"]["event"] == "set"
+    assert response["result"]["structuredContent"]["status"]["dynamic_objects"] == 4
+
+
+def test_wait_agent_m4l_status_requires_matching_command_id(tmp_path):
+    status_file = tmp_path / "status.json"
+    status_file.write_text('{"event":"set","command_id":"old"}', encoding="utf-8")
+    before = status_file.stat().st_mtime - 1.0
+    status_file.write_text('{"event":"set","command_id":"new","webuis":1}', encoding="utf-8")
+
+    result = wait_agent_m4l_status(str(status_file), before, "new", 0.2, 0.01)
+
+    assert result["command_id"] == "new"
+    assert result["webuis"] == 1
+
+
+def test_agent_m4l_build_default_tracks_command_intent():
+    assert should_build_agent_m4l({"patch": {"objects": []}}) is True
+    assert should_build_agent_m4l({"webui": {"html_path": "/tmp/x.html"}}) is True
+    assert should_build_agent_m4l({"webuis": [{"html_path": "/tmp/x.html"}]}) is True
+    assert should_build_agent_m4l({"values": [{"id": "dial", "value": 0.5}]}) is False
+    assert should_build_agent_m4l({"command": "set"}) is False
+    assert should_build_agent_m4l({"command": "status"}) is False
+    assert should_build_agent_m4l({"command": "clear"}) is False
+    assert should_build_agent_m4l({"target_track": {"path": "live_set tracks 0"}}) is True
+    assert should_build_agent_m4l({"build": True, "command": "set"}) is True
+    assert should_build_agent_m4l({"build": False, "patch": {"objects": []}}) is False
+
+
 def test_browser_search_tool_forwards_query_to_bridge():
     bridge = FakeBridge()
     server = make_server(bridge)
@@ -562,7 +742,7 @@ def test_tool_list_stays_compact():
     assert "live_exec" in live_eval["description"]
     assert "duplicate session clips" not in live_eval["description"].lower()
     similar = next(tool for tool in response["result"]["tools"] if tool["name"] == "find_similar_sounds")
-    assert "Live 12.0+" in similar["description"]
+    assert "Live 12+" in similar["description"]
 
 
 def test_bridge_error_omits_traceback_by_default(monkeypatch):
@@ -607,6 +787,7 @@ def test_bridge_client_defaults_can_be_configured_from_env(monkeypatch):
         host="127.0.0.2",
         port=9876,
         timeout=45.0,
+        idle_timeout=8.0,
         max_response_bytes=123456,
     )
 
@@ -677,6 +858,84 @@ def test_bridge_client_expands_socket_timeout_for_long_live_request(monkeypatch)
 
     assert client.request("exec", {"code": "result = True", "timeout": 45.0}) == {"ok": True}
     assert created[0].timeouts[-1] == 46.0
+
+
+def test_bridge_client_reconnects_before_remote_idle_timeout(monkeypatch):
+    created = []
+    now = [100.0]
+
+    class FakeSocket:
+        def __init__(self):
+            self.responses = [b'{"jsonrpc":"2.0","id":1,"result":{"ok":true}}\n']
+            self.closed = False
+
+        def settimeout(self, _timeout):
+            pass
+
+        def sendall(self, _line):
+            pass
+
+        def recv(self, _size):
+            return self.responses.pop(0)
+
+        def close(self):
+            self.closed = True
+
+    def connect(*_args, **_kwargs):
+        sock = FakeSocket()
+        sock.responses = [b'{"jsonrpc":"2.0","id":%d,"result":{"ok":true}}\n' % (len(created) + 1)]
+        created.append(sock)
+        return sock
+
+    monkeypatch.setattr("socket.create_connection", connect)
+    monkeypatch.setattr("bridge.time.monotonic", lambda: now[0])
+    client = AbletonBridgeClient(BridgeConfig(timeout=10.0, idle_timeout=8.0))
+
+    assert client.request("ping") == {"ok": True}
+    now[0] += 9.0
+    assert client.request("ping") == {"ok": True}
+    assert len(created) == 2
+    assert created[0].closed is True
+
+
+def test_bridge_client_discards_stale_idle_timeout_response(monkeypatch):
+    created = []
+
+    class FakeSocket:
+        def __init__(self, response):
+            self.response = response
+            self.closed = False
+
+        def settimeout(self, _timeout):
+            pass
+
+        def sendall(self, _line):
+            pass
+
+        def recv(self, _size):
+            value = self.response
+            self.response = b""
+            return value
+
+        def close(self):
+            self.closed = True
+
+    responses = [
+        b'{"jsonrpc":"2.0","id":null,"error":{"code":-32000,"message":"timed out"}}\n',
+        b'{"jsonrpc":"2.0","id":1,"result":{"ok":true}}\n',
+    ]
+
+    def connect(*_args, **_kwargs):
+        sock = FakeSocket(responses.pop(0))
+        created.append(sock)
+        return sock
+
+    monkeypatch.setattr("socket.create_connection", connect)
+    client = AbletonBridgeClient(BridgeConfig(timeout=10.0, idle_timeout=0.0))
+
+    assert client.request("ping") == {"ok": True}
+    assert len(created) == 2
+    assert created[0].closed is True
 
 
 def test_bridge_client_rejects_oversized_response():

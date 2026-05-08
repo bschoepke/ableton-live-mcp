@@ -1,0 +1,407 @@
+from __future__ import annotations
+
+import json
+import argparse
+import re
+import shutil
+from pathlib import Path
+from typing import Any
+
+from ableton_paths import default_user_library, find_max_device_template, state_dir
+
+ROOT = Path(__file__).resolve().parents[1]
+HOST_JS = ROOT / "m4l" / "agent_m4l_host.js"
+GENERATED_DIR = ROOT / "m4l" / "generated"
+WEBUI_DIR = GENERATED_DIR / "webui"
+
+ROLE_PRESETS = {
+    "audio_effect": {
+        "folder_parts": ("Presets", "Audio Effects", "Max Audio Effect"),
+        "template_name": "Max Audio Effect.amxd",
+        "header": b"aaaa",
+        "amxdtype": 1633771873,
+        "io": "audio_effect",
+    },
+    "instrument": {
+        "folder_parts": ("Presets", "Instruments", "Max Instrument"),
+        "template_name": "Max Instrument.amxd",
+        "header": b"iiii",
+        "amxdtype": 1768515945,
+        "io": "instrument",
+    },
+    "midi_effect": {
+        "folder_parts": ("Presets", "MIDI Effects", "Max MIDI Effect"),
+        "template_name": "Max MIDI Effect.amxd",
+        "header": b"mmmm",
+        "amxdtype": 1835887981,
+        "io": "midi_effect",
+    },
+}
+
+
+def normalize_role(role: str | None) -> str:
+    value = (role or "audio_effect").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "audio": "audio_effect",
+        "effect": "audio_effect",
+        "fx": "audio_effect",
+        "synth": "instrument",
+        "midi": "midi_effect",
+    }
+    value = aliases.get(value, value)
+    if value not in ROLE_PRESETS:
+        raise ValueError("role must be audio_effect, instrument, or midi_effect")
+    return value
+
+
+def slugify(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", value.strip())
+    slug = re.sub(r"_+", "_", slug).strip("._-")
+    return slug[:80] or "Device"
+
+
+def device_name(role: str, instance_id: str, title: str | None = None) -> str:
+    stem = slugify(title or instance_id)
+    return "AgentM4L_%s_%s" % (role, stem)
+
+
+def command_file(instance_id: str) -> str:
+    return str(state_dir() / ("agent_m4l_%s.json" % slugify(instance_id)))
+
+
+def status_file(instance_id: str) -> str:
+    return str(state_dir() / ("agent_m4l_%s_status.json" % slugify(instance_id)))
+
+
+def audio_bus_names(instance_id: str) -> dict[str, str]:
+    stem = "agent_m4l_%s" % slugify(instance_id)
+    return {
+        "input_left": "%s_audio_in_l" % stem,
+        "input_right": "%s_audio_in_r" % stem,
+        "output_left": "%s_audio_out_l" % stem,
+        "output_right": "%s_audio_out_r" % stem,
+    }
+
+
+def max_arg(value: str) -> str:
+    text = str(value).replace("\\", "/")
+    if re.search(r"\s", text):
+        return '"%s"' % text.replace('"', '\\"')
+    return text
+
+
+def install_folder(role: str) -> Path:
+    preset = ROLE_PRESETS[normalize_role(role)]
+    return default_user_library().joinpath(*preset["folder_parts"])
+
+
+def role_template(role: str) -> Path | None:
+    preset = ROLE_PRESETS[normalize_role(role)]
+    return find_max_device_template(str(preset["template_name"]))
+
+
+def _role_from_patch(patch: dict[str, Any], fallback: str = "audio_effect") -> str:
+    amxdtype = patch.get("patcher", {}).get("amxdtype")
+    for role, preset in ROLE_PRESETS.items():
+        if preset["amxdtype"] == amxdtype:
+            return role
+    return normalize_role(fallback)
+
+
+def replace_ptch_chunk(container: bytes, payload: bytes) -> bytes:
+    index = container.find(b"ptch")
+    if index < 0:
+        raise ValueError("AMXD template is missing a ptch chunk")
+    size_start = index + 4
+    size_end = size_start + 4
+    if size_end > len(container):
+        raise ValueError("AMXD template has a truncated ptch chunk header")
+    old_size = int.from_bytes(container[size_start:size_end], "little")
+    payload_start = size_end
+    payload_end = payload_start + old_size
+    if payload_end > len(container):
+        raise ValueError("AMXD template has a truncated ptch chunk payload")
+    return (
+        container[:size_start]
+        + len(payload).to_bytes(4, "little")
+        + payload
+        + container[payload_end:]
+    )
+
+
+def _minimal_amxd_container(role: str, payload: bytes) -> bytes:
+    header = ROLE_PRESETS[role]["header"]
+    return (
+        b"ampf"
+        + (4).to_bytes(4, "little")
+        + header
+        + b"meta"
+        + (4).to_bytes(4, "little")
+        + b"\x00\x00\x00\x00"
+        + b"ptch"
+        + len(payload).to_bytes(4, "little")
+        + payload
+    )
+
+
+def build_amxd(source: Path, output: Path, role: str | None = None) -> None:
+    patch_json = source.read_text(encoding="utf-8")
+    patch = json.loads(patch_json)
+    role = normalize_role(role or _role_from_patch(patch))
+    payload = patch_json.encode("utf-8") + b"\x00"
+    template = role_template(role)
+    if template and template.exists():
+        data = replace_ptch_chunk(template.read_bytes(), payload)
+    else:
+        data = _minimal_amxd_container(role, payload)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(data)
+
+
+def _box(box_id: str, maxclass: str, text: str | None, x: float, y: float, **extra: Any) -> dict[str, Any]:
+    box: dict[str, Any] = {
+        "id": box_id,
+        "maxclass": maxclass,
+        "varname": box_id,
+        "patching_rect": [x, y, 140.0, 22.0],
+    }
+    if text is not None:
+        box["text"] = text
+    box.update(extra)
+    return {"box": box}
+
+
+def _line(src: str, src_out: int, dst: str, dst_in: int) -> dict[str, Any]:
+    return {"patchline": {"source": [src, src_out], "destination": [dst, dst_in]}}
+
+
+def make_host_patch(role: str, instance_id: str, title: str | None = None) -> dict[str, Any]:
+    role = normalize_role(role)
+    name = device_name(role, instance_id, title)
+    preset = ROLE_PRESETS[role]
+    js_text = "js agent_m4l_host.js %s %s %s %s" % (
+        role,
+        slugify(instance_id),
+        max_arg(command_file(instance_id)),
+        max_arg(status_file(instance_id)),
+    )
+    boxes = [
+        _box("comment-title", "comment", "Agent M4L Dynamic Host: %s" % name, 20.0, 20.0),
+        _box("js", "newobj", js_text, 20.0, 58.0),
+        _box("status", "newobj", "print %s" % name, 20.0, 96.0),
+        _box("udp", "newobj", "udpreceive 17655", 220.0, 20.0),
+        _box("script", "newobj", "thispatcher", 420.0, 20.0),
+    ]
+    lines = [
+        _line("js", 2, "status", 0),
+        _line("udp", 0, "js", 0),
+    ]
+    audio_buses = audio_bus_names(instance_id)
+    if preset["io"] == "audio_effect":
+        boxes += [
+            _box("plugin", "newobj", "plugin~", 20.0, 150.0),
+            _box("audio-in-l", "newobj", "send~ %s" % audio_buses["input_left"], 20.0, 190.0),
+            _box("audio-in-r", "newobj", "send~ %s" % audio_buses["input_right"], 120.0, 190.0),
+            _box("audio-out-l", "newobj", "receive~ %s" % audio_buses["output_left"], 20.0, 220.0),
+            _box("audio-out-r", "newobj", "receive~ %s" % audio_buses["output_right"], 120.0, 220.0),
+            _box("plugout", "newobj", "plugout~ 1 2", 20.0, 250.0),
+        ]
+        lines += [
+            _line("plugin", 0, "audio-in-l", 0),
+            _line("plugin", 1, "audio-in-r", 0),
+            _line("audio-out-l", 0, "plugout", 0),
+            _line("audio-out-r", 0, "plugout", 1),
+        ]
+    elif preset["io"] == "instrument":
+        boxes += [
+            _box("midiin", "newobj", "midiin", 20.0, 150.0),
+            _box("midiout", "newobj", "midiout", 20.0, 250.0),
+            _box("audio-out-l", "newobj", "receive~ %s" % audio_buses["output_left"], 220.0, 220.0),
+            _box("audio-out-r", "newobj", "receive~ %s" % audio_buses["output_right"], 320.0, 220.0),
+            _box("plugout", "newobj", "plugout~ 1 2", 220.0, 250.0),
+        ]
+        lines += [
+            _line("audio-out-l", 0, "plugout", 0),
+            _line("audio-out-r", 0, "plugout", 1),
+        ]
+    else:
+        boxes += [
+            _box("midiin", "newobj", "midiin", 20.0, 150.0),
+            _box("midiout", "newobj", "midiout", 20.0, 250.0),
+        ]
+    return {
+        "patcher": {
+            "fileversion": 1,
+            "appversion": {"major": 8, "minor": 6, "revision": 0, "architecture": "x64"},
+            "classnamespace": "box",
+            "rect": [80.0, 80.0, 620.0, 360.0],
+            "bglocked": 0,
+            "openinpresentation": 1,
+            "default_fontsize": 12.0,
+            "default_fontface": 0,
+            "default_fontname": "Arial",
+            "gridonopen": 1,
+            "gridsize": [15.0, 15.0],
+            "boxes": boxes,
+            "lines": lines,
+            "appversion_at_last_save": "8.6.0",
+            "amxdtype": preset["amxdtype"],
+        }
+    }
+
+
+def build_device(role: str, instance_id: str, title: str | None = None, install: bool = True) -> dict[str, str]:
+    role = normalize_role(role)
+    name = device_name(role, instance_id, title)
+    patch_path = GENERATED_DIR / ("%s.maxpat" % name)
+    amxd_path = GENERATED_DIR / ("%s.amxd" % name)
+    patch_path.parent.mkdir(parents=True, exist_ok=True)
+    patch_path.write_text(json.dumps(make_host_patch(role, instance_id, title), indent=2), encoding="utf-8")
+    build_amxd(patch_path, amxd_path, role)
+    shutil.copyfile(HOST_JS, amxd_path.with_name(HOST_JS.name))
+    installed_path = ""
+    if install:
+        installed = install_folder(role) / amxd_path.name
+        installed.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(amxd_path, installed)
+        shutil.copyfile(HOST_JS, installed.with_name(HOST_JS.name))
+        installed_path = str(installed)
+    return {
+        "name": name,
+        "role": role,
+        "instance_id": slugify(instance_id),
+        "patch_path": str(patch_path),
+        "amxd_path": str(amxd_path),
+        "installed_path": installed_path,
+        "command_file": command_file(instance_id),
+        "status_file": status_file(instance_id),
+        "audio_buses": audio_bus_names(instance_id),
+    }
+
+
+def build_pool(role: str, count: int, prefix: str = "slot", install: bool = True) -> list[dict[str, str]]:
+    if count < 1:
+        raise ValueError("count must be >= 1")
+    return [
+        build_device(role, "%s_%03d" % (slugify(prefix), index), "%s_%03d" % (slugify(prefix), index), install=install)
+        for index in range(count)
+    ]
+
+
+def write_webui(instance_id: str, webui: dict[str, Any]) -> dict[str, str]:
+    slug = slugify(instance_id)
+    directory = WEBUI_DIR / slug
+    directory.mkdir(parents=True, exist_ok=True)
+    html_path = directory / "index.html"
+    css_path = directory / "style.css"
+    js_path = directory / "device.js"
+    css = str(webui.get("css") or DEFAULT_WEBUI_CSS)
+    js = str(webui.get("js") or DEFAULT_WEBUI_JS)
+    html = str(webui.get("html") or default_webui_html(str(webui.get("title") or slug), webui.get("controls") or []))
+    css_path.write_text(css, encoding="utf-8")
+    js_path.write_text(js, encoding="utf-8")
+    html_path.write_text(html, encoding="utf-8")
+    return {
+        "html_path": str(html_path),
+        "css_path": str(css_path),
+        "js_path": str(js_path),
+        "url": html_path.resolve().as_uri(),
+    }
+
+
+def default_webui_html(title: str, controls: list[dict[str, Any]]) -> str:
+    if not controls:
+        controls = [{"id": "amount", "label": "Amount", "min": 0, "max": 1, "value": 0.5, "step": 0.001}]
+    rows = []
+    for control in controls:
+        cid = slugify(str(control.get("id") or "amount"))
+        label = str(control.get("label") or cid)
+        minimum = control.get("min", 0)
+        maximum = control.get("max", 1)
+        value = control.get("value", 0)
+        step = control.get("step", 0.001)
+        rows.append(
+            '<label class="control"><span>%s</span><input data-param="%s" type="range" min="%s" max="%s" step="%s" value="%s"><output>%s</output></label>'
+            % (label, cid, minimum, maximum, step, value, value)
+        )
+    return """<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>%s</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>%s</header>
+    %s
+  </main>
+  <script src="device.js"></script>
+</body>
+</html>
+""" % (title, title, "\n    ".join(rows))
+
+
+DEFAULT_WEBUI_CSS = """
+:root { color-scheme: dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
+html, body { box-sizing: border-box; width: 100%; height: 100%; overflow: hidden; }
+body { margin: 0; background: #14161a; color: #f3f6fb; }
+main { box-sizing: border-box; width: 100%; height: 100%; padding: 12px; display: grid; gap: 10px; align-content: start; overflow: auto; }
+header { font-size: 13px; font-weight: 700; color: #9fd2ff; }
+.control { display: grid; grid-template-columns: 76px 1fr 44px; align-items: center; gap: 8px; font-size: 11px; }
+input[type=range] { width: 100%; accent-color: #62d2a2; }
+output { text-align: right; font-variant-numeric: tabular-nums; color: #c8ced8; }
+"""
+
+
+DEFAULT_WEBUI_JS = """
+const maxApi = window.max;
+const send = (id, value) => {
+  if (window.max && window.max.outlet) window.max.outlet("set", id, Number(value));
+};
+document.querySelectorAll("[data-param]").forEach((el) => {
+  const output = el.parentElement.querySelector("output");
+  const update = () => {
+    output.value = el.value;
+    send(el.dataset.param, el.value);
+  };
+  el.addEventListener("input", update);
+});
+if (maxApi && maxApi.bindInlet) {
+  maxApi.bindInlet("state", (raw) => {
+    let state = {};
+    try { state = typeof raw === "string" ? JSON.parse(raw) : raw; } catch (_err) {}
+    Object.keys(state).forEach((id) => {
+      const el = document.querySelector(`[data-param="${id}"]`);
+      if (!el) return;
+      el.value = state[id];
+      const output = el.parentElement.querySelector("output");
+      if (output) output.value = state[id];
+    });
+  });
+}
+"""
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Build a dynamic Agent M4L host device.")
+    parser.add_argument("instance_id", nargs="?")
+    parser.add_argument("--role", default="audio_effect", choices=tuple(ROLE_PRESETS))
+    parser.add_argument("--name")
+    parser.add_argument("--pool-size", type=int)
+    parser.add_argument("--pool-prefix", default="slot")
+    parser.add_argument("--no-install", action="store_true")
+    args = parser.parse_args()
+    if args.pool_size:
+        for result in build_pool(args.role, args.pool_size, args.pool_prefix, install=not args.no_install):
+            print(result["amxd_path"])
+            if result["installed_path"]:
+                print(result["installed_path"])
+        return
+    if not args.instance_id:
+        parser.error("instance_id is required unless --pool-size is used")
+    result = build_device(args.role, args.instance_id, args.name, install=not args.no_install)
+    print(result["amxd_path"])
+    if result["installed_path"]:
+        print(result["installed_path"])
