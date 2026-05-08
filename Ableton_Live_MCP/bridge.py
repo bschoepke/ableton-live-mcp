@@ -372,6 +372,11 @@ class AbletonLiveMCP(ControlSurface):
                     loaded = True
             except Exception as exc:
                 load_error = str(exc)
+        triggered = False
+        if target_track is not None:
+            target_device = self._find_track_device(target_track, device_name, role)
+            if target_device is not None:
+                triggered = self._trigger_agent_m4l_poll(target_device)
 
         result = {
             "sent": sent,
@@ -387,6 +392,7 @@ class AbletonLiveMCP(ControlSurface):
             "loaded": loaded,
             "udp_bytes": udp_bytes,
             "udp_skipped": udp_skipped,
+            "triggered": triggered,
         }
         if load_error:
             result["load_error"] = load_error
@@ -473,9 +479,39 @@ class AbletonLiveMCP(ControlSurface):
             song.stop_playing()
 
     def _track_has_device(self, track, name, role=None):
+        return self._find_track_device(track, name, role) is not None
+
+    def _find_track_device(self, track, name, role=None):
         for device in getattr(track, "devices", []):
             if getattr(device, "name", "") == name and self._device_matches_agent_m4l_role(device, role):
+                return device
+        return None
+
+    def _trigger_agent_m4l_poll(self, device):
+        for parameter in getattr(device, "parameters", []):
+            name = str(getattr(parameter, "name", ""))
+            if name not in ("Agent Poll", "Agent M4L Poll"):
+                continue
+            try:
+                current = float(getattr(parameter, "value", 0.0) or 0.0)
+            except Exception:
+                current = 0.0
+            try:
+                minimum = float(getattr(parameter, "min", 0.0))
+            except Exception:
+                minimum = 0.0
+            try:
+                maximum = float(getattr(parameter, "max", 1.0))
+            except Exception:
+                maximum = 1.0
+            next_value = current + 1.0
+            if next_value > maximum:
+                next_value = minimum
+            try:
+                parameter.value = next_value
                 return True
+            except Exception:
+                return False
         return False
 
     def _find_new_track_device(self, track, before_ids):

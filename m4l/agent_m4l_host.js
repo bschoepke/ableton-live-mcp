@@ -166,6 +166,17 @@ function msg_string(value) {
     applyRaw(value);
 }
 
+function msg_int(value) {
+    pollCommandFile();
+    if (pendingWebUiReads.length) {
+        readPendingWebUis();
+    }
+}
+
+function msg_float(value) {
+    msg_int(value);
+}
+
 function bang() {
     pollCommandFile();
     if (pendingWebUiReads.length) {

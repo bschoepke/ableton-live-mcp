@@ -677,6 +677,56 @@ def test_agent_m4l_device_value_update_does_not_require_patch_or_load(monkeypatc
     assert '"values":[{"id":"cutoff","value":0.72}]' in written["value"]
 
 
+def test_agent_m4l_device_triggers_hidden_poll_parameter(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    device = FakeDevice()
+    device.name = "AgentM4L_instrument_Dynamic_Poller_Probe"
+    device.class_name = "MxDeviceInstrument"
+    poll = FakeParameter("Agent Poll", 0.0, 0.0, 1.0)
+    device.parameters.append(poll)
+    song.tracks[1].devices.append(device)
+    written = {}
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            written["path"] = path
+            written["mode"] = mode
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def write(self, value):
+            written["value"] = written.get("value", "") + value
+            return len(value)
+
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "instrument",
+        "instance_id": "Dynamic Poller Probe",
+        "device_name": "AgentM4L_instrument_Dynamic_Poller_Probe",
+        "command": "set",
+        "values": [{"id": "native_value", "value": 0.72}],
+        "target_track": {"path": "live_set tracks 1"},
+        "udp": False,
+        "load": False,
+        "id": "set-poll",
+    })
+
+    assert result["triggered"] is True
+    assert poll.value == 1.0
+    assert '"native_value"' in written["value"]
+
+
 def test_agent_m4l_value_update_writes_file_with_recovery_patch(monkeypatch):
     module, _app = load_bridge_module(monkeypatch)
     bridge = object.__new__(module.AbletonLiveMCP)

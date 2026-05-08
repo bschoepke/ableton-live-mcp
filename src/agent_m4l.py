@@ -249,6 +249,16 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
         _box("poll-live-device", "newobj", "live.thisdevice", 340.0, 58.0),
         _box("poll-defer", "newobj", "deferlow", 340.0, 96.0),
         _box("poll-delay", "newobj", "delay 100", 340.0, 134.0),
+        _box(
+            "command-trigger",
+            "live.numbox",
+            None,
+            340.0,
+            172.0,
+            parameter_enable=1,
+            parameter_shortname="Agent Poll",
+            parameter_longname="Agent M4L Poll",
+        ),
         _box("script", "newobj", "thispatcher", 420.0, 20.0),
     ]
     lines = [
@@ -261,6 +271,7 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
         _line("poll-live-device", 0, "poll-start", 0),
         _line("poll-live-device", 0, "poll-delay", 0),
         _line("poll-delay", 0, "js", 0),
+        _line("command-trigger", 0, "js", 0),
         _line("poll-start", 0, "poll-metro", 0),
         _line("poll-metro", 0, "js", 0),
     ]

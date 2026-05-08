@@ -12,6 +12,7 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     boxes = patch["patcher"]["boxes"]
     lines = patch["patcher"]["lines"]
     texts = {box["box"].get("text") for box in boxes}
+    boxes_by_id = {box["box"].get("id"): box["box"] for box in boxes}
     assert "js agent_m4l_host.js instrument Lead %s %s" % (command_file("Lead"), status_file("Lead")) in texts
     assert "midiin" in texts
     assert "plugout~ 1 2" in texts
@@ -23,9 +24,13 @@ def test_agent_m4l_host_patch_contains_runtime_and_role_io():
     assert "live.thisdevice" in texts
     assert "deferlow" in texts
     assert "delay 100" in texts
+    assert boxes_by_id["command-trigger"]["maxclass"] == "live.numbox"
+    assert boxes_by_id["command-trigger"]["parameter_shortname"] == "Agent Poll"
+    assert boxes_by_id["command-trigger"]["parameter_enable"] == 1
     assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["poll-start", 0]}} in lines
     assert {"patchline": {"source": ["poll-live-device", 0], "destination": ["poll-delay", 0]}} in lines
     assert {"patchline": {"source": ["poll-delay", 0], "destination": ["js", 0]}} in lines
+    assert {"patchline": {"source": ["command-trigger", 0], "destination": ["js", 0]}} in lines
     assert {"patchline": {"source": ["midiin", 0], "destination": ["midiout", 0]}} not in lines
     assert "jweb~ @rendermode 1" not in texts
     assert "prepend ui0" not in texts
@@ -205,6 +210,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert 'metro.message("start")' in source
     assert 'poller.message("start")' in source
     assert 'pollCommandFile();' in source
+    assert "function msg_int(value)" in source
+    assert "function msg_float(value)" in source
     assert "if (pendingWebUiReads.length)" in source
     assert "shouldSendToggleValue" in source
     assert 'obj.message("int", Math.round(value) ? 1 : 0)' in source
