@@ -585,7 +585,10 @@ def test_agent_m4l_device_tool_direct_update_preserves_recovery_patch(tmp_path):
     command_file.write_text(json.dumps({
         "id": "patch1",
         "command": "update",
-        "patch": {"objects": [{"id": "dial", "text": "flonum"}], "connections": []},
+        "objects": [{"id": "dial", "text": "flonum"}],
+        "connections": [],
+        "device_width": 640,
+        "device_height": 220,
     }), encoding="utf-8")
     response = server.handle({
         "jsonrpc": "2.0",
@@ -606,6 +609,8 @@ def test_agent_m4l_device_tool_direct_update_preserves_recovery_patch(tmp_path):
     assert bridge.calls == []
     assert response["result"]["structuredContent"]["direct"] is True
     assert payload["patch"]["objects"][0]["id"] == "dial"
+    assert payload["patch"]["device_width"] == 640
+    assert payload["patch"]["device_height"] == 220
     assert payload["values"] == [{"id": "dial", "value": 0.7}]
 
 

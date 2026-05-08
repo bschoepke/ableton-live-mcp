@@ -572,6 +572,7 @@ def test_agent_m4l_device_writes_command_sends_udp_and_loads(monkeypatch):
         "patch": patch,
         "webui": {"html_path": "/tmp/wobble/index.html", "presentation_rect": [0, 0, 320, 160]},
         "device_width": 340,
+        "device_height": 180,
         "id": "cmd1",
     })
 
@@ -582,6 +583,7 @@ def test_agent_m4l_device_writes_command_sends_udp_and_loads(monkeypatch):
     assert '"instance_id":"Wobble"' in written["value"]
     assert '"cycle~ 110"' in written["value"]
     assert '"device_width":340' in written["value"]
+    assert '"device_height":180' in written["value"]
     assert '"webui":{"html_path":"/tmp/wobble/index.html"' in written["value"]
     assert sent[0][1] == ("127.0.0.1", bridge._agent_m4l_port("Wobble"))
     assert b"/agent_m4l" in sent[0][0]
@@ -796,6 +798,40 @@ def test_agent_m4l_value_update_writes_file_with_recovery_patch(monkeypatch):
     assert payload["patch"]["objects"][0]["id"] == "cutoff"
     assert b'"values":[{"id":"cutoff","value":0.72}]' in sent[0][0]
     assert b'"patch"' not in sent[0][0]
+
+
+def test_agent_m4l_recovery_patch_preserves_top_level_bounds(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    stored = {
+        module._temp_file("agent_m4l_Panels.json"): json.dumps({
+            "objects": [{"id": "dial", "text": "flonum"}],
+            "connections": [],
+            "device_width": 720,
+            "device_height": 260,
+        })
+    }
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            self.value = stored.get(path, "")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, *_args):
+            return self.value
+
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    patch = bridge._agent_m4l_recovery_patch(module._temp_file("agent_m4l_Panels.json"))
+
+    assert patch["objects"][0]["id"] == "dial"
+    assert patch["device_width"] == 720
+    assert patch["device_height"] == 260
 
 
 def test_agent_m4l_device_top_level_webuis_trigger_update(monkeypatch):

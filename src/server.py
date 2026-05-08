@@ -18,6 +18,10 @@ __version__ = "0.1.0"
 
 ABLETON_AGENT_GUIDE = "General Live object-model bridge; examples are heuristics, not limits."
 AGENT_M4L_MAX_UDP_BYTES = 8192
+AGENT_M4L_RECOVERY_PATCH_KEYS = (
+    "objects", "connections", "ui_bindings", "bindings", "webui", "webuis",
+    "device_width", "devicewidth", "width", "device_height", "deviceheight", "height",
+)
 ABLETON_MCP_INSTRUCTIONS = (
     "General Live bridge; not a limited recipe API. "
     "Prefer installed content/Packs/user assets/samples/presets/devices and indexed third-party audio plugins unless asked. "
@@ -719,8 +723,13 @@ def agent_m4l_recovery_patch(command_path: str) -> Any:
     except Exception:
         return None
     patch = payload.get("patch") or payload.get("spec")
-    if not patch and (payload.get("objects") or payload.get("webui") or payload.get("webuis")):
-        patch = payload
+    if not patch:
+        recovered = {
+            key: payload[key]
+            for key in AGENT_M4L_RECOVERY_PATCH_KEYS
+            if key in payload
+        }
+        patch = recovered or None
     return patch
 
 

@@ -30,6 +30,10 @@ AGENT_M4L_HOST = "127.0.0.1"
 AGENT_M4L_PORT = 17655
 AGENT_M4L_PORT_SPAN = 30000
 AGENT_M4L_MAX_UDP_BYTES = 8192
+AGENT_M4L_RECOVERY_PATCH_KEYS = (
+    "objects", "connections", "ui_bindings", "bindings", "webui", "webuis",
+    "device_width", "devicewidth", "width", "device_height", "deviceheight", "height",
+)
 
 
 class _EncodedResult(list):
@@ -314,6 +318,9 @@ class AbletonLiveMCP(ControlSurface):
         if patch is not None and params.get("device_width") is not None:
             patch = dict(patch)
             patch.setdefault("device_width", params.get("device_width"))
+        if patch is not None and params.get("device_height") is not None:
+            patch = dict(patch)
+            patch.setdefault("device_height", params.get("device_height"))
         if patch is None and command in ("set", "status"):
             patch = self._agent_m4l_recovery_patch(command_file)
         command_hash = {
@@ -452,7 +459,7 @@ class AbletonLiveMCP(ControlSurface):
         if patch is not None:
             return patch
         recovered = {}
-        for key in ("objects", "connections", "ui_bindings", "bindings", "webui", "webuis"):
+        for key in AGENT_M4L_RECOVERY_PATCH_KEYS:
             if key in existing:
                 recovered[key] = existing[key]
         return recovered or None
