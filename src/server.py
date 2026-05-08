@@ -307,6 +307,9 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
             params["command_file"] = built["command_file"]
             params["status_file"] = built["status_file"]
             previous_status_mtime = _file_mtime(params["status_file"])
+        patch_for_recovery = params.get("patch") or params.get("spec")
+        if patch_for_recovery is not None and params.get("command_file"):
+            write_agent_m4l_recovery_patch(str(params["command_file"]), patch_for_recovery)
         if not should_build and should_handle_agent_m4l_direct(params):
             result = handle_agent_m4l_direct(params)
         else:
@@ -705,6 +708,7 @@ def handle_agent_m4l_direct(params: dict[str, Any]) -> dict[str, Any]:
     if write_command_file:
         Path(command_path).parent.mkdir(parents=True, exist_ok=True)
         Path(command_path).write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+        write_agent_m4l_recovery_patch(command_path, patch)
     port = int(params.get("port") or agent_m4l_udp_port(instance_id))
     sent = False
     if params.get("udp", True):
@@ -739,7 +743,7 @@ def agent_m4l_recovery_patch(command_path: str) -> Any:
     try:
         payload = json.loads(Path(command_path).read_text(encoding="utf-8"))
     except Exception:
-        return None
+        payload = {}
     patch = payload.get("patch") or payload.get("spec")
     if not patch:
         recovered = {
@@ -748,7 +752,32 @@ def agent_m4l_recovery_patch(command_path: str) -> Any:
             if key in payload
         }
         patch = recovered or None
-    return patch
+    return patch or agent_m4l_sidecar_recovery_patch(command_path)
+
+
+def agent_m4l_sidecar_recovery_path(command_path: str) -> Path:
+    return Path(str(command_path) + ".recovery.json")
+
+
+def agent_m4l_sidecar_recovery_patch(command_path: str) -> Any:
+    try:
+        payload = json.loads(agent_m4l_sidecar_recovery_path(command_path).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if isinstance(payload, dict):
+        return payload.get("patch") or payload.get("spec") or None
+    return None
+
+
+def write_agent_m4l_recovery_patch(command_path: str, patch: Any) -> None:
+    if patch is None:
+        return
+    try:
+        path = agent_m4l_sidecar_recovery_path(command_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"patch": patch}, separators=(",", ":")), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def agent_m4l_udp_payload(payload: dict[str, Any]) -> dict[str, Any]:

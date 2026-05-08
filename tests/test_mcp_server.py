@@ -617,6 +617,67 @@ def test_agent_m4l_device_tool_direct_update_preserves_recovery_patch(tmp_path):
     assert payload["values"] == [{"id": "dial", "value": 0.7}]
 
 
+def test_agent_m4l_device_tool_recovers_patch_from_sidecar(tmp_path):
+    command_file = tmp_path / "command.json"
+    status_file = tmp_path / "status.json"
+    patch = {"objects": [{"id": "dial", "text": "flonum"}], "connections": []}
+    command_file.write_text(json.dumps({
+        "id": "status1",
+        "command": "status",
+        "patch": None,
+    }), encoding="utf-8")
+    server_module.write_agent_m4l_recovery_patch(str(command_file), patch)
+
+    response = make_server(FakeBridge()).handle({
+        "jsonrpc": "2.0",
+        "id": 51,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "instance_id": "Wobble",
+            "command": "status",
+            "command_file": str(command_file),
+            "status_file": str(status_file),
+            "udp": False,
+        }},
+    })
+
+    payload = json.loads(command_file.read_text(encoding="utf-8"))
+    assert response["result"]["structuredContent"]["direct"] is True
+    assert payload["patch"] == patch
+
+
+def test_agent_m4l_device_tool_writes_recovery_sidecar_for_forwarded_patch(tmp_path):
+    bridge = FakeBridge()
+    command_file = tmp_path / "command.json"
+    status_file = tmp_path / "status.json"
+    patch = {"objects": [{"id": "dial", "text": "flonum"}], "connections": []}
+
+    make_server(bridge).handle({
+        "jsonrpc": "2.0",
+        "id": 53,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "instance_id": "Wobble",
+            "build": False,
+            "target_track": {"path": "live_set tracks 0"},
+            "command_file": str(command_file),
+            "status_file": str(status_file),
+            "patch": patch,
+            "udp": False,
+        }},
+    })
+
+    assert bridge.calls[0][0] == "agent_m4l_device"
+    sidecar = server_module.agent_m4l_sidecar_recovery_path(str(command_file))
+    recovered = json.loads(sidecar.read_text(encoding="utf-8"))["patch"]
+    assert recovered["objects"] == patch["objects"]
+    assert recovered["connections"] == patch["connections"]
+    assert recovered["device_width"] == 420
+    assert recovered["device_height"] == 170
+
+
 def test_agent_m4l_device_tool_materializes_webui_arrays(monkeypatch, tmp_path):
     import agent_m4l
 

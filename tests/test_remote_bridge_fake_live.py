@@ -550,17 +550,20 @@ def test_agent_m4l_device_writes_command_sends_udp_and_loads(monkeypatch):
 
     class FakeFile:
         def __init__(self, path, mode):
-            written["path"] = path
-            written["mode"] = mode
+            self.path = path
+            self.mode = mode
+            self.value = ""
 
         def __enter__(self):
             return self
 
         def __exit__(self, *_args):
+            if "w" in self.mode:
+                written[self.path] = self.value
             return False
 
         def write(self, value):
-            written["value"] = written.get("value", "") + value
+            self.value += value
             return len(value)
 
     monkeypatch.setattr(socket, "socket", FakeSocket)
@@ -586,12 +589,14 @@ def test_agent_m4l_device_writes_command_sends_udp_and_loads(monkeypatch):
     assert result["loaded"] is True
     assert app.browser.loaded == []
     assert song.tracks[1].devices[-1].name == "AgentM4L_audio_effect_Wobble"
-    assert written["path"] == module._temp_file("agent_m4l_Wobble.json")
-    assert '"instance_id":"Wobble"' in written["value"]
-    assert '"cycle~ 110"' in written["value"]
-    assert '"device_width":340' in written["value"]
-    assert '"device_height":180' in written["value"]
-    assert '"webui":{"html_path":"/tmp/wobble/index.html"' in written["value"]
+    command_path = module._temp_file("agent_m4l_Wobble.json")
+    recovery_path = "%s.recovery.json" % command_path
+    assert '"instance_id":"Wobble"' in written[command_path]
+    assert '"cycle~ 110"' in written[command_path]
+    assert '"device_width":340' in written[command_path]
+    assert '"device_height":180' in written[command_path]
+    assert '"webui":{"html_path":"/tmp/wobble/index.html"' in written[command_path]
+    assert json.loads(written[recovery_path])["patch"]["objects"][0]["id"] == "osc"
     assert sent[0][1] == ("127.0.0.1", bridge._agent_m4l_port("Wobble"))
     assert b"/agent_m4l" in sent[0][0]
 
@@ -841,6 +846,37 @@ def test_agent_m4l_recovery_patch_preserves_top_level_bounds(monkeypatch):
     assert patch["device_height"] == 260
 
 
+def test_agent_m4l_recovery_patch_falls_back_to_sidecar(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    command_path = module._temp_file("agent_m4l_Panels.json")
+    stored = {
+        command_path: json.dumps({"id": "status1", "command": "status", "patch": None}),
+        "%s.recovery.json" % command_path: json.dumps({
+            "patch": {"objects": [{"id": "dial", "text": "flonum"}], "connections": []},
+        }),
+    }
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            self.value = stored.get(path, "")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, *_args):
+            return self.value
+
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    patch = bridge._agent_m4l_recovery_patch(command_path)
+
+    assert patch["objects"][0]["id"] == "dial"
+
+
 def test_agent_m4l_device_top_level_webuis_trigger_update(monkeypatch):
     module, _app = load_bridge_module(monkeypatch)
     bridge = object.__new__(module.AbletonLiveMCP)
@@ -853,17 +889,20 @@ def test_agent_m4l_device_top_level_webuis_trigger_update(monkeypatch):
 
     class FakeFile:
         def __init__(self, path, mode):
-            written["path"] = path
-            written["mode"] = mode
+            self.path = path
+            self.mode = mode
+            self.value = ""
 
         def __enter__(self):
             return self
 
         def __exit__(self, *_args):
+            if "w" in self.mode:
+                written[self.path] = self.value
             return False
 
         def write(self, value):
-            written["value"] = written.get("value", "") + value
+            self.value += value
             return len(value)
 
     monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
@@ -878,11 +917,13 @@ def test_agent_m4l_device_top_level_webuis_trigger_update(monkeypatch):
         "udp": False,
         "load": False,
     })
-    payload = json.loads(written["value"])
+    command_path = module._temp_file("agent_m4l_Panels.json")
+    payload = json.loads(written[command_path])
 
     assert result["command"] == "update"
     assert payload["patch"]["webuis"][0]["object"] == "jbrowser~"
     assert payload["webuis"][1]["html_path"] == "/state/b.html"
+    assert json.loads(written["%s.recovery.json" % command_path])["patch"]["webuis"][0]["id"] == "a"
 
 
 def test_agent_m4l_device_returns_command_id_without_blocking_for_status(monkeypatch, tmp_path):

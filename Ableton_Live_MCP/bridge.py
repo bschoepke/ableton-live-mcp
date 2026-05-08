@@ -352,6 +352,7 @@ class AbletonLiveMCP(ControlSurface):
         if write_command_file:
             with open(command_file, "w") as handle:
                 json.dump(payload, handle, separators=(",", ":"))
+            self._agent_m4l_write_recovery_patch(command_file, patch)
 
         sent = False
         udp_bytes = 0
@@ -497,9 +498,9 @@ class AbletonLiveMCP(ControlSurface):
             with open(command_file, "r") as handle:
                 existing = json.load(handle)
         except Exception:
-            return None
+            existing = {}
         if not isinstance(existing, dict):
-            return None
+            existing = {}
         patch = existing.get("patch") or existing.get("spec")
         if patch is not None:
             return patch
@@ -507,7 +508,29 @@ class AbletonLiveMCP(ControlSurface):
         for key in AGENT_M4L_RECOVERY_PATCH_KEYS:
             if key in existing:
                 recovered[key] = existing[key]
-        return recovered or None
+        return recovered or self._agent_m4l_sidecar_recovery_patch(command_file)
+
+    def _agent_m4l_sidecar_recovery_patch(self, command_file):
+        try:
+            with open(self._agent_m4l_recovery_file(command_file), "r") as handle:
+                existing = json.load(handle)
+        except Exception:
+            return None
+        if not isinstance(existing, dict):
+            return None
+        return existing.get("patch") or existing.get("spec")
+
+    def _agent_m4l_write_recovery_patch(self, command_file, patch):
+        if patch is None:
+            return
+        try:
+            with open(self._agent_m4l_recovery_file(command_file), "w") as handle:
+                json.dump({"patch": patch}, handle, separators=(",", ":"))
+        except Exception:
+            pass
+
+    def _agent_m4l_recovery_file(self, command_file):
+        return "%s.recovery.json" % command_file
 
     def _rpc_transport(self, params):
         song = self.song()
