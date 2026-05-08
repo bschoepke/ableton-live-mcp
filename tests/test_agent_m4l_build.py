@@ -257,6 +257,7 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "function handleOsc(args)" in source
     assert "function msg_string(value)" in source
     assert "startLiveParameterObservers" in source
+    assert "cancelLiveParameterObserverRefreshTasks" in source
     assert "handleLiveParameterChange" in source
     assert "isCommandTriggerName" in source
     assert "live_parameter_raw" in source

@@ -248,6 +248,16 @@ function startLiveParameterObservers() {
     }
 }
 
+function cancelLiveParameterObserverRefreshTasks() {
+    for (var i = 0; i < liveParameterObserverRefreshTasks.length; i++) {
+        try {
+            liveParameterObserverRefreshTasks[i].cancel();
+        } catch (err) {
+        }
+    }
+    liveParameterObserverRefreshTasks = [];
+}
+
 function observeLiveParameter(id) {
     try {
         var api = new LiveAPI(null, "id " + id);
@@ -710,14 +720,14 @@ function applySpec(spec) {
     }
     var previousState = cloneObject(state);
     directLiveApiObserversEnabled = !!(spec.live_api_observers || spec.observe_live_parameters || spec.observe_live_api_parameters);
+    configureDeviceBounds(spec);
+    if (clearDynamic(reusableWebIdsForSpec(spec)) === false) {
+        return;
+    }
     state.live_api_observers_enabled = directLiveApiObserversEnabled ? 1 : 0;
     if (!directLiveApiObserversEnabled) {
         liveParameterObservers = [];
         state.live_parameter_observers = 0;
-    }
-    configureDeviceBounds(spec);
-    if (clearDynamic(reusableWebIdsForSpec(spec)) === false) {
-        return;
     }
     var byId = seedStaticObjects();
     createWebUis(spec.webuis || spec.webui, byId);
@@ -1952,6 +1962,8 @@ function clearDynamic(preserveWebIds) {
         }
     }
     pendingWebUiReads = [];
+    cancelLiveParameterObserverRefreshTasks();
+    liveParameterObservers = [];
     for (var i = dynamicObjects.length - 1; i >= 0; i--) {
         if (containsObject(preservedObjects, dynamicObjects[i])) {
             keepDynamicObjects.unshift(dynamicObjects[i]);
