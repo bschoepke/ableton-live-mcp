@@ -94,13 +94,14 @@ def test_initialize_includes_general_model_instructions():
     assert "throttled fallback wakes" in instructions
     assert "load:false/set/status skip build" in instructions
     assert "host_not_woken=no ack" in instructions
+    assert "host_runtime_version" in instructions
     assert "Agent must visually verify M4L device UI" in instructions
     assert "Ableton-window-only" in instructions
     assert "never capture arbitrary apps/windows" in instructions
     assert "device-detail crop" in instructions
     assert "blank_capture invalid" in instructions
     assert "locked/asleep display blocks capture/e2e" in instructions
-    assert "audio-reactive web must prove signal telemetry+nonblank visual delta" in instructions
+    assert "audio-reactive web: prove signal telemetry+visual delta" in instructions
     assert "full Live object model remains available" in instructions
     assert len(instructions) < 1600
 
@@ -2659,6 +2660,9 @@ def test_agent_m4l_host_defers_web_message_driven_reload_teardown():
     assert "function handleDeferredCommandTask()" in source
     assert "if (webMessageDepth > 0) {\n        deferCommandPoll();" in source
     assert "if (webMessageDepth > 0) {\n        deferRawCommand(raw);" in source
+    assert "hasRemovableWebObjects(preserveWebIds)" in source
+    assert "web_clear_deferred" in source
+    assert "payload.host_runtime_version" in source
     assert "function readPendingWebUis() {\n    if (webMessageDepth > 0) {" in source
     assert "beginWebMessage();" in source
     assert "this.patcher.remove(dynamicObjects[i]);" in source

@@ -322,6 +322,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "reusableWebObject" in source
     assert "rememberWebObject" in source
     assert "webObjectById" in source
+    assert "HOST_RUNTIME_VERSION" in source
+    assert "payload.host_runtime_version" in source
     assert "webRouterById" in source
     assert "webObjectNameById" in source
     assert "webui.reuse === false" in source
@@ -339,6 +341,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "handleWebUiErrorMessage" in source
     assert "clearPendingWebUiReadsForId" in source
     assert "state.web_read_pending = pendingWebUiReads.length;" in source
+    assert "hasRemovableWebObjects" in source
+    assert "web_clear_deferred" in source
     assert "web_ready" in source
     assert "web_error" in source
     assert "shortStatusText" in source

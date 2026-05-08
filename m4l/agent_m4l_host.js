@@ -54,6 +54,7 @@ var currentDeviceHeight = DEFAULT_DEVICE_HEIGHT;
 var lastActivityWakeAt = 0;
 var pollTaskScheduled = 0;
 var MAX_DEFERRED_RAW_COMMANDS = 8;
+var HOST_RUNTIME_VERSION = "web-clear-guard-1";
 
 function loadbang() {
     startStaticPolling();
@@ -639,8 +640,9 @@ function applyRaw(raw) {
     currentCommandId = id;
     ensureRecovered(command);
     if (command.command === "clear") {
-        clearDynamic();
-        report("clear", {});
+        if (clearDynamic() !== false) {
+            report("clear", {});
+        }
     } else if (command.command === "set") {
         applyValues(command.values || command.parameters || [], true);
     } else if (command.command === "status") {
@@ -708,7 +710,9 @@ function applySpec(spec) {
         state.live_parameter_observers = 0;
     }
     configureDeviceBounds(spec);
-    clearDynamic(reusableWebIdsForSpec(spec));
+    if (clearDynamic(reusableWebIdsForSpec(spec)) === false) {
+        return;
+    }
     var byId = seedStaticObjects();
     createWebUis(spec.webuis || spec.webui, byId);
     nextGeneratedLiveParameterIndex = 2;
@@ -1896,6 +1900,13 @@ function webStateDispatchScript(raw) {
 
 function clearDynamic(preserveWebIds) {
     preserveWebIds = preserveWebIds || {};
+    if (webMessageDepth > 0 && hasRemovableWebObjects(preserveWebIds)) {
+        state.web_clear_deferred = (state.web_clear_deferred || 0) + 1;
+        lastCommandId = "";
+        deferCommandPoll();
+        report("error", { reason: "web_clear_deferred", detail: "refusing to remove browser UI during web callback" });
+        return false;
+    }
     var keepDynamicObjects = [];
     var keepWebObjectById = {};
     var keepWebRouterById = {};
@@ -1947,6 +1958,28 @@ function clearDynamic(preserveWebIds) {
     liveParameterSourceByTag = {};
     nextGeneratedLiveParameterIndex = 2;
     lastConnectionErrors = [];
+    return true;
+}
+
+function hasRemovableWebObjects(preserveWebIds) {
+    for (var i = 0; i < webObjects.length; i++) {
+        if (!isPreservedWebObject(webObjects[i], preserveWebIds || {})) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function isPreservedWebObject(obj, preserveWebIds) {
+    for (var preserveId in preserveWebIds) {
+        if (!preserveWebIds.hasOwnProperty(preserveId)) {
+            continue;
+        }
+        if (webObjectById[preserveId] === obj || webRouterById[preserveId] === obj) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function report(eventName, payload) {
@@ -1955,6 +1988,7 @@ function report(eventName, payload) {
     payload.command_id = currentCommandId;
     payload.role = role;
     payload.instance_id = instanceId;
+    payload.host_runtime_version = HOST_RUNTIME_VERSION;
     payload.dynamic_objects = dynamicObjects.length;
     payload.webuis = webObjects.length;
     payload.device_width = currentDeviceWidth;
