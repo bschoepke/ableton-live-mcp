@@ -18,7 +18,7 @@ from prompt_audit import run_generated_m4l_local_preflight, run_prompt_audit
 from server import agent_m4l_status_timeout, agent_m4l_status_timeout_reason, expected_agent_m4l_status_event, make_server, should_build_agent_m4l, summarize_agent_m4l_status, wait_agent_m4l_status
 from validate import main as validate_main
 from similar_sounds import encode_feature
-from smoke import run_smoke
+from smoke import main as smoke_main, run_core_regression, run_smoke
 
 
 class FakeBridge:
@@ -3253,6 +3253,65 @@ def test_smoke_suite_treats_plugin_search_as_optional():
     assert output["ok"] is True
     failed = [check["name"] for check in output["checks"] if not check["ok"]]
     assert failed == ["browser_plugin_search"]
+
+
+def test_core_regression_exercises_existing_non_m4l_surfaces(tmp_path):
+    class RegressionBridge:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, method, params):
+            self.calls.append((method, params))
+            if method == "ping":
+                return {"ok": True}
+            if method == "exec":
+                return {"midi_path": "live_set tracks 0", "audio_path": "live_set tracks 1"}
+            if method == "clip_notes":
+                return {"notes": [{"pitch": 60}, {"pitch": 64}, {"pitch": 67}, {"pitch": 72}]}
+            if method == "browser_search":
+                return {"results": [{"id": 123, "name": "Limiter", "is_loadable": True}]}
+            if method == "set_summary":
+                return {"tracks": [
+                    {"name": "MCP Regression MIDI Clip", "clips": [{"name": "MCP Regression MIDI Clip"}]},
+                    {
+                        "name": "MCP Regression Audio Device Clip",
+                        "devices": [{"name": "Limiter"}],
+                        "arrangement_clips": [{"name": "MCP Regression Audio File"}],
+                    },
+                ]}
+            return {"ok": True}
+
+    def similar(_params):
+        return {
+            "database": "fake.db",
+            "base": {"name": "Kick"},
+            "results": [{"name": "Similar Kick"}],
+        }
+
+    audio_file = tmp_path / "tone.wav"
+    audio_file.write_bytes(b"fake")
+    bridge = RegressionBridge()
+    code, output = run_core_regression(bridge, similar_finder=similar, audio_file=audio_file)
+    methods = [method for method, _params in bridge.calls]
+
+    assert code == 0
+    assert output["ok"] is True
+    assert output["destructive"] is True
+    assert all("result" not in check for check in output["checks"] if check["ok"])
+    assert {"browser_search", "browser_load", "clip_add_notes", "clip_notes", "track_create_audio_clip", "set_summary"} <= set(methods)
+    assert [check["name"] for check in output["checks"] if check["name"] == "find_similar_sounds"]
+    assert next(check for check in output["checks"] if check["name"] == "read_back_midi_clip_notes")["note_count"] == 4
+    audio_call = next(params for method, params in bridge.calls if method == "track_create_audio_clip")
+    assert audio_call["file_path"] == str(audio_file)
+
+
+def test_smoke_core_regression_cli_requires_yes(monkeypatch, capsys):
+    monkeypatch.setenv("ABLETON_LIVE_MCP_DEBUG", "1")
+    monkeypatch.setattr("sys.argv", ["ableton-live-mcp-smoke", "--core-regression"])
+
+    assert smoke_main() == 2
+    output = capsys.readouterr()
+    assert "Refusing to run destructive core regression without --yes" in output.err
 
 
 def test_benchmark_records_latency_and_payload_size():
