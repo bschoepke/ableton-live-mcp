@@ -2655,6 +2655,8 @@ def test_remote_script_status_detects_stale_install(tmp_path):
     assert current["target_bridge_sha256"] == current["source_bridge_sha256"]
     assert current["source_runtime_version"] == "transport-stop-settle-1"
     assert current["target_runtime_version"] == current["source_runtime_version"]
+    assert len(current["source_runtime_code_sha256"]) == 64
+    assert current["target_runtime_code_sha256"] == current["source_runtime_code_sha256"]
     assert current["missing"] == []
     assert current["mismatched"] == []
 
@@ -2789,7 +2791,11 @@ def test_validate_rejects_running_stale_remote_script(tmp_path, monkeypatch, cap
         def request(self, method, _params):
             assert method == "batch"
             return [
-                {"ok": True, "result": {"ok": True, "remote_script": {"bridge_sha256": "0" * 64, "runtime_version": status["source_runtime_version"]}}},
+                {"ok": True, "result": {"ok": True, "remote_script": {
+                    "bridge_sha256": "0" * 64,
+                    "runtime_version": status["source_runtime_version"],
+                    "runtime_code_sha256": status["source_runtime_code_sha256"],
+                }}},
                 {"ok": True, "result": {"ok": True}},
                 {"ok": True, "result": 12},
             ]
@@ -2828,6 +2834,57 @@ def test_validate_rejects_running_remote_script_without_runtime_version(tmp_path
     assert '"runtime_reload_required": true' in output.out
 
 
+def test_validate_rejects_running_remote_script_without_runtime_code_hash(tmp_path, monkeypatch, capsys):
+    install_remote_script("Ableton_Live_MCP", tmp_path)
+    status = remote_script_status(target_dir=tmp_path)
+
+    class FakeClient:
+        def request(self, method, _params):
+            assert method == "batch"
+            return [
+                {"ok": True, "result": {"ok": True, "remote_script": {
+                    "bridge_sha256": status["source_bridge_sha256"],
+                    "runtime_version": status["source_runtime_version"],
+                }}},
+                {"ok": True, "result": {"ok": True}},
+                {"ok": True, "result": 12},
+            ]
+
+    monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
+
+    assert validate_main(["--target-dir", str(tmp_path)]) == 1
+    output = capsys.readouterr()
+    assert '"runtime_current": false' in output.out
+    assert '"runtime_mismatch": "missing_runtime_code_hash"' in output.out
+    assert '"runtime_reload_required": true' in output.out
+
+
+def test_validate_rejects_running_remote_script_code_hash_mismatch(tmp_path, monkeypatch, capsys):
+    install_remote_script("Ableton_Live_MCP", tmp_path)
+    status = remote_script_status(target_dir=tmp_path)
+
+    class FakeClient:
+        def request(self, method, _params):
+            assert method == "batch"
+            return [
+                {"ok": True, "result": {"ok": True, "remote_script": {
+                    "bridge_sha256": status["source_bridge_sha256"],
+                    "runtime_version": status["source_runtime_version"],
+                    "runtime_code_sha256": "0" * 64,
+                }}},
+                {"ok": True, "result": {"ok": True}},
+                {"ok": True, "result": 12},
+            ]
+
+    monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
+
+    assert validate_main(["--target-dir", str(tmp_path)]) == 1
+    output = capsys.readouterr()
+    assert '"runtime_current": false' in output.out
+    assert '"runtime_mismatch": "runtime_code_hash_mismatch"' in output.out
+    assert '"runtime_reload_required": true' in output.out
+
+
 def test_validate_live_checks_are_compact_and_timed(tmp_path, monkeypatch, capsys):
     install_remote_script("Ableton_Live_MCP", tmp_path)
     status = remote_script_status(target_dir=tmp_path)
@@ -2838,7 +2895,11 @@ def test_validate_live_checks_are_compact_and_timed(tmp_path, monkeypatch, capsy
             calls.append((method, params))
             assert method == "batch"
             return [
-                {"ok": True, "result": {"ok": True, "remote_script": {"bridge_sha256": status["source_bridge_sha256"], "runtime_version": status["source_runtime_version"]}}},
+                {"ok": True, "result": {"ok": True, "remote_script": {
+                    "bridge_sha256": status["source_bridge_sha256"],
+                    "runtime_version": status["source_runtime_version"],
+                    "runtime_code_sha256": status["source_runtime_code_sha256"],
+                }}},
                 {"ok": True, "result": {"ok": True}},
                 {"ok": True, "result": 12},
             ]
@@ -2870,7 +2931,11 @@ def test_validate_live_checks_can_use_strict_short_timeout(tmp_path, monkeypatch
         def request(self, method, params):
             calls.append((method, params))
             return [
-                {"ok": True, "result": {"ok": True, "remote_script": {"bridge_sha256": status["source_bridge_sha256"], "runtime_version": status["source_runtime_version"]}}},
+                {"ok": True, "result": {"ok": True, "remote_script": {
+                    "bridge_sha256": status["source_bridge_sha256"],
+                    "runtime_version": status["source_runtime_version"],
+                    "runtime_code_sha256": status["source_runtime_code_sha256"],
+                }}},
                 {"ok": True, "result": {"ok": True}},
                 {"ok": True, "result": 12},
             ]

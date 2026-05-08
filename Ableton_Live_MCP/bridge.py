@@ -46,6 +46,49 @@ LEGACY_NOTE_API_NAMES = (
 )
 
 
+def _runtime_code_fingerprint():
+    payload = {
+        "constants": _runtime_constant_signatures(),
+        "functions": _runtime_function_signatures(globals()),
+        "methods": _runtime_function_signatures(AbletonLiveMCP.__dict__),
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _runtime_constant_signatures():
+    items = []
+    for name, value in sorted(globals().items()):
+        if name.isupper() and isinstance(value, (str, int, float, bool, tuple, list)):
+            items.append((name, repr(value)))
+    return items
+
+
+def _runtime_function_signatures(namespace):
+    items = []
+    for name, value in sorted(namespace.items()):
+        code = getattr(value, "__code__", None)
+        if code is not None:
+            items.append((name, _code_signature(code)))
+    return items
+
+
+def _code_signature(code):
+    return {
+        "argcount": code.co_argcount,
+        "code": hashlib.sha256(code.co_code).hexdigest(),
+        "consts": [_constant_signature(value) for value in code.co_consts],
+        "flags": code.co_flags,
+        "names": list(code.co_names),
+        "varnames": list(code.co_varnames),
+    }
+
+
+def _constant_signature(value):
+    if hasattr(value, "co_code"):
+        return _code_signature(value)
+    return repr(value)
+
+
 class _EncodedResult(list):
     pass
 
@@ -342,6 +385,10 @@ class AbletonLiveMCP(ControlSurface):
     def _remote_script_info(self):
         path = globals().get("__file__", "")
         info = {"path": str(path), "runtime_version": REMOTE_SCRIPT_RUNTIME_VERSION}
+        try:
+            info["runtime_code_sha256"] = _runtime_code_fingerprint()
+        except Exception as exc:
+            info["runtime_code_error"] = str(exc)
         try:
             with open(path, "rb") as handle:
                 info["bridge_sha256"] = hashlib.sha256(handle.read()).hexdigest()

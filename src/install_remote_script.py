@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
+import json
 import re
 import shutil
 import sys
+import types
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +80,8 @@ def remote_script_status(name: str = DEFAULT_REMOTE_SCRIPT, target_dir: Path | N
         "target_bridge_sha256": target_hashes.get("bridge.py"),
         "source_runtime_version": _runtime_version(source / "bridge.py"),
         "target_runtime_version": _runtime_version(target / "bridge.py") if target.is_dir() else "",
+        "source_runtime_code_sha256": _runtime_code_fingerprint(source / "bridge.py"),
+        "target_runtime_code_sha256": _runtime_code_fingerprint(target / "bridge.py") if target.is_dir() else "",
         "missing": missing,
         "mismatched": mismatched,
     }
@@ -105,6 +110,85 @@ def _runtime_version(path: Path) -> str:
         return ""
     match = re.search(r"^REMOTE_SCRIPT_RUNTIME_VERSION\s*=\s*['\"]([^'\"]+)['\"]", source, re.M)
     return match.group(1) if match else ""
+
+
+def _runtime_code_fingerprint(path: Path) -> str:
+    try:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        compiled = compile(source, str(path), "exec", dont_inherit=True)
+    except Exception:
+        return ""
+    payload = {
+        "constants": _source_constant_signatures(tree),
+        "functions": _source_function_signatures(compiled, _top_level_function_names(tree)),
+        "methods": _source_method_signatures(compiled, tree, "AbletonLiveMCP"),
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _source_constant_signatures(tree: ast.Module) -> list[tuple[str, str]]:
+    items = []
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id.isupper():
+                try:
+                    value = ast.literal_eval(node.value)
+                except Exception:
+                    try:
+                        value = eval(compile(ast.Expression(node.value), "<runtime-constant>", "eval", dont_inherit=True), {"__builtins__": {}}, {})
+                    except Exception:
+                        continue
+                if isinstance(value, (str, int, float, bool, tuple, list)):
+                    items.append((target.id, repr(value)))
+    return sorted(items)
+
+
+def _top_level_function_names(tree: ast.Module) -> set[str]:
+    return {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
+
+
+def _source_function_signatures(code: types.CodeType, names: set[str]) -> list[tuple[str, dict]]:
+    items = []
+    for child in _child_code_objects(code):
+        if child.co_name in names:
+            items.append((child.co_name, _code_signature(child)))
+    return sorted(items)
+
+
+def _source_method_signatures(code: types.CodeType, tree: ast.Module, class_name: str) -> list[tuple[str, dict]]:
+    method_names = set()
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == class_name:
+            method_names = {item.name for item in node.body if isinstance(item, ast.FunctionDef)}
+            break
+    class_code = next((child for child in _child_code_objects(code) if child.co_name == class_name), None)
+    if class_code is None:
+        return []
+    return _source_function_signatures(class_code, method_names)
+
+
+def _child_code_objects(code: types.CodeType) -> list[types.CodeType]:
+    return [value for value in code.co_consts if isinstance(value, types.CodeType)]
+
+
+def _code_signature(code: types.CodeType) -> dict[str, Any]:
+    return {
+        "argcount": code.co_argcount,
+        "code": hashlib.sha256(code.co_code).hexdigest(),
+        "consts": [_constant_signature(value) for value in code.co_consts],
+        "flags": code.co_flags,
+        "names": list(code.co_names),
+        "varnames": list(code.co_varnames),
+    }
+
+
+def _constant_signature(value: Any) -> Any:
+    if isinstance(value, types.CodeType):
+        return _code_signature(value)
+    return repr(value)
 
 
 def main(argv: list[str] | None = None) -> int:

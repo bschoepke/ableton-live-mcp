@@ -1764,6 +1764,8 @@ def test_batch_and_id_resolution(monkeypatch):
 
 
 def test_ping_reports_running_remote_script_hash(monkeypatch):
+    from install_remote_script import remote_script_status
+
     bridge, _song, _app = make_bridge(monkeypatch)
 
     result = bridge._rpc_ping({})
@@ -1772,6 +1774,8 @@ def test_ping_reports_running_remote_script_hash(monkeypatch):
     assert result["remote_script"]["path"].endswith("bridge.py")
     assert len(result["remote_script"]["bridge_sha256"]) == 64
     assert result["remote_script"]["runtime_version"] == "transport-stop-settle-1"
+    assert len(result["remote_script"]["runtime_code_sha256"]) == 64
+    assert result["remote_script"]["runtime_code_sha256"] == remote_script_status()["source_runtime_code_sha256"]
 
 
 def test_batch_inherits_response_controls(monkeypatch):
