@@ -18,7 +18,7 @@ class AbletonBridgeError(RuntimeError):
 class BridgeConfig:
     host: str = "127.0.0.1"
     port: int = 8765
-    timeout: float = 10.0
+    timeout: float = 30.0
     idle_timeout: float = 8.0
     max_response_bytes: int = 8 * 1024 * 1024
 

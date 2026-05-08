@@ -95,6 +95,8 @@ For long generated-device soaks, track transport state separately from command/d
 
 In heavy generated sets, timeline seeks and repeated `transport play` with `time: 0` can be much slower than compact status/value commands. Prefer checking transport status, using continue/play without a seek, or relaunching only the target clip when possible; reserve timeline resets for tests that specifically need them and give those calls a realistic timeout.
 
+Bridge calls in heavily stressed Live sets can take tens of seconds even when Live eventually responds. Treat short socket timeouts as inconclusive under load; retry with a longer timeout and record bridge latency separately from generated-device failures.
+
 For parameterized MSP patches, do not rely on sending agent values directly into signal-processing objects like `*~`, filters, or `plugout~`. Create explicit message-rate controls such as `flonum`, `live.dial`, or other UI/message objects, bind agent/web/native controls to those IDs, and patch their outlets to the intended MSP control inlets. Avoid generated IDs that can collide with role I/O names or host/static Max objects, such as `plugin`, `plugout`, `midiin`, `midiout`, `js`, `script`, `status`, or generic `out`.
 
 Use `jbrowser~`/`jbrowser` as compatibility aliases for control-panel web UI. If a generated device explicitly needs web-audio signal outlets, request `jweb~` deliberately and wire signal/message outlets in the generated patch instead of assuming the control-panel default.
