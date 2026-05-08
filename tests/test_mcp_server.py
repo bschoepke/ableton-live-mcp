@@ -2809,6 +2809,24 @@ def test_validate_classifies_live_main_thread_hung_when_socket_thread_responds(t
     assert "restart Ableton Live" in output.out
 
 
+def test_validate_classifies_client_stall_cooldown_as_live_hung_when_status_responds(tmp_path, monkeypatch, capsys):
+    install_remote_script("Ableton_Live_MCP", tmp_path)
+
+    class FakeClient:
+        def request(self, method, _params):
+            if method == "bridge_status":
+                return {"ok": True, "server_thread_responsive": True, "main_thread": {"timeouts": 1}}
+            raise AbletonBridgeError("Ableton bridge client is in stall cooldown after 'batch' timed out; refusing to send 'ping' for 9.8s")
+
+    monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
+
+    assert validate_main(["--target-dir", str(tmp_path), "--timeout", "3", "--strict-timeout"]) == 1
+    output = capsys.readouterr()
+    assert '"live_failure_type": "live_main_thread_hung"' in output.out
+    assert "protective stall cooldown" in output.out
+    assert "Stop sending Live API mutations" in output.out
+
+
 def test_validate_classifies_bridge_not_listening(tmp_path, monkeypatch, capsys):
     install_remote_script("Ableton_Live_MCP", tmp_path)
 

@@ -174,15 +174,15 @@ def _live_failure_diagnostics(exc: Exception, bridge_status: dict | None = None)
             "bridge_connect_timeout",
             "Confirm Ableton Live is running and the Ableton_Live_MCP Control Surface is selected; reload the Control Surface if the bridge never starts listening.",
         )
-    if "timed out waiting for live main thread" in lower:
+    if "timed out waiting for live main thread" in lower or "stall cooldown" in lower:
         if bridge_status and bridge_status.get("server_thread_responsive"):
             return (
                 "live_main_thread_hung",
-                "The Remote Script socket thread is responsive, but Live's main thread did not execute scheduled work. Stop sending Live API mutations; save/recover the set if possible, then restart Ableton Live or reload the Control Surface with user authorization and rerun validation.",
+                "The bridge socket thread is responsive, but Live's main thread did not execute scheduled work or is in a protective stall cooldown. Stop sending Live API mutations; save/recover the set if possible, then restart Ableton Live or reload the Control Surface with user authorization and rerun validation.",
             )
         return (
             "live_main_thread_timeout",
-            "Check Ableton Live for modal dialogs, permission prompts, browser/indexing stalls, or heavy UI work; resolve the blocker, then rerun validation before sending more mutations.",
+            "Check Ableton Live for modal dialogs, permission prompts, browser/indexing stalls, heavy UI work, or a client-side stall cooldown after a sent timeout; resolve the blocker, then rerun validation before sending more mutations.",
         )
     if "timed out" in lower:
         return (
