@@ -21,6 +21,7 @@ ABLETON_AGENT_GUIDE = "General Live object-model bridge; examples are heuristics
 AGENT_M4L_MAX_UDP_BYTES = 8192
 AGENT_M4L_DEFAULT_STATUS_TIMEOUT = 2.0
 AGENT_M4L_WEB_STATUS_TIMEOUT = 9.0
+AGENT_M4L_LIVE_DEVICE_WIDTH_ADVISORY = 960
 AGENT_M4L_LIVE_DEVICE_HEIGHT_ADVISORY = 240
 AGENT_M4L_RECOVERY_PATCH_KEYS = (
     "objects", "connections", "ui_bindings", "bindings", "webui", "webuis",
@@ -33,26 +34,25 @@ AGENT_M4L_STATIC_OBJECTS_BY_ROLE = {
 }
 AGENT_M4L_RESERVED_IDS = {"js", "script", "status", "udp", "out", "poll-metro", "command-trigger"}
 ABLETON_MCP_INSTRUCTIONS = (
-    "General Live bridge; not a recipe API. "
-    "Prefer installed Packs/user assets/samples/presets/devices/plugins unless asked. "
-    "Discover via browser tools roots:['plugins']; SKU/indexing vary. "
+    "General Live bridge; no fixed recipes. "
+    "Prefer installed Packs/user assets/samples/presets/devices/plugins unless asked; discover roots:['plugins']; SKU varies. "
     "Existing sets: live_set_summary first; expected_set_signature for destructive edits. "
-    "Prefer compact live_exec/live_batch, property lists, child limits, JSON-safe clip helpers. "
+    "Use compact live_exec/live_batch, property lists, child limits, JSON-safe clip helpers. "
     "find_similar_sounds requires Live 12+ analysis data. "
     "AgentAudioTap: master tap + solo target; start with path. "
-    "Idle sockets auto-retry; sent-call timeouts fail closed; live_bridge_status diagnoses hangs; check status before retry; AMXD loads retry. "
-    "Agent must visually verify M4L device UI with live_visual_capture after UI changes; Ableton-window-only, never capture arbitrary apps/windows. "
-    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status/compact_result and require matching command_id. Supports preflight files, UDP hints, set/status skip build, midiin+midiparse, origin-aligned rect/openrect sizing, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batches/list values, audio buses, jweb/jbrowser aliases. In stressed sets, no web ack means reload/simplify or validate fresh host. "
+    "Idle sockets auto-retry; sent-call timeouts fail closed; live_bridge_status diagnoses hangs; check before retry; AMXD loads retry. "
+    "Agent must visually verify M4L device UI with live_visual_capture after UI changes; Ableton-window-only, never capture arbitrary apps/windows; use device-detail crop/max. "
+    "M4L: live_agent_m4l_device hot-reloads arbitrary native/web/mixed UI; use wait_status/compact_result and require matching command_id. Supports preflight files, UDP hints, set/status skip build, midiin+midiparse, origin-aligned rect/openrect sizing, advisory bounds, ui_bindings, agent-settable UI, web assets/source_path, webui_read diagnostics, set_silent/batches/list vals, audio buses, jweb/jbrowser aliases. In stressed sets, no web ack means reload/simplify or validate fresh host. "
     "Avoid broad browser/device dumps. Gotchas: live_eval is expression-only; use live_exec for statements; Live numeric args are JSON numbers; Simpler.sample is not generally settable; use ids from summaries, not raw _live_ptr values. "
     "Hints only; the full Live object model remains available through paths, ids, calls, properties, children, listeners, and eval."
 )
 AGENT_M4L_TOOL_DESCRIPTION = (
-    "Custom M4L: arbitrary native UI, jweb/jbrowser web UI/mixed; "
+    "arbitrary native UI, jweb/jbrowser web UI/mixed; "
     "wait_status/compact_status/compact_result, files, bounds, ui_bindings, web diag, fast paths."
 )
 AGENT_AUDIO_TAP_DESCRIPTION = "Command AgentAudioTap capture: use start with path, then stop/status; file command reliable, UDP optional."
 AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap on master or target; optionally solo target track and reset transport."
-VISUAL_CAPTURE_DESCRIPTION = "Ableton Live window-only PNG capture; refuses arbitrary apps/windows."
+VISUAL_CAPTURE_DESCRIPTION = "Ableton Live window-only PNG; device-detail crop/downscale; refuses arbitrary apps/windows."
 
 
 def schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -267,6 +267,11 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         title_contains=args.get("title_contains"),
         list_only=bool(args.get("list_only", False)),
         backend=str(args.get("backend") or "auto"),
+        region=args.get("region"),
+        crop=args.get("crop"),
+        bottom_fraction=args.get("bottom_fraction"),
+        max_width=args.get("max_width"),
+        max_height=args.get("max_height"),
     )))
     def agent_m4l_device(args):
         built = None
@@ -651,6 +656,12 @@ def preflight_agent_m4l(params: dict[str, Any]) -> dict[str, Any]:
             "code": "tall_device_height_visual_capture_required",
             "device_height": device_height,
             "advisory_height": AGENT_M4L_LIVE_DEVICE_HEIGHT_ADVISORY,
+        })
+    if device_width > AGENT_M4L_LIVE_DEVICE_WIDTH_ADVISORY:
+        warnings.append({
+            "code": "wide_device_width_visual_capture_required",
+            "device_width": device_width,
+            "advisory_width": AGENT_M4L_LIVE_DEVICE_WIDTH_ADVISORY,
         })
     command_bytes = len(json.dumps(params, separators=(",", ":"), default=str).encode("utf-8"))
     if command_bytes > AGENT_M4L_MAX_UDP_BYTES:

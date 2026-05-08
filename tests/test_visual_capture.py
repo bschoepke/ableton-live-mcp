@@ -109,6 +109,35 @@ def test_list_only_returns_ableton_windows(monkeypatch):
     assert result["windows"][0]["id"] == 100
 
 
+def test_device_detail_region_crops_bottom_of_ableton_window():
+    assert visual_capture.capture_region_box((1000, 900), "device-detail") == (0, 594, 1000, 900)
+    assert visual_capture.capture_region_box((1000, 900), "detail", bottom_fraction=0.25) == (0, 675, 1000, 900)
+
+
+def test_explicit_crop_clamps_to_ableton_window_bounds():
+    assert visual_capture.capture_region_box((1000, 900), crop=[-10, 50, 120, 60]) == (0, 50, 110, 110)
+    with pytest.raises(RuntimeError, match="outside"):
+        visual_capture.capture_region_box((1000, 900), crop=[1200, 50, 100, 60])
+
+
+def test_unknown_capture_region_is_rejected():
+    with pytest.raises(RuntimeError, match="Unknown Ableton visual capture region"):
+        visual_capture.capture_region_box((1000, 900), "browser")
+
+
+def test_postprocess_capture_crops_and_downscales(tmp_path):
+    Image = pytest.importorskip("PIL.Image")
+    output = tmp_path / "live.png"
+    Image.new("RGB", (200, 100), "black").save(output)
+
+    result = visual_capture.postprocess_capture(output, region="device-detail", bottom_fraction=0.5, max_width=50)
+
+    assert result["source_size"] == [200, 100]
+    assert result["crop_box"] == [0, 50, 200, 100]
+    assert result["size"][0] <= 50
+    assert output.stat().st_size > 0
+
+
 def test_default_selection_prefers_largest_verified_ableton_window(monkeypatch):
     monkeypatch.setattr(visual_capture, "list_platform_windows", lambda: [
         WindowInfo(

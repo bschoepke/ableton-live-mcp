@@ -89,6 +89,7 @@ def test_initialize_includes_general_model_instructions():
     assert "Agent must visually verify M4L device UI" in instructions
     assert "Ableton-window-only" in instructions
     assert "never capture arbitrary apps/windows" in instructions
+    assert "device-detail crop" in instructions
     assert "full Live object model remains available" in instructions
     assert len(instructions) < 1600
 
@@ -657,6 +658,29 @@ def test_agent_m4l_preflight_warns_on_tall_device_height(tmp_path):
     preflight = response["result"]["structuredContent"]["preflight"]
     assert preflight["ok"] is True
     assert {"code": "tall_device_height_visual_capture_required", "device_height": 320, "advisory_height": 240} in preflight["warnings"]
+
+
+def test_agent_m4l_preflight_warns_on_wide_device_width(tmp_path):
+    server = make_server(FakeBridge())
+
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 809,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "name": "Wide Freeform UI",
+            "preflight_only": True,
+            "patch": {
+                "device_width": 1120,
+                "objects": [{"id": "scene", "text": "panel", "presentation_rect": [0, 0, 1100, 150]}],
+            },
+        }},
+    })
+
+    preflight = response["result"]["structuredContent"]["preflight"]
+    assert preflight["ok"] is True
+    assert {"code": "wide_device_width_visual_capture_required", "device_width": 1120, "advisory_width": 960} in preflight["warnings"]
 
 
 def test_agent_m4l_preflight_warns_on_direct_live_api_observers(tmp_path):
@@ -1804,7 +1828,47 @@ def test_tool_list_stays_compact():
     assert "solo target track" in tap_setup["description"]
     visual = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_visual_capture")
     assert "Ableton Live window-only" in visual["description"]
+    assert "device-detail crop/downscale" in visual["description"]
     assert "arbitrary apps/windows" in visual["description"]
+
+
+def test_live_visual_capture_forwards_region_crop_and_size_args(monkeypatch):
+    captured = {}
+
+    def fake_capture(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True, "path": "/tmp/live.png"}
+
+    monkeypatch.setattr(server_module, "capture_ableton_window", fake_capture)
+    server = make_server(FakeBridge())
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 806,
+        "method": "tools/call",
+        "params": {"name": "live_visual_capture", "arguments": {
+            "output_path": "/tmp/live.png",
+            "title_contains": "vibe",
+            "backend": "auto",
+            "region": "device-detail",
+            "crop": [0, 500, 1200, 300],
+            "bottom_fraction": 0.3,
+            "max_width": 900,
+            "max_height": 260,
+        }},
+    })
+
+    assert response["result"]["structuredContent"]["ok"] is True
+    assert captured == {
+        "output_path": "/tmp/live.png",
+        "title_contains": "vibe",
+        "list_only": False,
+        "backend": "auto",
+        "region": "device-detail",
+        "crop": [0, 500, 1200, 300],
+        "bottom_fraction": 0.3,
+        "max_width": 900,
+        "max_height": 260,
+    }
 
 
 def test_bridge_error_omits_traceback_by_default(monkeypatch):

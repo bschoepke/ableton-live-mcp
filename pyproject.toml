@@ -16,6 +16,7 @@ dependencies = []
 dev = ["pytest>=8.0"]
 debug = ["pytest>=8.0"]
 visual = [
+    "Pillow>=10",
     "pyobjc-framework-Quartz; platform_system == 'Darwin'",
     "windows-capture; platform_system == 'Windows'",
 ]

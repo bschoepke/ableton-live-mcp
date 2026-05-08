@@ -83,6 +83,11 @@ def capture_ableton_window(
     title_contains: str | None = None,
     list_only: bool = False,
     backend: str = "auto",
+    region: str | None = None,
+    crop: Any = None,
+    bottom_fraction: float | None = None,
+    max_width: int | None = None,
+    max_height: int | None = None,
 ) -> dict[str, Any]:
     windows = list_ableton_windows()
     if list_only:
@@ -91,11 +96,13 @@ def capture_ableton_window(
     output = Path(output_path) if output_path else default_capture_path()
     output.parent.mkdir(parents=True, exist_ok=True)
     backend_used = capture_window(window, output, backend)
+    postprocess = postprocess_capture(output, region, crop, bottom_fraction, max_width, max_height)
     return {
         "ok": True,
         "path": str(output),
         "backend": backend_used,
         "window": window_result(window),
+        "postprocess": postprocess,
     }
 
 
@@ -372,6 +379,112 @@ def normalize_bounds(bounds: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def postprocess_capture(
+    output: Path,
+    region: str | None = None,
+    crop: Any = None,
+    bottom_fraction: float | None = None,
+    max_width: int | None = None,
+    max_height: int | None = None,
+) -> dict[str, Any]:
+    needs_image = bool(region or crop or max_width or max_height)
+    if not needs_image:
+        return {}
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise RuntimeError("Ableton visual capture crop/downscale requires the Pillow package") from exc
+    with Image.open(output) as image:
+        source_size = [int(image.width), int(image.height)]
+        box = capture_region_box((image.width, image.height), region, crop, bottom_fraction)
+        if box is not None:
+            image = image.crop(box)
+        max_size = normalized_max_size(max_width, max_height)
+        if max_size is not None:
+            resampling = getattr(Image, "Resampling", Image).LANCZOS
+            image.thumbnail(max_size, resampling)
+        if image.mode not in ("RGB", "RGBA"):
+            image = image.convert("RGBA")
+        image.save(output, format="PNG")
+        return {
+            "source_size": source_size,
+            "size": [int(image.width), int(image.height)],
+            "crop_box": list(box) if box is not None else None,
+            "region": normalize_region_name(region) if region else None,
+            "max_size": list(max_size) if max_size is not None else None,
+        }
+
+
+def capture_region_box(
+    image_size: tuple[int, int],
+    region: str | None = None,
+    crop: Any = None,
+    bottom_fraction: float | None = None,
+) -> tuple[int, int, int, int] | None:
+    width, height = int(image_size[0]), int(image_size[1])
+    if width <= 0 or height <= 0:
+        raise RuntimeError("Cannot crop an empty capture")
+    if crop is not None:
+        x, y, crop_width, crop_height = parse_crop(crop)
+        if crop_width <= 0 or crop_height <= 0:
+            raise RuntimeError("Crop width and height must be positive")
+        left = clamp_int(x, 0, width)
+        top = clamp_int(y, 0, height)
+        right = clamp_int(x + crop_width, 0, width)
+        bottom = clamp_int(y + crop_height, 0, height)
+        if right <= left or bottom <= top:
+            raise RuntimeError("Crop falls outside the captured Ableton Live window")
+        return (left, top, right, bottom)
+    normalized = normalize_region_name(region)
+    if normalized is None:
+        return None
+    if normalized == "device_detail":
+        fraction = float(bottom_fraction) if bottom_fraction is not None else 0.34
+        if fraction <= 0 or fraction > 1:
+            raise RuntimeError("bottom_fraction must be greater than 0 and no more than 1")
+        top = max(0, min(height - 1, int(round(height * (1 - fraction)))))
+        return (0, top, width, height)
+    raise RuntimeError("Unknown Ableton visual capture region: %s" % region)
+
+
+def parse_crop(crop: Any) -> tuple[int, int, int, int]:
+    if isinstance(crop, str):
+        parts = [part.strip() for part in crop.split(",")]
+    elif isinstance(crop, (list, tuple)):
+        parts = list(crop)
+    else:
+        raise RuntimeError("Crop must be a comma-separated string or [x, y, width, height]")
+    if len(parts) != 4:
+        raise RuntimeError("Crop must contain x, y, width, height")
+    try:
+        return tuple(int(round(float(part))) for part in parts)  # type: ignore[return-value]
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Crop values must be numeric") from exc
+
+
+def normalize_region_name(region: str | None) -> str | None:
+    if region is None or str(region).strip() == "":
+        return None
+    normalized = re.sub(r"[-\s]+", "_", str(region).strip().lower())
+    if normalized in ("bottom", "detail", "device_detail", "device_view", "device_chain"):
+        return "device_detail"
+    return normalized
+
+
+def normalized_max_size(max_width: int | None, max_height: int | None) -> tuple[int, int] | None:
+    width = int(max_width or 0)
+    height = int(max_height or 0)
+    if width < 0 or height < 0:
+        raise RuntimeError("max_width and max_height must be non-negative")
+    if width == 0 and height == 0:
+        return None
+    return (width or 1000000, height or 1000000)
+
+
+def clamp_int(value: int, lower: int, upper: int) -> int:
+    return max(lower, min(upper, int(value)))
+
+
 def default_capture_path() -> Path:
     return state_dir() / ("ableton_window_%d.png" % int(time.time() * 1000))
 
@@ -388,10 +501,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", help="PNG output path. Defaults to the Ableton MCP state directory.")
     parser.add_argument("--title-contains", help="Optional substring filter applied only after Ableton Live windows are found.")
     parser.add_argument("--backend", default="auto", choices=("auto", "screencapture", "quartz", "windows-capture"))
+    parser.add_argument("--region", help="Optional post-capture region. Use 'device-detail' for Live's bottom device view.")
+    parser.add_argument("--crop", help="Optional post-capture crop as x,y,width,height inside the Ableton Live window.")
+    parser.add_argument("--bottom-fraction", type=float, help="Bottom fraction used by --region device-detail. Defaults to 0.34.")
+    parser.add_argument("--max-width", type=int, help="Downscale output to this maximum width.")
+    parser.add_argument("--max-height", type=int, help="Downscale output to this maximum height.")
     parser.add_argument("--list", action="store_true", help="List capturable Ableton Live windows without capturing.")
     args = parser.parse_args(argv)
     try:
-        result = capture_ableton_window(args.output, args.title_contains, args.list, args.backend)
+        result = capture_ableton_window(
+            args.output,
+            args.title_contains,
+            args.list,
+            args.backend,
+            args.region,
+            args.crop,
+            args.bottom_fraction,
+            args.max_width,
+            args.max_height,
+        )
     except Exception as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2, sort_keys=True))
         return 1
