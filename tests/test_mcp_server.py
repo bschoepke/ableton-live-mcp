@@ -1503,6 +1503,45 @@ def test_wait_agent_m4l_status_does_not_accept_pending_web_read_as_reload(tmp_pa
     assert result["last_status"]["state"]["web_read_pending"] == 1
 
 
+def test_wait_agent_m4l_status_does_not_accept_binding_set_while_web_pending(tmp_path):
+    status_file = tmp_path / "status.json"
+    before = 1.0
+    status_file.write_text(json.dumps({
+        "event": "set",
+        "command_id": "reload1",
+        "last_reload_command_id": "reload1",
+        "source": "macro",
+        "target": "amount",
+        "webuis": 1,
+        "state": {"web_read_pending": 2, "web_panel_read_attempts": 2},
+    }), encoding="utf-8")
+
+    result = wait_agent_m4l_status(str(status_file), before, "reload1", 0.01, 0.01, "reload")
+
+    assert result["timed_out"] is True
+    assert result["mismatch"] == "webui_read_pending"
+    assert result["last_status"]["event"] == "set"
+    assert result["last_status"]["source"] == "macro"
+
+
+def test_wait_agent_m4l_status_does_not_accept_unloaded_webui_after_reload(tmp_path):
+    status_file = tmp_path / "status.json"
+    before = 1.0
+    status_file.write_text(json.dumps({
+        "event": "reload",
+        "command_id": "reload1",
+        "last_reload_command_id": "reload1",
+        "webuis": 1,
+        "state": {"web_read_pending": 0, "web_panel_read_attempts": 6},
+    }), encoding="utf-8")
+
+    result = wait_agent_m4l_status(str(status_file), before, "reload1", 0.01, 0.01, "reload")
+
+    assert result["timed_out"] is True
+    assert result["mismatch"] == "webui_not_loaded"
+    assert result["last_status"]["event"] == "reload"
+
+
 def test_wait_agent_m4l_status_timeout_includes_compact_last_status(tmp_path):
     status_file = tmp_path / "status.json"
     status_file.write_text(json.dumps({

@@ -1352,15 +1352,22 @@ def _agent_m4l_status_matches(status: dict[str, Any], command_id: str, expected_
 def agent_m4l_transient_status_reason(status: dict[str, Any], command_id: str, expected_event: str | None) -> str:
     if expected_event != "reload" or not command_id:
         return ""
-    if str(status.get("event") or "") != "webui_read":
-        return ""
     if str(status.get("last_reload_command_id") or "") != command_id:
+        return ""
+    if str(status.get("event") or "") == "error" and str(status.get("reason") or "") == "webui_read_exhausted":
         return ""
     state = status.get("state")
     if isinstance(state, dict):
         try:
             if int(float(state.get("web_read_pending") or 0)) > 0:
                 return "webui_read_pending"
+        except (TypeError, ValueError):
+            pass
+        try:
+            webuis = int(float(status.get("webuis") or 0))
+            loaded = int(float(state.get("web_loaded") or 0))
+            if webuis > 0 and loaded <= 0:
+                return "webui_not_loaded"
         except (TypeError, ValueError):
             return ""
     return ""
