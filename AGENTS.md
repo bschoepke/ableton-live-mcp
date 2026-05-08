@@ -32,6 +32,12 @@
    ableton-live-mcp-validate
    ```
 
+   For a deliberate quick health probe against a stressed or possibly wedged set, use a bounded strict check such as:
+
+   ```sh
+   ableton-live-mcp-validate --timeout 3 --strict-timeout --allow-stale-remote-script
+   ```
+
 The Remote Script binds only to `127.0.0.1`. If Ableton was already open when the script was installed, restart Ableton or reload the Control Surface.
 
 After changing files under `Ableton_Live_MCP/`, reinstall the Remote Script and reload the Control Surface before treating Live validation as current. The running Control Surface does not pick up repository edits automatically; stale installed scripts can make bridge behavior, timeout handling, or generated-device triggers look broken after the source has been fixed. `ableton-live-mcp-validate` checks both the installed Remote Script files and the running `live_ping` script hash; do not ignore a stale/missing hash unless deliberately validating old code.

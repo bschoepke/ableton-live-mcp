@@ -14,6 +14,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target-dir", type=Path, default=None, help="Ableton Remote Scripts directory to check.")
     parser.add_argument("--skip-live", action="store_true", help="Only validate local Remote Script freshness.")
     parser.add_argument("--allow-stale-remote-script", action="store_true", help="Do not fail when the installed or running Remote Script differs from this checkout.")
+    parser.add_argument("--timeout", type=float, default=45.0, help="Seconds to wait for Live checks.")
+    parser.add_argument("--strict-timeout", action="store_true", help="Do not clamp short Live check timeouts to the default main-thread wait.")
     args = parser.parse_args(argv)
 
     results = {"remote_script": remote_script_status(target_dir=args.target_dir)}
@@ -27,16 +29,23 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     client = AbletonBridgeClient()
+    live_timeout = float(args.timeout)
+    live_controls = {"timeout": live_timeout}
+    if args.strict_timeout:
+        live_controls["strict_timeout"] = True
     checks = [
-        ("ping", "ping", {}),
-        ("song", "get", {"ref": {"path": "live_set"}, "properties": ["tempo", "signature_numerator", "signature_denominator"], "timeout": 45}),
-        ("application", "eval", {"expr": "app.get_major_version() if hasattr(app, 'get_major_version') else app.get_version_string().split('.')[0]", "timeout": 45}),
+        ("ping", "ping", dict(live_controls)),
+        ("song", "get", {"ref": {"path": "live_set"}, "properties": ["tempo", "signature_numerator", "signature_denominator"], **live_controls}),
+        ("application", "eval", {"expr": "app.get_major_version() if hasattr(app, 'get_major_version') else app.get_version_string().split('.')[0]", **live_controls}),
     ]
+    batch_params = {
+        "operations": [{"method": method, "params": params} for _name, method, params in checks],
+        "timeout": live_timeout,
+    }
+    if args.strict_timeout:
+        batch_params["strict_timeout"] = True
     try:
-        batch = client.request("batch", {
-            "operations": [{"method": method, "params": params} for _name, method, params in checks],
-            "timeout": 45,
-        })
+        batch = client.request("batch", batch_params)
         for (name, method, _params), item in zip(checks, batch):
             if not item.get("ok"):
                 raise AbletonBridgeError("%s validation failed: %s" % (method, item.get("error", "unknown error")))

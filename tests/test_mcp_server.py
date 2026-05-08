@@ -1748,16 +1748,41 @@ def test_validate_live_checks_are_compact_and_timed(tmp_path, monkeypatch, capsy
     capsys.readouterr()
     assert len(calls) == 1
     assert calls[0][0] == "batch"
-    assert calls[0][1]["timeout"] == 45
+    assert calls[0][1]["timeout"] == 45.0
     operations = calls[0][1]["operations"]
-    assert operations[0] == {"method": "ping", "params": {}}
+    assert operations[0] == {"method": "ping", "params": {"timeout": 45.0}}
     assert operations[1] == {"method": "get", "params": {
         "ref": {"path": "live_set"},
         "properties": ["tempo", "signature_numerator", "signature_denominator"],
-        "timeout": 45,
+        "timeout": 45.0,
     }}
     assert operations[2]["method"] == "eval"
-    assert operations[2]["params"]["timeout"] == 45
+    assert operations[2]["params"]["timeout"] == 45.0
+
+
+def test_validate_live_checks_can_use_strict_short_timeout(tmp_path, monkeypatch, capsys):
+    install_remote_script("Ableton_Live_MCP", tmp_path)
+    status = remote_script_status(target_dir=tmp_path)
+    calls = []
+
+    class FakeClient:
+        def request(self, method, params):
+            calls.append((method, params))
+            return [
+                {"ok": True, "result": {"ok": True, "remote_script": {"bridge_sha256": status["source_bridge_sha256"]}}},
+                {"ok": True, "result": {"ok": True}},
+                {"ok": True, "result": 12},
+            ]
+
+    monkeypatch.setattr(validate, "AbletonBridgeClient", FakeClient)
+
+    assert validate_main(["--target-dir", str(tmp_path), "--timeout", "3", "--strict-timeout"]) == 0
+    capsys.readouterr()
+    assert calls[0][1]["timeout"] == 3.0
+    assert calls[0][1]["strict_timeout"] is True
+    for operation in calls[0][1]["operations"]:
+        assert operation["params"]["timeout"] == 3.0
+        assert operation["params"]["strict_timeout"] is True
 
 
 def test_remote_script_resources_available_from_source_checkout():
