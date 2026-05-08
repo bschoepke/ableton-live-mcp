@@ -1097,6 +1097,31 @@ def test_compact_agent_m4l_status_preserves_timeout_diagnostics():
     assert status["last_status"]["state"]["web_read_pending"] == 5
 
 
+def test_compact_agent_m4l_status_recursively_compacts_raw_last_status():
+    status = summarize_agent_m4l_status({
+        "timed_out": True,
+        "expected_command_id": "new",
+        "last_status": {
+            "event": "set",
+            "command_id": "old",
+            "dynamic_objects": 76,
+            "state": {
+                "web_history": list(range(20)),
+                "web_payload": {("k%02d" % index): index for index in range(14)},
+                "level_value": 0.5,
+            },
+        },
+    })
+
+    last_status = status["last_status"]
+    assert last_status["command_id"] == "old"
+    assert last_status["dynamic_objects"] == 76
+    assert last_status["state_keys"] == ["level_value", "web_history", "web_payload"]
+    assert last_status["state"]["web_history"]["items"] == 20
+    assert last_status["state"]["web_payload"]["key_count"] == 14
+    assert "level_value" not in last_status.get("state", {})
+
+
 def test_agent_m4l_expected_status_event_tracks_command_intent():
     assert expected_agent_m4l_status_event("update") == "reload"
     assert expected_agent_m4l_status_event("set") == "set"
