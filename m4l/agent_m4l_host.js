@@ -57,7 +57,9 @@ function anything() {
             applyUiBinding(messagename, atoms);
         }
     } else if (messagename === "set" || messagename === "param") {
-        applyValues([{ id: String(atoms[0]), value: atoms[1] }]);
+        applyValues([{ id: String(atoms[0]), value: atoms[1] }], true);
+    } else if (messagename === "set_silent" || messagename === "param_silent") {
+        applyValues([{ id: String(atoms[0]), value: atoms[1] }], false);
     } else {
         applyRaw([messagename].concat(atoms).join(" "));
     }
@@ -108,7 +110,7 @@ function applyRaw(raw) {
         clearDynamic();
         report("clear", {});
     } else if (command.command === "set") {
-        applyValues(command.values || command.parameters || []);
+        applyValues(command.values || command.parameters || [], true);
     } else if (command.command === "status") {
         report("status", { objects: dynamicObjects.length, device_width: currentDeviceWidth });
     } else {
@@ -829,7 +831,10 @@ function setStateValue(id, value, skipSource, command) {
     return true;
 }
 
-function applyValues(values) {
+function applyValues(values, shouldReport) {
+    if (shouldReport === undefined) {
+        shouldReport = true;
+    }
     var changed = 0;
     for (var i = 0; i < values.length; i++) {
         var item = values[i];
@@ -842,7 +847,9 @@ function applyValues(values) {
             report("error", { reason: "set_failed", id: id, detail: String(err) });
         }
     }
-    report("set", { changed: changed });
+    if (shouldReport) {
+        report("set", { changed: changed });
+    }
     pushWebState();
 }
 
