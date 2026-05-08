@@ -213,6 +213,8 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "due_time: dueTime" in source
     assert "scheduleNextPendingWebRead" in source
     assert "webReadTaskDueTime" in source
+    assert "armWebReadTask(dueTime - baseTime)" in source
+    assert "function armWebReadTask(delay)" in source
     assert "webReadTask = new Task(readPendingWebUis, this)" in source
     assert "web_read_pending" in source
     assert '"webui_read"' in source

@@ -834,6 +834,9 @@ function scheduleWebUiReadSeries(obj, path, id, readMessage, fallbackPath) {
             dueTime += webUiReadDelay(attempt);
         }
         pendingWebUiReads.push({ obj: obj, path: String(path), id: String(id), attempt: attempt, read_message: String(readMessage || "read"), fallback_path: String(fallbackPath || ""), due_time: dueTime });
+        if (attempt > 0) {
+            armWebReadTask(dueTime - baseTime);
+        }
     }
     state.web_read_scheduled = (state.web_read_scheduled || 0) + WEBUI_READ_DELAYS.length;
     state.web_read_pending = pendingWebUiReads.length;
@@ -847,6 +850,10 @@ function scheduleWebReadTask(delay) {
         return;
     }
     webReadTaskDueTime = dueTime;
+    armWebReadTask(delay);
+}
+
+function armWebReadTask(delay) {
     webReadTask = new Task(readPendingWebUis, this);
     webReadTask.schedule(Math.max(1, Number(delay || 1)));
 }
