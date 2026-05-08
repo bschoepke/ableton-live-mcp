@@ -1001,6 +1001,8 @@ def test_agent_m4l_device_tool_handles_web_reload_directly(tmp_path):
     assert bridge.calls == []
     assert payload["command"] == "web_reload"
     assert payload["webuis"] == [{"id": "panel", "html_path": "/tmp/panel/index.html"}]
+    assert "patch" not in payload
+    assert not server_module.agent_m4l_sidecar_recovery_path(str(command_file)).exists()
     assert result["direct"] is True
     assert result["loaded"] is False
 

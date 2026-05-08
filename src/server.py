@@ -1023,8 +1023,9 @@ def handle_agent_m4l_direct(params: dict[str, Any]) -> dict[str, Any]:
     command_path = str(params.get("command_file") or agent_m4l_command_file(instance_id))
     status_path = str(params.get("status_file") or agent_m4l_status_file(instance_id))
     command = agent_m4l_command(params)
+    web_reload = command in ("web_reload", "reload_webui")
     patch = params.get("patch") or params.get("spec")
-    if patch is None and (params.get("webui") or params.get("webuis")):
+    if patch is None and not web_reload and (params.get("webui") or params.get("webuis")):
         patch = {}
     if patch is not None and params.get("webui"):
         patch = dict(patch)
@@ -1069,7 +1070,8 @@ def handle_agent_m4l_direct(params: dict[str, Any]) -> dict[str, Any]:
         write_command_file = True
     if write_command_file:
         Path(command_path).parent.mkdir(parents=True, exist_ok=True)
-        write_agent_m4l_recovery_patch(command_path, patch)
+        if should_write_agent_m4l_recovery_patch(command, patch):
+            write_agent_m4l_recovery_patch(command_path, patch)
         Path(command_path).write_text(json.dumps(agent_m4l_command_file_payload(payload), separators=(",", ":")), encoding="utf-8")
     port = int(params.get("port") or agent_m4l_udp_port(instance_id))
     sent = False
@@ -1089,6 +1091,16 @@ def handle_agent_m4l_direct(params: dict[str, Any]) -> dict[str, Any]:
         "loaded": False,
         "direct": True,
     }
+
+
+def should_write_agent_m4l_recovery_patch(command: str, patch: Any) -> bool:
+    if patch is None:
+        return False
+    if str(command or "") not in ("web_reload", "reload_webui"):
+        return True
+    if not isinstance(patch, dict):
+        return False
+    return any(key in patch for key in ("objects", "connections", "ui_bindings", "bindings"))
 
 
 def agent_m4l_command(params: dict[str, Any]) -> str:
