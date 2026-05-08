@@ -246,12 +246,18 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
         _box("poll-loadbang", "newobj", "loadbang", 220.0, 58.0),
         _box("poll-start", "message", "1", 220.0, 96.0),
         _box("poll-metro", "newobj", "qmetro 20", 220.0, 134.0),
+        _box("poll-defer", "newobj", "deferlow", 340.0, 96.0),
+        _box("poll-delay", "newobj", "delay 100", 340.0, 134.0),
         _box("script", "newobj", "thispatcher", 420.0, 20.0),
     ]
     lines = [
         _line("js", 2, "status", 0),
         _line("udp", 0, "js", 0),
         _line("poll-loadbang", 0, "poll-start", 0),
+        _line("poll-loadbang", 0, "poll-defer", 0),
+        _line("poll-defer", 0, "poll-start", 0),
+        _line("poll-loadbang", 0, "poll-delay", 0),
+        _line("poll-delay", 0, "js", 0),
         _line("poll-start", 0, "poll-metro", 0),
         _line("poll-metro", 0, "js", 0),
     ]
