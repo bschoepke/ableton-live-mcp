@@ -79,7 +79,7 @@ For high-rate web UI gestures, animation clocks, piano rolls, sequencers, and me
 
 For long generated-device soaks, track transport state separately from command/device failures. If Live transport stops, relaunch the target clip and count that as a transport event; do not let every later silent meter sample inflate the device failure count. Keep command acknowledgements, connection errors, transport stops, restarts, and meter readings as separate counters.
 
-For parameterized MSP patches, do not rely on sending agent values directly into signal-processing objects like `*~`, filters, or `plugout~`. Create explicit message-rate controls such as `flonum`, `live.dial`, or other UI/message objects, bind agent/web/native controls to those IDs, and patch their outlets to the intended MSP control inlets. Avoid generated IDs that can collide with role I/O names or Max conventions, such as `plugin`, `plugout`, `midiin`, `midiout`, or generic `out`.
+For parameterized MSP patches, do not rely on sending agent values directly into signal-processing objects like `*~`, filters, or `plugout~`. Create explicit message-rate controls such as `flonum`, `live.dial`, or other UI/message objects, bind agent/web/native controls to those IDs, and patch their outlets to the intended MSP control inlets. Avoid generated IDs that can collide with role I/O names or host/static Max objects, such as `plugin`, `plugout`, `midiin`, `midiout`, `js`, `script`, `status`, or generic `out`.
 
 Use `jbrowser~`/`jbrowser` as compatibility aliases for control-panel web UI. If a generated device explicitly needs web-audio signal outlets, request `jweb~` deliberately and wire signal/message outlets in the generated patch instead of assuming the control-panel default.
 
