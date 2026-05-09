@@ -66,10 +66,12 @@ var lastWebStatePushAt = 0;
 var webStatePushTask = null;
 var webStatePushScheduled = 0;
 var pendingWebStatePush = 0;
+var webStatePushMinInterval = 500;
 var MAX_DEFERRED_RAW_COMMANDS = 8;
 var COMMAND_ACK_PROTECT_MS = 10000;
 var UI_BINDING_REPORT_MIN_INTERVAL = 250;
 var WEB_STATE_PUSH_MIN_INTERVAL = 500;
+var WEB_STATE_PUSH_FAST_FLOOR = 33;
 var WEB_STATE_KEY_LIMIT = 48;
 var WEB_STATE_MAX_BYTES = 8192;
 var HOST_RUNTIME_VERSION = "web-state-slim-1";
@@ -760,6 +762,7 @@ function applySpec(spec) {
     }
     var previousState = cloneObject(state);
     directLiveApiObserversEnabled = !!(spec.live_api_observers || spec.observe_live_parameters || spec.observe_live_api_parameters);
+    configureWebState(spec);
     configureDeviceBounds(spec);
     if (clearDynamic(reusableWebIdsForSpec(spec)) === false) {
         return;
@@ -809,6 +812,17 @@ function applySpec(spec) {
         reapplied_state: reapplied
     });
     pushWebState();
+}
+
+function configureWebState(spec) {
+    var interval = positiveNumber(spec.web_state_interval_ms || spec.webStateIntervalMs ||
+            spec.web_state_push_interval_ms || spec.webStatePushIntervalMs);
+    if (interval > 0) {
+        webStatePushMinInterval = Math.max(WEB_STATE_PUSH_FAST_FLOOR, Math.round(interval));
+    } else {
+        webStatePushMinInterval = WEB_STATE_PUSH_MIN_INTERVAL;
+    }
+    state.web_state_interval_ms = webStatePushMinInterval;
 }
 
 function reloadWebUiCommand(command) {
@@ -2092,8 +2106,9 @@ function scheduleWebStatePush() {
         return;
     }
     var now = currentTimeMs();
-    var elapsed = lastWebStatePushAt ? now - lastWebStatePushAt : WEB_STATE_PUSH_MIN_INTERVAL;
-    if (elapsed >= WEB_STATE_PUSH_MIN_INTERVAL) {
+    var interval = webStatePushMinInterval || WEB_STATE_PUSH_MIN_INTERVAL;
+    var elapsed = lastWebStatePushAt ? now - lastWebStatePushAt : interval;
+    if (elapsed >= interval) {
         pushWebState();
         return;
     }
@@ -2107,7 +2122,7 @@ function scheduleWebStatePush() {
     }
     try {
         webStatePushScheduled = 1;
-        webStatePushTask.schedule(Math.max(1, WEB_STATE_PUSH_MIN_INTERVAL - elapsed));
+        webStatePushTask.schedule(Math.max(1, interval - elapsed));
     } catch (errScheduleWebState) {
         webStatePushScheduled = 0;
     }

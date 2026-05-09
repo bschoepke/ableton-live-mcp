@@ -305,6 +305,9 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "scheduleWebStatePush" in source
     assert "web_state_push_throttled" in source
     assert "WEB_STATE_PUSH_MIN_INTERVAL = 500" in source
+    assert "WEB_STATE_PUSH_FAST_FLOOR = 33" in source
+    assert "web_state_interval_ms" in source
+    assert "webStatePushMinInterval" in source
     assert "WEB_STATE_KEY_LIMIT" in source
     assert "WEB_STATE_MAX_BYTES" in source
     assert "webStateSnapshot" in source
