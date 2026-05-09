@@ -400,6 +400,13 @@ function anything() {
         applyValues(valuesFromAtoms(atoms), true);
     } else if (messagename === "set_many_silent" || messagename === "param_many_silent") {
         applyValues(valuesFromAtoms(atoms), false);
+    } else if (messagename === "message" || messagename === "object_message") {
+        beginWebMessage();
+        try {
+            handleWebObjectMessage(atoms, "");
+        } finally {
+            endWebMessage();
+        }
     } else if (webUiIdByTag[messagename]) {
         beginWebMessage();
         try {
@@ -512,6 +519,8 @@ function handleTaggedWebUiMessage(tag, atoms) {
         applyValues(valuesFromAtoms(rest), true);
     } else if (name === "set_many_silent" || name === "param_many_silent") {
         applyValues(valuesFromAtoms(rest), false);
+    } else if (name === "message" || name === "object_message") {
+        handleWebObjectMessage(rest, id);
     } else if (uiBindings[name]) {
         if (!uiBindingUpdating) {
             applyUiBinding(name, rest);
@@ -552,6 +561,33 @@ function handleWebUiErrorMessage(atoms, id) {
     state.web_error = value;
     report("webui_error", { id: String(id || ""), message: "error", value: value });
     pushWebState();
+}
+
+function handleWebObjectMessage(atoms, id) {
+    if (!atoms || atoms.length < 2) {
+        state.web_message_error = "missing_target_or_message";
+        state.web_message_errors = (state.web_message_errors || 0) + 1;
+        return;
+    }
+    var target = String(atoms[0]);
+    var messageName = String(atoms[1]);
+    var obj = objectById[target] || getNamed(target);
+    if (!obj) {
+        state.web_message_missing_target = target;
+        state.web_message_errors = (state.web_message_errors || 0) + 1;
+        return;
+    }
+    try {
+        obj.message.apply(obj, [messageName].concat(atoms.slice(2)));
+        state.web_message_count = (state.web_message_count || 0) + 1;
+        state.web_message_target = target;
+        state.web_message_name = messageName;
+        state.web_message_source = String(id || "");
+        handleWebTick();
+    } catch (err) {
+        state.web_message_error = shortStatusText(String(err));
+        state.web_message_errors = (state.web_message_errors || 0) + 1;
+    }
 }
 
 function markWebUiLoaded(id) {

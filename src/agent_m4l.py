@@ -843,6 +843,7 @@ AGENT_M4L_WEBUI_BOOTSTRAP_JS = (
     "function o(){var a=Array.prototype.slice.call(arguments);if(!send(a)){q.push(a);arm();}}"
     "window.agentM4L=window.agentM4L||{};"
     "window.agentM4L.outlet=o;"
+    "window.agentM4L.message=function(id,msg){var a=Array.prototype.slice.call(arguments);a.unshift('message');o.apply(null,a)};"
     "o('web_ready',Date.now()%1000000000);"
     "document.addEventListener('DOMContentLoaded',function(){o('web_dom_ready',Date.now()%1000000000)});"
     "function tick(){send(['agent_web_tick',Date.now()%1000000000]);setTimeout(tick,500)}setTimeout(tick,500);"

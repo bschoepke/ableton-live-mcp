@@ -111,6 +111,7 @@ def test_initialize_includes_general_model_instructions():
     assert "host_runtime_version" in instructions
     assert "telemetry report:false" in instructions
     assert "ack guard/state throttles" in instructions
+    assert "webkbd DOM->message/no OS keys" in instructions
     assert "No default piano/knob UI/templates" in instructions
     assert "ui_bindings/no loops" in instructions
     assert "Agent must visually verify M4L device UI" in instructions

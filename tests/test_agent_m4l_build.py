@@ -374,6 +374,11 @@ def test_agent_m4l_host_runtime_supports_ui_and_value_updates():
     assert "set_silent" in source
     assert "param_silent" in source
     assert "set_many_silent" in source
+    assert 'messagename === "message" || messagename === "object_message"' in source
+    assert 'name === "message" || name === "object_message"' in source
+    assert "handleWebObjectMessage" in source
+    assert "web_message_count" in source
+    assert "obj.message.apply(obj, [messageName].concat(atoms.slice(2)))" in source
     assert "valuesRequestWebStatePush" in source
     assert "item.push_state || item.pushState || item.echo_state || item.echoState" in source
     assert "messageValueArgs" in source
@@ -478,6 +483,7 @@ def test_agent_m4l_write_webui_generates_jweb_page(tmp_path, monkeypatch):
     assert "agent_web_tick" in html
     assert "setTimeout(tick,500)" in html
     assert "agentM4L.outlet" in html
+    assert "agentM4L.message" in html
     assert "setTimeout(flush" in html
     assert 'data-param="cutoff"' in html
     assert "window.agentM4L" in js
