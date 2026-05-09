@@ -74,7 +74,7 @@ var WEB_STATE_PUSH_MIN_INTERVAL = 500;
 var WEB_STATE_PUSH_FAST_FLOOR = 33;
 var WEB_STATE_KEY_LIMIT = 48;
 var WEB_STATE_MAX_BYTES = 8192;
-var HOST_RUNTIME_VERSION = "web-state-slim-1";
+var HOST_RUNTIME_VERSION = "web-message-bridge-1";
 
 function loadbang() {
     startStaticPolling();
