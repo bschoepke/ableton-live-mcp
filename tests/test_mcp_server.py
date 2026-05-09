@@ -104,6 +104,7 @@ def test_initialize_includes_general_model_instructions():
     assert "agent-settable UI" in instructions
     assert "status_state_keys/_only diag" in instructions
     assert "web_reload UI-only" in instructions
+    assert "no recovery overwrite" in instructions
     assert "direct status polls" in instructions
     assert "throttled fallback wakes" in instructions
     assert "load:false/set/status skip build" in instructions
@@ -1009,6 +1010,39 @@ def test_agent_m4l_device_tool_handles_web_reload_directly(tmp_path):
     assert not server_module.agent_m4l_sidecar_recovery_path(str(command_file)).exists()
     assert result["direct"] is True
     assert result["loaded"] is False
+
+
+def test_agent_m4l_device_tool_web_reload_patch_preserves_recovery_sidecar(tmp_path):
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    command_file = tmp_path / "command.json"
+    full_patch = {
+        "objects": [{"id": "osc", "text": "cycle~ 220"}],
+        "connections": [],
+        "webuis": [{"id": "panel", "html_path": "/tmp/original/index.html"}],
+        "device_width": 500,
+        "device_height": 160,
+    }
+    server_module.write_agent_m4l_recovery_patch(str(command_file), full_patch)
+
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 47,
+        "method": "tools/call",
+        "params": {"name": "live_agent_m4l_device", "arguments": {
+            "role": "audio_effect",
+            "instance_id": "Wobble",
+            "command": "web_reload",
+            "patch": {"webuis": [{"id": "panel", "html_path": "/tmp/reloaded/index.html"}]},
+            "command_file": str(command_file),
+            "udp": False,
+        }},
+    })
+
+    sidecar = json.loads(server_module.agent_m4l_sidecar_recovery_path(str(command_file)).read_text(encoding="utf-8"))
+    assert bridge.calls == []
+    assert response["result"]["structuredContent"]["direct"] is True
+    assert sidecar["patch"] == full_patch
 
 
 def test_agent_m4l_device_tool_skips_oversized_direct_udp(tmp_path):

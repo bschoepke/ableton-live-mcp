@@ -36,12 +36,12 @@ AGENT_M4L_RESERVED_IDS = {"js", "script", "status", "udp", "out", "poll-metro", 
 ABLETON_MCP_INSTRUCTIONS = (
     "review AGENTS.md for tips as needed. "
     "Prefer devices/plugins unless asked; roots:['plugins']; "
-    "Compact calls. "
+    "Compact. "
     "find_similar_sounds requires Live 12+. "
     "Tap: start with path; verify isolation. "
     "Validate runtime_current/live_mutations_safe; no-arg tool schema=stale MCP, reload. No parallel Live API. Idle sockets auto-retry; sent-call timeouts fail closed; client/RS cooldown; live_bridge_status. Save/recover modals: inspect UI, no retry mutations. "
     "Agent must visually verify M4L device UI: inspect pixels; status/meter not enough; Ableton-window-only, no arbitrary apps/windows, select target then device-detail crop, blank_capture invalid; locked/asleep display blocks capture/e2e. "
-    "M4L: freeform UI; wait_status/compact_result+cmd. host_runtime_version. No default piano/knob UI/templates. preflight, web_reload UI-only, throttled fallback wakes, load:false/set/status skip build, direct status polls, host_not_woken=no ack, midiin+midiparse, origin rect/openrect, bounds, ui_bindings/no loops, agent-settable UI, telemetry report:false, ack guard/state throttles, web_state_interval_ms small telemetry, webkbd DOM->message/no OS keys, web assets/source_path, status_state_keys/_only diag, set_silent/batch/list vals, audio buses, jweb/jbrowser aliases. Sizing: device_width/openrect tight to authored UI/webview; keep hidden patching_rect inside width; shrink via new host/fresh reload + nonblank capture. FFT/spectrum=real telemetry/no fake; audio-reactive web: prove signal+visual delta. Smooth clicks. UI hang: unload web/restart/validate. "
+    "M4L: freeform UI; wait_status/compact_result+cmd. host_runtime_version. No default piano/knob UI/templates. preflight, web_reload UI-only/no recovery overwrite, throttled fallback wakes, load:false/set/status skip build, direct status polls, host_not_woken=no ack, midiin+midiparse, origin rect/openrect, bounds, ui_bindings/no loops, agent-settable UI, telemetry report:false, ack guard/state throttles, web_state_interval_ms small telemetry, webkbd DOM->message/no OS keys, web assets/source_path, status_state_keys/_only diag, set_silent/batch/list vals, audio buses, jweb/jbrowser aliases. Sizing: device_width/openrect tight to authored UI/webview; keep hidden patching_rect inside width; shrink via new host/fresh reload + nonblank capture. FFT/spectrum=real telemetry/no fake; audio-reactive web: prove signal+visual delta. Smooth clicks. UI hang: unload web/restart/validate. "
     "full Live object model remains available."
 )
 AGENT_M4L_TOOL_DESCRIPTION = (
@@ -366,7 +366,11 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
             params["status_file"] = built["status_file"]
             previous_status_mtime = _file_mtime(params["status_file"])
         patch_for_recovery = params.get("patch") or params.get("spec")
-        if patch_for_recovery is not None and params.get("command_file"):
+        if (
+            patch_for_recovery is not None
+            and params.get("command_file")
+            and should_write_agent_m4l_recovery_patch(agent_m4l_command(params), patch_for_recovery)
+        ):
             write_agent_m4l_recovery_patch(str(params["command_file"]), patch_for_recovery)
         if not should_build and should_handle_agent_m4l_direct(params):
             result = handle_agent_m4l_direct(params)
@@ -1095,7 +1099,8 @@ def handle_agent_m4l_direct(params: dict[str, Any]) -> dict[str, Any]:
 def should_write_agent_m4l_recovery_patch(command: str, patch: Any) -> bool:
     if patch is None:
         return False
-    if str(command or "") not in ("web_reload", "reload_webui"):
+    command = str(command or "").lower()
+    if command not in ("web_reload", "reload_webui"):
         return True
     if not isinstance(patch, dict):
         return False
