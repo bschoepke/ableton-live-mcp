@@ -406,10 +406,19 @@ class AbletonLiveMCP(ControlSurface):
         args = [command]
         if path:
             args.append(path)
-        command_id = params.get("id") or hashlib.sha1(json.dumps({"command": command, "path": path}, sort_keys=True).encode("utf-8")).hexdigest()
+        request_id = params.get("id")
+        command_id = params.get("command_id") or hashlib.sha1(json.dumps({
+            "request_id": request_id,
+            "command": command,
+            "path": path,
+            "time": time.time(),
+        }, sort_keys=True).encode("utf-8")).hexdigest()
         command_file = params.get("command_file") or _temp_file("agent_audio_tap_command.json")
         with open(command_file, "w") as handle:
-            json.dump({"id": command_id, "command": command, "path": path}, handle, separators=(",", ":"))
+            payload = {"id": command_id, "command": command, "path": path}
+            if request_id is not None:
+                payload["request_id"] = request_id
+            json.dump(payload, handle, separators=(",", ":"))
         sent = False
         payload_size = 0
         if params.get("udp", False):
@@ -421,7 +430,7 @@ class AbletonLiveMCP(ControlSurface):
                 sent = True
             finally:
                 sock.close()
-        return {"sent": sent, "command": command, "path": path, "bytes": payload_size, "command_file": command_file}
+        return {"sent": sent, "command": command, "path": path, "bytes": payload_size, "command_file": command_file, "command_id": command_id}
 
     def _rpc_agent_audio_tap_setup(self, params):
         song = self.song()

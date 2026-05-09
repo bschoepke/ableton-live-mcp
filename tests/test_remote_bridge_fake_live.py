@@ -485,16 +485,54 @@ def test_agent_audio_tap_writes_file_command_by_default(monkeypatch):
 
     monkeypatch.setattr(module := load_bridge_module(monkeypatch)[0], "open", lambda path, mode: FakeFile(path, mode), raising=False)
     bridge.__class__ = module.AbletonLiveMCP
-    result = bridge._rpc_agent_audio_tap({"command": "start", "path": "tap.wav", "id": "abc"})
+    result = bridge._rpc_agent_audio_tap({"command": "start", "path": "tap.wav", "id": "abc", "command_id": "cmd-1"})
 
     assert result["sent"] is False
     assert result["bytes"] == 0
+    assert result["command_id"] == "cmd-1"
     assert written == {
         "path": module._temp_file("agent_audio_tap_command.json"),
         "mode": "w",
-        "value": '{"id":"abc","command":"start","path":"tap.wav"}',
+        "value": '{"id":"cmd-1","command":"start","path":"tap.wav","request_id":"abc"}',
     }
     assert sent == []
+
+
+def test_agent_audio_tap_generates_unique_command_ids_for_reused_request_id(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    written = []
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            self.path = path
+            self.mode = mode
+            self.value = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            written.append(json.loads(self.value))
+            return False
+
+        def write(self, value):
+            self.value += value
+            return len(value)
+
+    module = load_bridge_module(monkeypatch)[0]
+    times = iter([1.0, 2.0])
+    monkeypatch.setattr(module.time, "time", lambda: next(times))
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+    bridge.__class__ = module.AbletonLiveMCP
+
+    bridge._rpc_agent_audio_tap({"command": "start", "path": "tap.wav", "id": "take-1"})
+    bridge._rpc_agent_audio_tap({"command": "stop", "id": "take-1"})
+
+    assert written[0]["request_id"] == "take-1"
+    assert written[1]["request_id"] == "take-1"
+    assert written[0]["id"] != written[1]["id"]
+    assert written[0]["command"] == "start"
+    assert written[1]["command"] == "stop"
 
 
 def test_agent_audio_tap_can_opt_into_udp_command(monkeypatch):

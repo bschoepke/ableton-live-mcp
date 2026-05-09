@@ -75,6 +75,8 @@ var WEB_STATE_PUSH_FAST_FLOOR = 33;
 var WEB_STATE_KEY_LIMIT = 48;
 var WEB_STATE_MAX_BYTES = 8192;
 var HOST_RUNTIME_VERSION = "web-message-bridge-1";
+var STATUS_FILE_PAD_BYTES = 65536;
+var statusFilePaddingCache = "";
 
 function loadbang() {
     startStaticPolling();
@@ -2471,8 +2473,15 @@ function writeStatus(payload) {
         if (!file.isopen) {
             return;
         }
-        file.writestring(raw);
+        file.writestring(raw + statusFilePadding());
         file.close();
     } catch (err) {
     }
+}
+
+function statusFilePadding() {
+    if (!statusFilePaddingCache) {
+        statusFilePaddingCache = new Array(STATUS_FILE_PAD_BYTES + 1).join(" ");
+    }
+    return statusFilePaddingCache;
 }

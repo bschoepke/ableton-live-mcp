@@ -88,6 +88,7 @@ def test_initialize_includes_general_model_instructions():
     assert "roots:['plugins']" in instructions
     assert "find_similar_sounds requires Live 12+" in instructions
     assert "start with path" in instructions
+    assert "unique ids" in instructions
     assert "Idle sockets auto-retry" in instructions
     assert "Validate runtime_current" in instructions
     assert "live_mutations_safe" in instructions
@@ -1828,6 +1829,12 @@ def test_wait_agent_m4l_status_tolerates_stale_trailing_json(tmp_path):
     assert result["event"] == "set"
     assert result["command_id"] == "new"
     assert result["changed"] == 1
+
+
+def test_agent_m4l_host_pads_status_writes_to_cover_stale_bytes():
+    host_source = Path("m4l/agent_m4l_host.js").read_text(encoding="utf-8")
+    assert "STATUS_FILE_PAD_BYTES" in host_source
+    assert "raw + statusFilePadding()" in host_source
 
 
 def test_wait_agent_m4l_status_preserves_host_runtime_version(tmp_path):
