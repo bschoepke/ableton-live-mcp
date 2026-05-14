@@ -2,9 +2,11 @@ from __future__ import absolute_import, print_function
 
 import json
 import hashlib
+import os
 import socket
 import sys
 import threading
+import time
 import traceback
 
 import Live
@@ -20,10 +22,84 @@ DEFAULT_MAX_ITEMS = 200
 DEFAULT_MAX_DEPTH = 8
 DEFAULT_MAX_STRING_LENGTH = 4096
 DEFAULT_CHILD_LIMIT = 200
-DEFAULT_MAIN_THREAD_TIMEOUT = 10
+DEFAULT_MAIN_THREAD_TIMEOUT = 30
+DEFAULT_MAIN_THREAD_STALL_COOLDOWN = 10
 DEFAULT_BROWSER_ROOTS = ("instruments", "audio_effects", "midi_effects", "drums", "samples", "sounds", "packs", "plugins", "user_library", "user_folders", "current_project")
+REMOTE_SCRIPT_RUNTIME_VERSION = "transport-stop-settle-1"
 AGENT_AUDIO_TAP_HOST = "127.0.0.1"
 AGENT_AUDIO_TAP_PORT = 17654
+AGENT_M4L_HOST = "127.0.0.1"
+AGENT_M4L_PORT = 17655
+AGENT_M4L_PORT_SPAN = 30000
+AGENT_M4L_MAX_UDP_BYTES = 8192
+AGENT_M4L_RECOVERY_PATCH_KEYS = (
+    "objects", "connections", "ui_bindings", "bindings", "webui", "webuis",
+    "device_width", "devicewidth", "width", "device_height", "deviceheight", "height",
+)
+LEGACY_NOTE_API_NAMES = (
+    "set_notes",
+    "get_notes",
+    "remove_notes",
+    "replace_selected_notes",
+    "select_all_notes",
+    "deselect_all_notes",
+)
+
+
+def _runtime_code_fingerprint():
+    payload = {
+        "constants": _runtime_constant_signatures(),
+        "functions": _runtime_function_signatures(globals()),
+        "methods": _runtime_function_signatures(AbletonLiveMCP.__dict__),
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _runtime_constant_signatures():
+    items = []
+    for name, value in sorted(globals().items()):
+        if name.isupper() and isinstance(value, (str, int, float, bool, tuple, list)):
+            items.append((name, repr(value)))
+    return items
+
+
+def _runtime_function_signatures(namespace):
+    items = []
+    for name, value in sorted(namespace.items()):
+        code = getattr(value, "__code__", None)
+        if code is not None:
+            items.append((name, _code_signature(code)))
+    return items
+
+
+def _code_signature(code):
+    return {
+        "argcount": code.co_argcount,
+        "code": hashlib.sha256(code.co_code).hexdigest(),
+        "consts": [_constant_signature(value) for value in code.co_consts],
+        "flags": code.co_flags,
+        "names": list(code.co_names),
+        "varnames": list(code.co_varnames),
+    }
+
+
+def _constant_signature(value):
+    if hasattr(value, "co_code"):
+        return _code_signature(value)
+    return repr(value)
+
+
+class _EncodedResult(list):
+    pass
+
+
+def _temp_file(name):
+    root = os.environ.get("ABLETON_MCP_STATE_DIR") or os.path.join(os.path.expanduser("~"), ".ableton-live-mcp")
+    try:
+        os.makedirs(root)
+    except OSError:
+        pass
+    return os.path.join(root, name)
 
 
 class AbletonLiveMCP(ControlSurface):
@@ -35,6 +111,15 @@ class AbletonLiveMCP(ControlSurface):
         self._server = None
         self._running = True
         self._main_thread_id = threading.current_thread().ident
+        self._main_thread_timeout_count = 0
+        self._main_thread_last_timeout_at = 0.0
+        self._main_thread_last_timeout_method = None
+        self._main_thread_last_success_at = 0.0
+        self._main_thread_stall_until = 0.0
+        self._main_thread_request_lock = threading.BoundedSemaphore(1)
+        self._main_thread_busy_method = None
+        self._main_thread_busy_since = 0.0
+        self._main_thread_busy_timed_out = False
         self._handler_slots = threading.BoundedSemaphore(16)
         with self.component_guard():
             self._start_server()
@@ -72,17 +157,6 @@ class AbletonLiveMCP(ControlSurface):
                     self.log_message("Ableton_Live_MCP accept error: %s" % traceback.format_exc())
 
     def _handle_client(self, client):
-        acquired = self._handler_slots.acquire(False)
-        if not acquired:
-            try:
-                err = {"jsonrpc": "2.0", "id": None, "error": {"code": -32000, "message": "Too many concurrent Ableton MCP requests"}}
-                client.sendall((json.dumps(err, separators=(",", ":")) + "\n").encode("utf-8"))
-            finally:
-                try:
-                    client.close()
-                except Exception:
-                    pass
-            return
         try:
             client.settimeout(CLIENT_TIMEOUT)
             buffer = b""
@@ -91,8 +165,22 @@ class AbletonLiveMCP(ControlSurface):
                 if not data:
                     break
                 request = json.loads(data.decode("utf-8"))
-                response = self._dispatch(request)
+                acquired = False
+                if request.get("method") == "bridge_status":
+                    response = self._dispatch(request)
+                else:
+                    acquired = self._handler_slots.acquire(False)
+                    if acquired:
+                        try:
+                            response = self._dispatch(request)
+                        finally:
+                            self._handler_slots.release()
+                            acquired = False
+                    else:
+                        response = {"jsonrpc": "2.0", "id": request.get("id"), "error": {"code": -32000, "message": "Too many concurrent Ableton MCP requests"}}
                 client.sendall((json.dumps(response, separators=(",", ":")) + "\n").encode("utf-8"))
+        except socket.timeout:
+            pass
         except Exception as exc:
             err = {"jsonrpc": "2.0", "id": None, "error": {"code": -32000, "message": str(exc)}}
             try:
@@ -104,7 +192,6 @@ class AbletonLiveMCP(ControlSurface):
                 client.close()
             except Exception:
                 pass
-            self._handler_slots.release()
 
     def _read_line(self, client, buffer):
         chunks = [buffer] if buffer else []
@@ -133,7 +220,10 @@ class AbletonLiveMCP(ControlSurface):
         method = request.get("method")
         params = request.get("params") or {}
         try:
-            result = self._run_on_main(method, params)
+            if method == "bridge_status":
+                result = self._rpc_bridge_status(params)
+            else:
+                result = self._run_on_main(method, params)
             return {"jsonrpc": "2.0", "id": req_id, "result": result}
         except Exception as exc:
             error = {"code": -32000, "message": str(exc)}
@@ -144,38 +234,167 @@ class AbletonLiveMCP(ControlSurface):
     def _run_on_main(self, method, params):
         if threading.current_thread().ident == self._main_thread_id:
             self._check_expected_set_signature(params)
-            return self._encode(getattr(self, "_rpc_" + method)(params), self._encode_options(params))
+            value = getattr(self, "_rpc_" + method)(params)
+            if isinstance(value, _EncodedResult):
+                return value
+            return self._encode(value, self._encode_options(params))
+        self._raise_if_main_thread_in_stall_cooldown(method, params)
+        gate_released = self._acquire_main_thread_request_gate(method)
         done = threading.Event()
         result = {"value": None, "error": None}
         abandoned = {"value": False}
+        started = {"value": False}
 
         def invoke():
             if abandoned["value"]:
                 done.set()
+                self._release_main_thread_request_gate(gate_released)
                 return
             try:
+                started["value"] = True
                 self._check_expected_set_signature(params)
                 value = getattr(self, "_rpc_" + method)(params)
-                result["value"] = self._encode(value, self._encode_options(params))
+                if isinstance(value, _EncodedResult):
+                    result["value"] = value
+                else:
+                    result["value"] = self._encode(value, self._encode_options(params))
+                self._mark_main_thread_success()
             except Exception:
                 result["error"] = sys.exc_info()
             finally:
                 done.set()
+                self._release_main_thread_request_gate(gate_released)
 
-        self.schedule_message(0, invoke)
-        timeout = float(params.get("timeout") or DEFAULT_MAIN_THREAD_TIMEOUT)
+        try:
+            self.schedule_message(0, invoke)
+        except Exception:
+            self._release_main_thread_request_gate(gate_released)
+            raise
+        timeout = self._main_thread_timeout(params)
         if not done.wait(timeout):
             abandoned["value"] = True
-            raise RuntimeError("Timed out waiting for Live main thread")
+            self._mark_main_thread_timeout(method, params)
+            if not started["value"]:
+                self._release_main_thread_request_gate(gate_released)
+            raise RuntimeError("Timed out waiting for Live main thread during %s after %.3gs" % (method, timeout))
         if result["error"]:
             exc_type, exc, tb = result["error"]
             raise exc.with_traceback(tb)
         return result["value"]
 
+    def _rpc_bridge_status(self, _params):
+        now = time.time()
+        last_timeout_at = getattr(self, "_main_thread_last_timeout_at", 0.0)
+        last_success_at = getattr(self, "_main_thread_last_success_at", 0.0)
+        stall_until = getattr(self, "_main_thread_stall_until", 0.0)
+        busy_since = getattr(self, "_main_thread_busy_since", 0.0)
+        busy_method = getattr(self, "_main_thread_busy_method", None)
+        main_thread = {
+            "thread_id": getattr(self, "_main_thread_id", None),
+            "timeouts": getattr(self, "_main_thread_timeout_count", 0),
+            "last_timeout_method": getattr(self, "_main_thread_last_timeout_method", None),
+            "stall_cooldown_remaining": max(0.0, stall_until - now),
+            "in_flight_method": busy_method,
+            "in_flight_timed_out": bool(getattr(self, "_main_thread_busy_timed_out", False)),
+        }
+        if busy_method and busy_since:
+            main_thread["in_flight_age"] = max(0.0, now - busy_since)
+        if last_timeout_at:
+            main_thread["last_timeout_age"] = max(0.0, now - last_timeout_at)
+        if last_success_at:
+            main_thread["last_success_age"] = max(0.0, now - last_success_at)
+        return {
+            "ok": True,
+            "running": bool(getattr(self, "_running", False)),
+            "server_thread_responsive": True,
+            "handler_thread_id": threading.current_thread().ident,
+            "main_thread": main_thread,
+        }
+
+    def _raise_if_main_thread_in_stall_cooldown(self, method, params):
+        if params.get("force_main_thread_probe"):
+            return
+        remaining = getattr(self, "_main_thread_stall_until", 0.0) - time.time()
+        if remaining > 0:
+            previous = getattr(self, "_main_thread_last_timeout_method", None) or "unknown"
+            raise RuntimeError(
+                "Live main thread is in stall cooldown after %s timed out; refusing to enqueue %s for %.1fs. "
+                "Use live_bridge_status for socket-thread health, wait for cooldown, or restart/reload Live before sending mutations."
+                % (previous, method, remaining)
+            )
+
+    def _ensure_main_thread_request_gate(self):
+        if not hasattr(self, "_main_thread_request_lock"):
+            self._main_thread_request_lock = threading.BoundedSemaphore(1)
+            self._main_thread_busy_method = None
+            self._main_thread_busy_since = 0.0
+            self._main_thread_busy_timed_out = False
+
+    def _acquire_main_thread_request_gate(self, method):
+        self._ensure_main_thread_request_gate()
+        if self._main_thread_request_lock.acquire(False):
+            self._main_thread_busy_method = method
+            self._main_thread_busy_since = time.time()
+            self._main_thread_busy_timed_out = False
+            return {"value": False}
+        busy_method = getattr(self, "_main_thread_busy_method", None) or "unknown"
+        busy_since = getattr(self, "_main_thread_busy_since", 0.0)
+        busy_for = max(0.0, time.time() - busy_since) if busy_since else 0.0
+        suffix = " after that request already timed out" if getattr(self, "_main_thread_busy_timed_out", False) else ""
+        raise RuntimeError(
+            "Live main-thread request already in flight (%s for %.1fs%s); refusing to enqueue %s. "
+            "Use live_bridge_status for socket-thread health, then recover or restart/reload Live before sending mutations."
+            % (busy_method, busy_for, suffix, method)
+        )
+
+    def _release_main_thread_request_gate(self, released):
+        if released["value"]:
+            return
+        released["value"] = True
+        self._main_thread_busy_method = None
+        self._main_thread_busy_since = 0.0
+        self._main_thread_busy_timed_out = False
+        self._main_thread_request_lock.release()
+
+    def _mark_main_thread_success(self):
+        self._main_thread_last_success_at = time.time()
+        self._main_thread_stall_until = 0.0
+
+    def _mark_main_thread_timeout(self, method, params):
+        now = time.time()
+        self._main_thread_timeout_count = getattr(self, "_main_thread_timeout_count", 0) + 1
+        self._main_thread_last_timeout_at = now
+        self._main_thread_last_timeout_method = method
+        if getattr(self, "_main_thread_busy_method", None) == method:
+            self._main_thread_busy_timed_out = True
+        cooldown = float(params.get("stall_cooldown") or DEFAULT_MAIN_THREAD_STALL_COOLDOWN)
+        if cooldown > 0:
+            self._main_thread_stall_until = max(getattr(self, "_main_thread_stall_until", 0.0), now + cooldown)
+
+    def _main_thread_timeout(self, params):
+        timeout = float(params.get("timeout") or DEFAULT_MAIN_THREAD_TIMEOUT)
+        if not (params.get("strict_timeout") or params.get("timeout_strict")):
+            timeout = max(timeout, float(DEFAULT_MAIN_THREAD_TIMEOUT))
+        return timeout
+
     def _rpc_ping(self, _params):
         app = Live.Application.get_application()
         version = app.get_version_string() if hasattr(app, "get_version_string") else "unknown"
-        return {"ok": True, "version": version, "major": self._major_version(version)}
+        return {"ok": True, "version": version, "major": self._major_version(version), "remote_script": self._remote_script_info()}
+
+    def _remote_script_info(self):
+        path = globals().get("__file__", "")
+        info = {"path": str(path), "runtime_version": REMOTE_SCRIPT_RUNTIME_VERSION}
+        try:
+            info["runtime_code_sha256"] = _runtime_code_fingerprint()
+        except Exception as exc:
+            info["runtime_code_error"] = str(exc)
+        try:
+            with open(path, "rb") as handle:
+                info["bridge_sha256"] = hashlib.sha256(handle.read()).hexdigest()
+        except Exception as exc:
+            info["hash_error"] = str(exc)
+        return info
 
     def _rpc_agent_audio_tap(self, params):
         command = params.get("command")
@@ -187,17 +406,31 @@ class AbletonLiveMCP(ControlSurface):
         args = [command]
         if path:
             args.append(path)
-        command_id = params.get("id") or hashlib.sha1(json.dumps({"command": command, "path": path}, sort_keys=True).encode("utf-8")).hexdigest()
-        command_file = params.get("command_file") or "/tmp/agent_audio_tap_command.json"
+        request_id = params.get("id")
+        command_id = params.get("command_id") or hashlib.sha1(json.dumps({
+            "request_id": request_id,
+            "command": command,
+            "path": path,
+            "time": time.time(),
+        }, sort_keys=True).encode("utf-8")).hexdigest()
+        command_file = params.get("command_file") or _temp_file("agent_audio_tap_command.json")
         with open(command_file, "w") as handle:
-            json.dump({"id": command_id, "command": command, "path": path}, handle, separators=(",", ":"))
-        payload = self._osc_message("/agent_audio_tap", args)
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            sock.sendto(payload, (AGENT_AUDIO_TAP_HOST, int(params.get("port") or AGENT_AUDIO_TAP_PORT)))
-        finally:
-            sock.close()
-        return {"sent": True, "command": command, "path": path, "bytes": len(payload), "command_file": command_file}
+            payload = {"id": command_id, "command": command, "path": path}
+            if request_id is not None:
+                payload["request_id"] = request_id
+            json.dump(payload, handle, separators=(",", ":"))
+        sent = False
+        payload_size = 0
+        if params.get("udp", False):
+            payload = self._osc_message("/agent_audio_tap", args)
+            payload_size = len(payload)
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                sock.sendto(payload, (AGENT_AUDIO_TAP_HOST, int(params.get("port") or AGENT_AUDIO_TAP_PORT)))
+                sent = True
+            finally:
+                sock.close()
+        return {"sent": sent, "command": command, "path": path, "bytes": payload_size, "command_file": command_file, "command_id": command_id}
 
     def _rpc_agent_audio_tap_setup(self, params):
         song = self.song()
@@ -227,7 +460,7 @@ class AbletonLiveMCP(ControlSurface):
             if params.get("exclusive_solo", True):
                 for track in song.tracks:
                     try:
-                        track.solo = track is solo_track
+                        track.solo = self._same_live_object(track, solo_track)
                     except Exception:
                         pass
             else:
@@ -246,6 +479,330 @@ class AbletonLiveMCP(ControlSurface):
             "playing": bool(getattr(song, "is_playing", False)),
         }
 
+    def _rpc_agent_m4l_device(self, params):
+        instance_id = self._agent_m4l_slug(params.get("instance_id") or params.get("name") or "device")
+        role = self._agent_m4l_role(params.get("role"))
+        device_slug = self._agent_m4l_slug(params.get("name")) if params.get("name") else instance_id
+        device_name = str(params.get("device_name") or ("AgentM4L_%s_%s" % (role, device_slug)))
+        command_file = str(params.get("command_file") or _temp_file("agent_m4l_%s.json" % instance_id))
+        status_file = str(params.get("status_file") or _temp_file("agent_m4l_%s_status.json" % instance_id))
+        command = params.get("command") or ("set" if params.get("values") or params.get("parameters") else ("update" if params.get("patch") or params.get("spec") or params.get("webui") or params.get("webuis") else "status"))
+        patch = params.get("patch") or params.get("spec")
+        if patch is None and (params.get("webui") or params.get("webuis")):
+            patch = {}
+        if patch is not None and params.get("webui"):
+            patch = dict(patch)
+            patch["webui"] = params.get("webui")
+        if patch is not None and params.get("webuis"):
+            patch = dict(patch)
+            patch["webuis"] = params.get("webuis")
+        if patch is not None and params.get("device_width") is not None:
+            patch = dict(patch)
+            patch.setdefault("device_width", params.get("device_width"))
+        if patch is not None and params.get("device_height") is not None:
+            patch = dict(patch)
+            patch.setdefault("device_height", params.get("device_height"))
+        if patch is None and command in ("set", "status"):
+            patch = self._agent_m4l_recovery_patch(command_file)
+        command_hash = {
+            "command": command,
+            "instance_id": instance_id,
+            "patch": patch,
+            "values": params.get("values"),
+            "parameters": params.get("parameters"),
+            "webui": params.get("webui"),
+            "webuis": params.get("webuis"),
+        }
+        if not params.get("id"):
+            command_hash["nonce"] = time.time()
+        command_id = params.get("id") or hashlib.sha1(json.dumps(command_hash, sort_keys=True).encode("utf-8")).hexdigest()
+        payload = {
+            "id": command_id,
+            "command": command,
+            "role": role,
+            "instance_id": instance_id,
+            "patch": patch,
+            "values": params.get("values"),
+            "parameters": params.get("parameters"),
+            "webui": params.get("webui"),
+            "webuis": params.get("webuis"),
+        }
+        write_command_file = params.get("write_command_file")
+        if write_command_file is None:
+            write_command_file = True
+        if write_command_file:
+            self._agent_m4l_write_recovery_patch(command_file, patch)
+            with open(command_file, "w") as handle:
+                json.dump(self._agent_m4l_command_file_payload(payload), handle, separators=(",", ":"))
+
+        sent = False
+        udp_bytes = 0
+        udp_skipped = False
+        if params.get("udp", True):
+            port = int(params.get("port") or self._agent_m4l_port(instance_id))
+            raw = json.dumps(self._agent_m4l_udp_payload(payload), separators=(",", ":"))
+            message = self._osc_message("/agent_m4l", [instance_id, raw])
+            udp_bytes = len(message)
+            if udp_bytes <= AGENT_M4L_MAX_UDP_BYTES:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                try:
+                    try:
+                        sock.sendto(message, (AGENT_M4L_HOST, port))
+                        sent = True
+                    except OSError:
+                        sent = False
+                finally:
+                    sock.close()
+            else:
+                udp_skipped = True
+        else:
+            port = int(params.get("port") or self._agent_m4l_port(instance_id))
+
+        loaded = False
+        load_error = None
+        target_track = None
+        if params.get("target_track"):
+            target_track = self._resolve(params.get("target_track"))
+        elif params.get("ref"):
+            target_track = self._resolve(params.get("ref"))
+        if target_track is not None and params.get("load", True):
+            try:
+                if not self._track_has_device(target_track, device_name, role):
+                    loaded = self._load_agent_m4l_device(target_track, device_name, role, params)
+            except Exception as exc:
+                load_error = str(exc)
+        triggered = False
+        if target_track is not None:
+            target_device = self._find_track_device(target_track, device_name, role)
+            if target_device is not None:
+                triggered = self._trigger_agent_m4l_poll(target_device)
+
+        result = {
+            "sent": sent,
+            "command": command,
+            "role": role,
+            "instance_id": instance_id,
+            "device_name": device_name,
+            "command_id": command_id,
+            "command_file": command_file,
+            "command_file_written": bool(write_command_file),
+            "status_file": status_file,
+            "port": port,
+            "loaded": loaded,
+            "udp_bytes": udp_bytes,
+            "udp_skipped": udp_skipped,
+            "triggered": triggered,
+        }
+        if load_error:
+            result["load_error"] = load_error
+        if target_track is not None:
+            result["track"] = self._track_summary(target_track, None, 0, 16, 0)
+        return result
+
+    def _rpc_agent_m4l_cleanup(self, params):
+        delete = bool(params.get("delete", False))
+        prefix = str(params.get("name_prefix") if params.get("name_prefix") is not None else "AgentM4L_")
+        name_contains = str(params.get("name_contains") or "").lower()
+        role = self._agent_m4l_role(params.get("role")) if params.get("role") else ""
+        limit = int(params.get("limit") if params.get("limit") is not None else 128)
+        max_delete = int(params.get("max_delete") if params.get("max_delete") is not None else 0)
+        tracks = self._agent_m4l_cleanup_tracks(params)
+        matches = []
+        delete_items = []
+        for track_info in tracks:
+            track = track_info["track"]
+            devices = list(getattr(track, "devices", []))
+            for index, device in enumerate(devices):
+                name = str(getattr(device, "name", ""))
+                if prefix and not name.startswith(prefix):
+                    continue
+                if name_contains and name_contains not in name.lower():
+                    continue
+                if role and not name.startswith("AgentM4L_%s_" % role):
+                    continue
+                item = {
+                    "track": track_info["name"],
+                    "track_path": track_info["path"],
+                    "device_index": index,
+                    "device_name": name,
+                    "class_name": self._device_class_name(device),
+                }
+                matches.append(item)
+                delete_items.append({"track": track, "index": index, "item": item})
+        deleted = []
+        if delete:
+            remaining = max_delete
+            by_track = {}
+            for entry in delete_items:
+                if max_delete > 0 and remaining <= 0:
+                    break
+                key = id(entry["track"])
+                by_track.setdefault(key, {"track": entry["track"], "entries": []})["entries"].append(entry)
+                if max_delete > 0:
+                    remaining -= 1
+            for group in by_track.values():
+                track = group["track"]
+                for entry in sorted(group["entries"], key=lambda value: value["index"], reverse=True):
+                    index = entry["index"]
+                    if hasattr(track, "delete_device"):
+                        track.delete_device(index)
+                    else:
+                        del getattr(track, "devices")[index]
+                    deleted.append(entry["item"])
+        return {
+            "delete": delete,
+            "matched_count": len(matches),
+            "deleted_count": len(deleted),
+            "matches": matches[:limit] if limit >= 0 else matches,
+            "matches_truncated": bool(limit >= 0 and len(matches) > limit),
+            "deleted": deleted[:limit] if limit >= 0 else deleted,
+            "deleted_truncated": bool(limit >= 0 and len(deleted) > limit),
+        }
+
+    def _agent_m4l_cleanup_tracks(self, params):
+        if params.get("target_track"):
+            track = self._resolve(params.get("target_track"))
+            return [{"name": getattr(track, "name", ""), "path": "", "track": track}]
+        if params.get("ref"):
+            track = self._resolve(params.get("ref"))
+            return [{"name": getattr(track, "name", ""), "path": "", "track": track}]
+        query = str(params.get("track_query") or "").lower()
+        song = self.song()
+        result = []
+        for index, track in enumerate(list(song.tracks)):
+            result.append({"name": getattr(track, "name", ""), "path": "live_set tracks %d" % index, "track": track})
+        for index, track in enumerate(list(song.return_tracks)):
+            result.append({"name": getattr(track, "name", ""), "path": "live_set return_tracks %d" % index, "track": track})
+        result.append({"name": getattr(song.master_track, "name", ""), "path": "live_set master_track", "track": song.master_track})
+        if query:
+            result = [item for item in result if query in str(item["name"]).lower()]
+        return result
+
+    def _load_agent_m4l_device(self, target_track, device_name, role, params):
+        errors = []
+        if hasattr(target_track, "insert_device") and not params.get("prefer_browser_load"):
+            try:
+                self._insert_track_device(target_track, device_name, role, params)
+                return True
+            except Exception as exc:
+                errors.append(str(exc))
+        item = self._find_browser_item_named(device_name)
+        if item is not None:
+            before_devices = list(getattr(target_track, "devices", []))
+            before_ids = set([self._object_id(device) for device in before_devices])
+            self.song().view.selected_track = target_track
+            Live.Application.get_application().browser.load_item(item)
+            self._rename_new_track_device(target_track, before_ids, device_name)
+            return True
+        if hasattr(target_track, "insert_device") and params.get("prefer_browser_load"):
+            try:
+                self._insert_track_device(target_track, device_name, role, params)
+                return True
+            except Exception as exc:
+                errors.append(str(exc))
+        detail = "; ".join([error for error in errors if error])
+        if detail:
+            raise RuntimeError(detail)
+        raise KeyError("Could not find %s in the Live browser; build/install it with live_agent_m4l_device first or reload Live's browser" % device_name)
+
+    def _insert_track_device(self, target_track, device_name, role, params):
+        before_devices = list(getattr(target_track, "devices", []))
+        before_ids = set([self._object_id(device) for device in before_devices])
+        target_track.insert_device(device_name, self._agent_m4l_insert_index(target_track, role, params))
+        self._rename_new_track_device(target_track, before_ids, device_name)
+
+    def _rename_new_track_device(self, target_track, before_ids, device_name):
+        new_device = self._find_new_track_device(target_track, before_ids)
+        if new_device is not None:
+            try:
+                new_device.name = device_name
+            except Exception:
+                pass
+
+    def _agent_m4l_insert_index(self, track, role, params):
+        if params.get("device_index") is not None:
+            return int(params.get("device_index"))
+        devices = list(getattr(track, "devices", []))
+        if role == "midi_effect":
+            for index, device in enumerate(devices):
+                if self._device_class_name(device) in ("MxDeviceInstrument", "MxDeviceAudioEffect"):
+                    return index
+        if role == "instrument":
+            for index, device in enumerate(devices):
+                if self._device_class_name(device) == "MxDeviceAudioEffect":
+                    return index
+        return -1
+
+    def _device_class_name(self, device):
+        try:
+            return str(device.class_name)
+        except Exception:
+            return ""
+
+    def _agent_m4l_port(self, instance_id):
+        digest = hashlib.sha1(self._agent_m4l_slug(instance_id).encode("utf-8")).hexdigest()
+        return AGENT_M4L_PORT + (int(digest[:8], 16) % AGENT_M4L_PORT_SPAN)
+
+    def _agent_m4l_udp_payload(self, payload):
+        command = payload.get("command")
+        if command not in ("set", "status"):
+            return payload
+        slim = dict(payload)
+        for key in ("patch", "spec", "webui", "webuis"):
+            if key in slim:
+                del slim[key]
+        return slim
+
+    def _agent_m4l_command_file_payload(self, payload):
+        slim = {}
+        for key, value in payload.items():
+            if value is not None:
+                slim[key] = value
+        if slim.get("command") in ("set", "status"):
+            for key in ("patch", "spec", "webui", "webuis"):
+                if key in slim:
+                    del slim[key]
+        return slim
+
+    def _agent_m4l_recovery_patch(self, command_file):
+        try:
+            with open(command_file, "r") as handle:
+                existing = json.load(handle)
+        except Exception:
+            existing = {}
+        if not isinstance(existing, dict):
+            existing = {}
+        patch = existing.get("patch") or existing.get("spec")
+        if patch is not None:
+            return patch
+        recovered = {}
+        for key in AGENT_M4L_RECOVERY_PATCH_KEYS:
+            if key in existing:
+                recovered[key] = existing[key]
+        return recovered or self._agent_m4l_sidecar_recovery_patch(command_file)
+
+    def _agent_m4l_sidecar_recovery_patch(self, command_file):
+        try:
+            with open(self._agent_m4l_recovery_file(command_file), "r") as handle:
+                existing = json.load(handle)
+        except Exception:
+            return None
+        if not isinstance(existing, dict):
+            return None
+        return existing.get("patch") or existing.get("spec")
+
+    def _agent_m4l_write_recovery_patch(self, command_file, patch):
+        if patch is None:
+            return
+        try:
+            with open(self._agent_m4l_recovery_file(command_file), "w") as handle:
+                json.dump({"patch": patch}, handle, separators=(",", ":"))
+        except Exception:
+            pass
+
+    def _agent_m4l_recovery_file(self, command_file):
+        return "%s.recovery.json" % command_file
+
     def _rpc_transport(self, params):
         song = self.song()
         if params.get("time") is not None:
@@ -261,7 +818,7 @@ class AbletonLiveMCP(ControlSurface):
             self._stop_transport(song)
         elif action not in (None, "status"):
             raise ValueError("action must be play, continue, stop, or status")
-        return {"playing": bool(getattr(song, "is_playing", False)), "time": getattr(song, "current_song_time", None)}
+        return self._transport_result(song, action)
 
     def _osc_message(self, address, args):
         def pad(value):
@@ -293,11 +850,100 @@ class AbletonLiveMCP(ControlSurface):
         if getattr(song, "is_playing", False):
             song.stop_playing()
 
-    def _track_has_device(self, track, name):
+    def _transport_result(self, song, action):
+        raw_playing = bool(getattr(song, "is_playing", False))
+        result = {"playing": raw_playing, "time": getattr(song, "current_song_time", None)}
+        if action in ("play", "continue") and not raw_playing:
+            result["playing"] = True
+            result["raw_playing"] = False
+            result["settled"] = False
+        if action == "stop" and raw_playing:
+            result["playing"] = False
+            result["raw_playing"] = True
+            result["settled"] = False
+        return result
+
+    def _track_has_device(self, track, name, role=None):
+        return self._find_track_device(track, name, role) is not None
+
+    def _find_track_device(self, track, name, role=None):
         for device in getattr(track, "devices", []):
-            if getattr(device, "name", "") == name:
+            if getattr(device, "name", "") == name and self._device_matches_agent_m4l_role(device, role):
+                return device
+        return None
+
+    def _trigger_agent_m4l_poll(self, device):
+        poll_names = ("Agent Poll", "Agent M4L Poll", "command-trigger")
+        for parameter in getattr(device, "parameters", []):
+            name = str(getattr(parameter, "name", ""))
+            if name not in poll_names:
+                continue
+            try:
+                current = float(getattr(parameter, "value", 0.0) or 0.0)
+            except Exception:
+                current = 0.0
+            try:
+                minimum = float(getattr(parameter, "min", 0.0))
+            except Exception:
+                minimum = 0.0
+            try:
+                maximum = float(getattr(parameter, "max", 1.0))
+            except Exception:
+                maximum = 1.0
+            next_value = current + 1.0
+            if next_value > maximum:
+                next_value = minimum
+            try:
+                parameter.value = next_value
                 return True
+            except Exception:
+                return False
         return False
+
+    def _find_new_track_device(self, track, before_ids):
+        for device in getattr(track, "devices", []):
+            try:
+                obj_id = self._object_id(device)
+            except Exception:
+                obj_id = id(device)
+            if obj_id not in before_ids:
+                return device
+        return None
+
+    def _device_matches_agent_m4l_role(self, device, role):
+        if role is None:
+            return True
+        expected = {
+            "audio_effect": "MxDeviceAudioEffect",
+            "instrument": "MxDeviceInstrument",
+            "midi_effect": "MxDeviceMidiEffect",
+        }.get(role)
+        if expected is None:
+            return True
+        try:
+            class_name = device.class_name
+        except Exception:
+            return True
+        return class_name == expected
+
+    def _agent_m4l_role(self, role):
+        value = str(role or "audio_effect").lower().replace("-", "_").replace(" ", "_")
+        aliases = {"audio": "audio_effect", "effect": "audio_effect", "fx": "audio_effect", "synth": "instrument", "midi": "midi_effect"}
+        value = aliases.get(value, value)
+        if value not in ("audio_effect", "instrument", "midi_effect"):
+            raise ValueError("role must be audio_effect, instrument, or midi_effect")
+        return value
+
+    def _agent_m4l_slug(self, value):
+        text = str(value or "device")
+        result = []
+        for char in text:
+            if char.isalnum() or char in "_.-":
+                result.append(char)
+            else:
+                result.append("_")
+        slug = "".join(result).strip("._-")
+        return slug[:80] or "device"
 
     def _delete_named_devices(self, name):
         song = self.song()
@@ -484,6 +1130,8 @@ class AbletonLiveMCP(ControlSurface):
 
     def _rpc_clip_notes(self, params):
         clip = self._resolve(params.get("ref"))
+        if not hasattr(clip, "get_all_notes_extended"):
+            raise RuntimeError("clip_notes requires get_all_notes_extended; refusing legacy note API")
         limit = int(params.get("limit") if params.get("limit") is not None else 512)
         start = params.get("start_time")
         end = params.get("end_time")
@@ -499,6 +1147,7 @@ class AbletonLiveMCP(ControlSurface):
             truncated = True
         return {
             "clip": self._clip_summary(clip, None),
+            "note_api": "extended",
             "note_count": total,
             "truncated": truncated,
             "notes": [self._note_summary(note) for note in notes],
@@ -506,6 +1155,8 @@ class AbletonLiveMCP(ControlSurface):
 
     def _rpc_clip_update_notes(self, params):
         clip = self._resolve(params.get("ref"))
+        if not hasattr(clip, "get_all_notes_extended") or not hasattr(clip, "apply_note_modifications"):
+            raise RuntimeError("clip_update_notes requires extended note APIs; refusing legacy note API")
         updates = params.get("updates") or []
         notes = clip.get_all_notes_extended()
         by_id = dict((note.note_id, note) for note in notes)
@@ -522,35 +1173,83 @@ class AbletonLiveMCP(ControlSurface):
         clip.apply_note_modifications(notes)
         return {
             "clip": self._clip_summary(clip, None),
+            "note_api": "extended",
             "updated": len(changed),
             "notes": [self._note_summary(note) for note in changed],
         }
 
     def _rpc_clip_add_notes(self, params):
-        clip = self._resolve(params.get("ref"))
+        target = self._resolve(params.get("ref"))
+        created_clip = False
+        replaced_clip = False
+        launched = False
+        legacy_note_api = False
+        is_clip_slot, target_has_clip = self._clip_slot_state(target)
+        if is_clip_slot:
+            if params.get("replace_existing_clip"):
+                length = params.get("create_clip_length")
+                if length is None:
+                    raise ValueError("clip_add_notes requires create_clip_length when replacing an existing clip")
+                if target_has_clip:
+                    if not hasattr(target, "delete_clip"):
+                        raise ValueError("clip_add_notes replace_existing_clip requires a clip slot with delete_clip")
+                    target.delete_clip()
+                    replaced_clip = True
+                    target_has_clip = False
+                target.create_clip(float(length))
+                created_clip = True
+                target_has_clip = True
+            if not target_has_clip:
+                length = params.get("create_clip_length")
+                if length is None:
+                    raise ValueError("clip_add_notes requires create_clip_length when ref is an empty clip slot")
+                target.create_clip(float(length))
+                created_clip = True
+                target_has_clip = True
+            clip = target.clip
+        else:
+            if params.get("replace_existing_clip"):
+                raise ValueError("clip_add_notes replace_existing_clip requires a clip slot ref, not a clip ref")
+            clip = target
         if not getattr(clip, "is_midi_clip", False):
             raise ValueError("clip_add_notes requires a MIDI clip")
-        if params.get("clear"):
+        if params.get("clip_name") is not None:
             try:
-                clip.remove_notes_extended(from_pitch=0, pitch_span=128, from_time=0.0, time_span=float(getattr(clip, "length", 0.0)))
-            except TypeError:
-                clip.remove_notes(0.0, 0, float(getattr(clip, "length", 0.0)), 128)
-        clear_range = params.get("clear_range")
-        if clear_range:
+                clip.name = str(params.get("clip_name"))
+            except Exception:
+                pass
+        for key, attr in (("loop_start", "loop_start"), ("loop_end", "loop_end")):
+            if params.get(key) is not None:
+                try:
+                    setattr(clip, attr, float(params.get(key)))
+                except Exception:
+                    pass
+
+        def remove_notes_extended(from_pitch, pitch_span, from_time, time_span):
             try:
                 clip.remove_notes_extended(
-                    from_pitch=int(clear_range["from_pitch"]),
-                    pitch_span=int(clear_range["pitch_span"]),
-                    from_time=float(clear_range["from_time"]),
-                    time_span=float(clear_range["time_span"]),
+                    from_pitch=int(from_pitch),
+                    pitch_span=int(pitch_span),
+                    from_time=float(from_time),
+                    time_span=float(time_span),
                 )
-            except TypeError:
-                clip.remove_notes(
-                    float(clear_range["from_time"]),
-                    int(clear_range["from_pitch"]),
-                    float(clear_range["time_span"]),
-                    int(clear_range["pitch_span"]),
-                )
+                return False
+            except (AttributeError, TypeError):
+                if not params.get("allow_legacy_note_api"):
+                    raise RuntimeError("clip_add_notes clear requires remove_notes_extended; refusing legacy remove_notes unless allow_legacy_note_api is true")
+                clip.remove_notes(float(from_time), int(from_pitch), float(time_span), int(pitch_span))
+                return True
+
+        if params.get("clear"):
+            legacy_note_api = remove_notes_extended(0, 128, 0.0, float(getattr(clip, "length", 0.0))) or legacy_note_api
+        clear_range = params.get("clear_range")
+        if clear_range:
+            legacy_note_api = remove_notes_extended(
+                clear_range["from_pitch"],
+                clear_range["pitch_span"],
+                clear_range["from_time"],
+                clear_range["time_span"],
+            ) or legacy_note_api
         specs = []
         for note in params.get("notes") or []:
             specs.append(Live.Clip.MidiNoteSpecification(
@@ -562,11 +1261,31 @@ class AbletonLiveMCP(ControlSurface):
             ))
         if specs:
             clip.add_new_notes(tuple(specs))
+        if params.get("fire") and hasattr(target, "fire"):
+            target.fire()
+            launched = True
         return {
             "clip": self._clip_summary(clip, None),
+            "note_api": "extended" if not legacy_note_api else "legacy",
             "added": len(specs),
+            "created_clip": created_clip,
+            "replaced_clip": replaced_clip,
+            "launched": launched,
+            "legacy_note_api": legacy_note_api,
             "note_count": len(list(clip.get_all_notes_extended())),
         }
+
+    def _clip_slot_state(self, target):
+        try:
+            has_clip = bool(target.has_clip)
+            return True, has_clip
+        except Exception:
+            pass
+        try:
+            clip = target.clip
+            return True, clip is not None
+        except Exception:
+            return False, False
 
     def _rpc_clip_duplicate_to_arrangement(self, params):
         track = self._resolve(params.get("track"))
@@ -725,7 +1444,7 @@ class AbletonLiveMCP(ControlSurface):
         results = []
         continue_on_error = bool(params.get("continue_on_error"))
         inherited = {}
-        for name in ("detail", "include_repr", "max_items", "max_depth", "max_string_length", "timeout", "expected_set_signature"):
+        for name in ("detail", "include_repr", "max_items", "max_depth", "max_string_length", "timeout", "strict_timeout", "timeout_strict", "expected_set_signature"):
             if params.get(name) is not None:
                 inherited[name] = params.get(name)
         for index, op in enumerate(params.get("operations") or []):
@@ -744,7 +1463,7 @@ class AbletonLiveMCP(ControlSurface):
                 results.append(item)
                 if not continue_on_error:
                     break
-        return results
+        return _EncodedResult(results)
 
     def _rpc_browser_roots(self, _params):
         browser = Live.Application.get_application().browser
@@ -894,6 +1613,7 @@ class AbletonLiveMCP(ControlSurface):
         return {"previewing": True, "item": self._browser_item_result(None, item, None)}
 
     def _rpc_eval(self, params):
+        self._reject_legacy_note_api_code(params.get("expr"), params)
         ref = params.get("ref")
         obj = self._resolve(ref) if ref else None
         env = {
@@ -906,6 +1626,7 @@ class AbletonLiveMCP(ControlSurface):
         return eval(params["expr"], env, {})
 
     def _rpc_exec(self, params):
+        self._reject_legacy_note_api_code(params.get("code"), params)
         ref = params.get("ref")
         obj = self._resolve(ref) if ref else None
         env = {
@@ -918,6 +1639,14 @@ class AbletonLiveMCP(ControlSurface):
         }
         exec(params["code"], env, env)
         return env.get("result")
+
+    def _reject_legacy_note_api_code(self, code, params):
+        if params.get("allow_legacy_note_api"):
+            return
+        compact = "".join(str(code or "").split())
+        for name in LEGACY_NOTE_API_NAMES:
+            if ("%s(" % name) in compact:
+                raise RuntimeError("Refusing obsolete MIDI note API %s in live_exec/live_eval; use live_clip_add_notes/live_clip_update_notes or pass allow_legacy_note_api only for disposable compatibility testing" % name)
 
     def _rpc_observe(self, params):
         obj = self._resolve(params.get("ref"))
@@ -1221,6 +1950,19 @@ class AbletonLiveMCP(ControlSurface):
             return obj.canonical_path
         except Exception:
             return None
+
+    def _same_live_object(self, left, right):
+        if left is right:
+            return True
+        left_path = self._canonical_path(left)
+        right_path = self._canonical_path(right)
+        if left_path and right_path:
+            return left_path == right_path
+        left_ptr = getattr(left, "_live_ptr", None)
+        right_ptr = getattr(right, "_live_ptr", None)
+        if left_ptr is not None and right_ptr is not None:
+            return left_ptr == right_ptr
+        return False
 
     def _detail(self, params):
         return bool(params and (params.get("detail") or params.get("include_repr")))

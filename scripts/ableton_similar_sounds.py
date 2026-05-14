@@ -3,7 +3,7 @@ from similar_sounds import find_similar_sounds
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Query Ableton Live 12's indexed sound-similarity feature vectors.")
+    parser = argparse.ArgumentParser(description="Query Live 12+ indexed sound-similarity feature vectors.")
     parser.add_argument("base", help="Base file_id or a LIKE-able filename fragment, e.g. 'Kick 18 Inch'")
     parser.add_argument("--db", dest="db_path", help="Live-files-*.db path")
     parser.add_argument("--limit", type=int, default=12)

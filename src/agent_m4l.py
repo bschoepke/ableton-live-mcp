@@ -1,0 +1,943 @@
+from __future__ import annotations
+
+import json
+import argparse
+import base64
+import hashlib
+import re
+import shutil
+from pathlib import Path
+from typing import Any
+
+from ableton_paths import default_user_library, find_max_device_template, state_dir
+
+ROOT = Path(__file__).resolve().parents[1]
+HOST_JS = ROOT / "m4l" / "agent_m4l_host.js"
+GENERATED_DIR = ROOT / "m4l" / "generated"
+WEBUI_DIR = GENERATED_DIR / "webui"
+UDP_PORT_BASE = 17655
+UDP_PORT_SPAN = 30000
+DEFAULT_DEVICE_WIDTH = 420
+MIN_DEVICE_WIDTH = 260
+DEVICE_WIDTH_PADDING = 20
+DEFAULT_DEVICE_HEIGHT = 170
+MIN_DEVICE_HEIGHT = 120
+DEVICE_HEIGHT_PADDING = 20
+STATUS_PATH_PREVIEW_LIMIT = 24
+FALLBACK_POLL_INTERVAL_MS = 500
+SIGNAL_WAKE_RATE_HZ = 1
+
+ROLE_PRESETS = {
+    "audio_effect": {
+        "folder_parts": ("Presets", "Audio Effects", "Max Audio Effect"),
+        "template_name": "Max Audio Effect.amxd",
+        "header": b"aaaa",
+        "amxdtype": 1633771873,
+        "io": "audio_effect",
+    },
+    "instrument": {
+        "folder_parts": ("Presets", "Instruments", "Max Instrument"),
+        "template_name": "Max Instrument.amxd",
+        "header": b"iiii",
+        "amxdtype": 1768515945,
+        "io": "instrument",
+    },
+    "midi_effect": {
+        "folder_parts": ("Presets", "MIDI Effects", "Max MIDI Effect"),
+        "template_name": "Max MIDI Effect.amxd",
+        "header": b"mmmm",
+        "amxdtype": 1835887981,
+        "io": "midi_effect",
+    },
+}
+
+
+def normalize_role(role: str | None) -> str:
+    value = (role or "audio_effect").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "audio": "audio_effect",
+        "effect": "audio_effect",
+        "fx": "audio_effect",
+        "synth": "instrument",
+        "midi": "midi_effect",
+    }
+    value = aliases.get(value, value)
+    if value not in ROLE_PRESETS:
+        raise ValueError("role must be audio_effect, instrument, or midi_effect")
+    return value
+
+
+def slugify(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", value.strip())
+    slug = re.sub(r"_+", "_", slug).strip("._-")
+    return slug[:80] or "Device"
+
+
+def device_name(role: str, instance_id: str, title: str | None = None) -> str:
+    stem = slugify(title or instance_id)
+    return "AgentM4L_%s_%s" % (role, stem)
+
+
+def command_file(instance_id: str) -> str:
+    return str(state_dir() / ("agent_m4l_%s.json" % slugify(instance_id)))
+
+
+def status_file(instance_id: str) -> str:
+    return str(state_dir() / ("agent_m4l_%s_status.json" % slugify(instance_id)))
+
+
+def audio_bus_names(instance_id: str) -> dict[str, str]:
+    stem = "agent_m4l_%s" % slugify(instance_id)
+    return {
+        "input_left": "%s_audio_in_l" % stem,
+        "input_right": "%s_audio_in_r" % stem,
+        "output_left": "%s_audio_out_l" % stem,
+        "output_right": "%s_audio_out_r" % stem,
+    }
+
+
+def udp_port(instance_id: str) -> int:
+    digest = hashlib.sha1(slugify(instance_id).encode("utf-8")).hexdigest()
+    return UDP_PORT_BASE + (int(digest[:8], 16) % UDP_PORT_SPAN)
+
+
+def infer_device_width(spec: dict[str, Any] | None = None, fallback: int = DEFAULT_DEVICE_WIDTH) -> int:
+    explicit = _positive_int(spec.get("device_width") or spec.get("devicewidth") or spec.get("width")) if isinstance(spec, dict) else 0
+    if explicit > 0:
+        return max(MIN_DEVICE_WIDTH, explicit)
+    width = 0
+    if isinstance(spec, dict):
+        for item in spec.get("objects") or []:
+            width = max(width, _rect_right(item.get("presentation_rect")))
+        for item in _webui_items(spec.get("webuis") or spec.get("webui")):
+            width = max(width, _rect_right(item.get("presentation_rect")))
+    if width <= 0:
+        width = fallback
+        return max(MIN_DEVICE_WIDTH, int(round(width)))
+    return max(MIN_DEVICE_WIDTH, int(round(width + DEVICE_WIDTH_PADDING)))
+
+
+def infer_device_height(spec: dict[str, Any] | None = None, fallback: int = DEFAULT_DEVICE_HEIGHT) -> int:
+    explicit = _positive_int(spec.get("device_height") or spec.get("deviceheight") or spec.get("height")) if isinstance(spec, dict) else 0
+    if explicit > 0:
+        return max(MIN_DEVICE_HEIGHT, explicit)
+    height = 0
+    if isinstance(spec, dict):
+        for item in spec.get("objects") or []:
+            height = max(height, _rect_bottom(item.get("presentation_rect")))
+        for item in _webui_items(spec.get("webuis") or spec.get("webui")):
+            height = max(height, _rect_bottom(item.get("presentation_rect")))
+    if height <= 0:
+        height = fallback
+        return max(MIN_DEVICE_HEIGHT, int(round(height)))
+    return max(MIN_DEVICE_HEIGHT, int(round(height + DEVICE_HEIGHT_PADDING)))
+
+
+def infer_device_bounds(spec: dict[str, Any] | None = None) -> dict[str, int]:
+    return {
+        "width": infer_device_width(spec),
+        "height": infer_device_height(spec),
+    }
+
+
+def _positive_int(value: Any) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _webui_items(webui: Any) -> list[dict[str, Any]]:
+    if isinstance(webui, list):
+        return [item for item in webui if isinstance(item, dict)]
+    if isinstance(webui, dict):
+        return [webui]
+    return []
+
+
+def _rect_right(rect: Any) -> int:
+    if not isinstance(rect, list) or len(rect) < 4:
+        return 0
+    try:
+        return int(float(rect[0]) + float(rect[2]))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _rect_bottom(rect: Any) -> int:
+    if not isinstance(rect, list) or len(rect) < 4:
+        return 0
+    try:
+        return int(float(rect[1]) + float(rect[3]))
+    except (TypeError, ValueError):
+        return 0
+
+
+def max_arg(value: str) -> str:
+    text = str(value).replace("\\", "/")
+    if re.search(r"\s", text):
+        return '"%s"' % text.replace('"', '\\"')
+    return text
+
+
+def install_folder(role: str) -> Path:
+    preset = ROLE_PRESETS[normalize_role(role)]
+    return default_user_library().joinpath(*preset["folder_parts"])
+
+
+def role_template(role: str) -> Path | None:
+    preset = ROLE_PRESETS[normalize_role(role)]
+    return find_max_device_template(str(preset["template_name"]))
+
+
+def _role_from_patch(patch: dict[str, Any], fallback: str = "audio_effect") -> str:
+    amxdtype = patch.get("patcher", {}).get("amxdtype")
+    for role, preset in ROLE_PRESETS.items():
+        if preset["amxdtype"] == amxdtype:
+            return role
+    return normalize_role(fallback)
+
+
+def replace_ptch_chunk(container: bytes, payload: bytes) -> bytes:
+    index = container.find(b"ptch")
+    if index < 0:
+        raise ValueError("AMXD template is missing a ptch chunk")
+    size_start = index + 4
+    size_end = size_start + 4
+    if size_end > len(container):
+        raise ValueError("AMXD template has a truncated ptch chunk header")
+    old_size = int.from_bytes(container[size_start:size_end], "little")
+    payload_start = size_end
+    payload_end = payload_start + old_size
+    if payload_end > len(container):
+        raise ValueError("AMXD template has a truncated ptch chunk payload")
+    return (
+        container[:size_start]
+        + len(payload).to_bytes(4, "little")
+        + payload
+        + container[payload_end:]
+    )
+
+
+def extract_ptch_chunk(container: bytes) -> bytes:
+    index = container.find(b"ptch")
+    if index < 0:
+        raise ValueError("AMXD container is missing a ptch chunk")
+    size_start = index + 4
+    size_end = size_start + 4
+    if size_end > len(container):
+        raise ValueError("AMXD container has a truncated ptch chunk header")
+    size = int.from_bytes(container[size_start:size_end], "little")
+    payload_start = size_end
+    payload_end = payload_start + size
+    if payload_end > len(container):
+        raise ValueError("AMXD container has a truncated ptch chunk payload")
+    return container[payload_start:payload_end]
+
+
+def _minimal_amxd_container(role: str, payload: bytes) -> bytes:
+    header = ROLE_PRESETS[role]["header"]
+    return (
+        b"ampf"
+        + (4).to_bytes(4, "little")
+        + header
+        + b"meta"
+        + (4).to_bytes(4, "little")
+        + b"\x00\x00\x00\x00"
+        + b"ptch"
+        + len(payload).to_bytes(4, "little")
+        + payload
+    )
+
+
+def build_amxd(source: Path, output: Path, role: str | None = None) -> None:
+    patch_json = source.read_text(encoding="utf-8")
+    patch = json.loads(patch_json)
+    role = normalize_role(role or _role_from_patch(patch))
+    payload = patch_json.encode("utf-8") + b"\x00"
+    template = role_template(role)
+    if template and template.exists():
+        data = replace_ptch_chunk(template.read_bytes(), payload)
+    else:
+        data = _minimal_amxd_container(role, payload)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(data)
+
+
+HOST_BOX_WIDTH = 72.0
+HOST_BOX_HEIGHT = 22.0
+HOST_COL_0 = 8.0
+HOST_COL_1 = 96.0
+HOST_COL_2 = 184.0
+
+
+def _box(box_id: str, maxclass: str, text: str | None, x: float, y: float, **extra: Any) -> dict[str, Any]:
+    box: dict[str, Any] = {
+        "id": box_id,
+        "maxclass": maxclass,
+        "varname": box_id,
+        "patching_rect": [x, y, HOST_BOX_WIDTH, HOST_BOX_HEIGHT],
+    }
+    if text is not None:
+        box["text"] = text
+    box.update(extra)
+    return {"box": box}
+
+
+def _line(src: str, src_out: int, dst: str, dst_in: int) -> dict[str, Any]:
+    return {"patchline": {"source": [src, src_out], "destination": [dst, dst_in]}}
+
+
+def make_host_patch(role: str, instance_id: str, title: str | None = None, device_width: int | None = None, device_height: int | None = None) -> dict[str, Any]:
+    role = normalize_role(role)
+    name = device_name(role, instance_id, title)
+    preset = ROLE_PRESETS[role]
+    device_width = infer_device_width({"device_width": device_width} if device_width else None)
+    device_height = infer_device_height({"device_height": device_height} if device_height else None)
+    js_text = "js agent_m4l_host.js %s %s %s %s" % (
+        role,
+        slugify(instance_id),
+        max_arg(command_file(instance_id)),
+        max_arg(status_file(instance_id)),
+    )
+    boxes = [
+        _box("comment-title", "comment", "Agent M4L Dynamic Host: %s" % name, HOST_COL_0, 20.0),
+        _box("js", "newobj", js_text, HOST_COL_0, 48.0),
+        _box("udp", "newobj", "udpreceive %d" % udp_port(instance_id), HOST_COL_1, 20.0),
+        _box("poll-loadbang", "newobj", "loadbang", HOST_COL_1, 48.0),
+        _box("poll-start", "message", "1", HOST_COL_1, 76.0),
+        _box("poll-metro", "newobj", "qmetro %d @active 1" % FALLBACK_POLL_INTERVAL_MS, HOST_COL_1, 104.0),
+        _box("poll-live-device", "newobj", "live.thisdevice", HOST_COL_2, 48.0),
+        _box("poll-defer", "newobj", "deferlow", HOST_COL_2, 76.0),
+        _box("poll-delay", "newobj", "delay 100", HOST_COL_2, 104.0),
+        _box("self-path-message", "message", "path this_device", HOST_COL_0, 132.0),
+        _box("self-path", "newobj", "live.path this_device", HOST_COL_0, 160.0),
+        _box("self-prepend", "newobj", "prepend __self_device", HOST_COL_0, 188.0),
+        _box("trigger-path-message", "message", "path this_device parameters 1", HOST_COL_1, 132.0),
+        _box("trigger-path", "newobj", "live.path this_device parameters 1", HOST_COL_1, 160.0),
+        _box("trigger-observer", "newobj", "live.observer value", HOST_COL_1, 188.0),
+        _box("trigger-prepend", "newobj", "prepend __command_trigger", HOST_COL_1, 216.0),
+        _box("command-filewatch", "newobj", "filewatch %s" % max_arg(command_file(instance_id)), HOST_COL_2, 132.0),
+        _box("command-filewatch-init", "newobj", "trigger b b", HOST_COL_2, 160.0),
+        _box("command-filewatch-path", "message", max_arg(command_file(instance_id)), HOST_COL_2, 188.0),
+        _box("command-filewatch-start", "message", "1", HOST_COL_2, 216.0),
+        _box("command-filewatch-prepend", "newobj", "prepend __filewatch", HOST_COL_2, 244.0),
+        _box(
+            "command-trigger",
+            "live.numbox",
+            None,
+            HOST_COL_0,
+            216.0,
+            parameter_enable=1,
+            parameter_shortname="Agent Poll",
+            parameter_longname="Agent M4L Poll",
+        ),
+        _box("script", "newobj", "thispatcher", HOST_COL_2, 20.0),
+    ]
+    lines = [
+        _line("udp", 0, "js", 0),
+        _line("poll-loadbang", 0, "poll-start", 0),
+        _line("poll-loadbang", 0, "poll-defer", 0),
+        _line("poll-defer", 0, "poll-start", 0),
+        _line("poll-loadbang", 0, "poll-delay", 0),
+        _line("poll-live-device", 0, "poll-start", 0),
+        _line("poll-live-device", 0, "poll-delay", 0),
+        _line("poll-live-device", 0, "self-path-message", 0),
+        _line("poll-loadbang", 0, "self-path", 0),
+        _line("poll-live-device", 0, "self-path", 0),
+        _line("self-path-message", 0, "self-path", 0),
+        _line("self-path", 0, "self-prepend", 0),
+        _line("self-prepend", 0, "js", 0),
+        _line("poll-live-device", 0, "trigger-path-message", 0),
+        _line("poll-loadbang", 0, "trigger-path", 0),
+        _line("poll-live-device", 0, "trigger-path", 0),
+        _line("trigger-path-message", 0, "trigger-path", 0),
+        _line("trigger-path", 0, "trigger-observer", 1),
+        _line("trigger-observer", 0, "trigger-prepend", 0),
+        _line("trigger-prepend", 0, "js", 0),
+        _line("poll-loadbang", 0, "command-filewatch-init", 0),
+        _line("poll-live-device", 0, "command-filewatch-init", 0),
+        _line("command-filewatch-init", 1, "command-filewatch-path", 0),
+        _line("command-filewatch-init", 0, "command-filewatch-start", 0),
+        _line("command-filewatch-path", 0, "command-filewatch", 0),
+        _line("command-filewatch-start", 0, "command-filewatch", 0),
+        _line("command-filewatch", 0, "command-filewatch-prepend", 0),
+        _line("command-filewatch-prepend", 0, "js", 0),
+        _line("poll-delay", 0, "js", 0),
+        _line("command-trigger", 0, "js", 0),
+        _line("poll-start", 0, "poll-metro", 0),
+        _line("poll-metro", 0, "js", 0),
+    ]
+    audio_buses = audio_bus_names(instance_id)
+    if preset["io"] == "audio_effect":
+        boxes += [
+            _box("plugin", "newobj", "plugin~", HOST_COL_0, 280.0),
+            _box("audio-in-l", "newobj", "send~ %s" % audio_buses["input_left"], HOST_COL_0, 308.0),
+            _box("audio-in-r", "newobj", "send~ %s" % audio_buses["input_right"], HOST_COL_1, 308.0),
+            _box("audio-out-l", "newobj", "receive~ %s" % audio_buses["output_left"], HOST_COL_0, 336.0),
+            _box("audio-out-r", "newobj", "receive~ %s" % audio_buses["output_right"], HOST_COL_1, 336.0),
+            _box("plugout", "newobj", "plugout~ 1 2", HOST_COL_0, 364.0),
+            _box("signal-wake-clock", "newobj", "phasor~ %d" % SIGNAL_WAKE_RATE_HZ, HOST_COL_0, 392.0),
+            _box("signal-wake-threshold", "newobj", ">~ 0.5", HOST_COL_1, 392.0),
+            _box("signal-wake-edge", "newobj", "edge~", HOST_COL_2, 392.0),
+            _box("signal-wake-prepend", "newobj", "prepend __signal_wake", HOST_COL_0, 420.0),
+            _box("signal-wake-sink", "newobj", "*~ 0.", HOST_COL_1, 420.0),
+        ]
+        lines += [
+            _line("plugin", 0, "audio-in-l", 0),
+            _line("plugin", 1, "audio-in-r", 0),
+            _line("audio-out-l", 0, "plugout", 0),
+            _line("audio-out-r", 0, "plugout", 1),
+            _line("signal-wake-clock", 0, "signal-wake-threshold", 0),
+            _line("signal-wake-threshold", 0, "signal-wake-edge", 0),
+            _line("signal-wake-edge", 0, "signal-wake-prepend", 0),
+            _line("signal-wake-prepend", 0, "js", 0),
+            _line("signal-wake-threshold", 0, "signal-wake-sink", 0),
+            _line("signal-wake-sink", 0, "plugout", 0),
+        ]
+    elif preset["io"] == "instrument":
+        boxes += [
+            _box("midiin", "newobj", "midiin", HOST_COL_0, 280.0),
+            _box("midi-wake-prepend", "newobj", "prepend __midi_wake", HOST_COL_0, 308.0),
+            _box("midiout", "newobj", "midiout", HOST_COL_0, 336.0),
+            _box("audio-out-l", "newobj", "receive~ %s" % audio_buses["output_left"], HOST_COL_1, 280.0),
+            _box("audio-out-r", "newobj", "receive~ %s" % audio_buses["output_right"], HOST_COL_2, 280.0),
+            _box("plugout", "newobj", "plugout~ 1 2", HOST_COL_1, 308.0),
+            _box("signal-wake-clock", "newobj", "phasor~ %d" % SIGNAL_WAKE_RATE_HZ, HOST_COL_0, 364.0),
+            _box("signal-wake-threshold", "newobj", ">~ 0.5", HOST_COL_1, 364.0),
+            _box("signal-wake-edge", "newobj", "edge~", HOST_COL_2, 364.0),
+            _box("signal-wake-prepend", "newobj", "prepend __signal_wake", HOST_COL_0, 392.0),
+            _box("signal-wake-sink", "newobj", "*~ 0.", HOST_COL_1, 392.0),
+        ]
+        lines += [
+            _line("audio-out-l", 0, "plugout", 0),
+            _line("audio-out-r", 0, "plugout", 1),
+            _line("signal-wake-clock", 0, "signal-wake-threshold", 0),
+            _line("signal-wake-threshold", 0, "signal-wake-edge", 0),
+            _line("signal-wake-edge", 0, "signal-wake-prepend", 0),
+            _line("signal-wake-prepend", 0, "js", 0),
+            _line("signal-wake-threshold", 0, "signal-wake-sink", 0),
+            _line("signal-wake-sink", 0, "plugout", 0),
+            _line("midiin", 0, "midi-wake-prepend", 0),
+            _line("midi-wake-prepend", 0, "js", 0),
+        ]
+    else:
+        boxes += [
+            _box("midiin", "newobj", "midiin", HOST_COL_0, 280.0),
+            _box("midi-wake-prepend", "newobj", "prepend __midi_wake", HOST_COL_0, 308.0),
+            _box("midiout", "newobj", "midiout", HOST_COL_0, 336.0),
+        ]
+        lines += [
+            _line("midiin", 0, "midi-wake-prepend", 0),
+            _line("midi-wake-prepend", 0, "js", 0),
+        ]
+    return {
+        "patcher": {
+            "fileversion": 1,
+            "appversion": {"major": 8, "minor": 6, "revision": 0, "architecture": "x64"},
+            "classnamespace": "box",
+            "rect": [0.0, 0.0, float(device_width), float(device_height)],
+            "openrect": [0.0, 0.0, float(device_width), float(device_height)],
+            "bglocked": 0,
+            "openinpresentation": 1,
+            "devicewidth": float(device_width),
+            "default_fontsize": 12.0,
+            "default_fontface": 0,
+            "default_fontname": "Arial",
+            "gridonopen": 1,
+            "gridsize": [15.0, 15.0],
+            "boxes": boxes,
+            "lines": lines,
+            "appversion_at_last_save": "8.6.0",
+            "amxdtype": preset["amxdtype"],
+        }
+    }
+
+
+def build_device(role: str, instance_id: str, title: str | None = None, install: bool = True, device_width: int | None = None, device_height: int | None = None) -> dict[str, Any]:
+    role = normalize_role(role)
+    name = device_name(role, instance_id, title)
+    patch_path = GENERATED_DIR / ("%s.maxpat" % name)
+    amxd_path = GENERATED_DIR / ("%s.amxd" % name)
+    patch_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_width = infer_device_width({"device_width": device_width} if device_width else None)
+    resolved_height = infer_device_height({"device_height": device_height} if device_height else None)
+    patch_path.write_text(json.dumps(make_host_patch(role, instance_id, title, resolved_width, resolved_height), indent=2), encoding="utf-8")
+    build_amxd(patch_path, amxd_path, role)
+    shutil.copyfile(HOST_JS, amxd_path.with_name(HOST_JS.name))
+    installed_path = ""
+    if install:
+        installed = install_folder(role) / amxd_path.name
+        installed.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(amxd_path, installed)
+        shutil.copyfile(HOST_JS, installed.with_name(HOST_JS.name))
+        installed_path = str(installed)
+    return {
+        "name": name,
+        "role": role,
+        "instance_id": slugify(instance_id),
+        "patch_path": str(patch_path),
+        "amxd_path": str(amxd_path),
+        "installed_path": installed_path,
+        "command_file": command_file(instance_id),
+        "status_file": status_file(instance_id),
+        "audio_buses": audio_bus_names(instance_id),
+        "udp_port": udp_port(instance_id),
+        "device_width": resolved_width,
+        "device_height": resolved_height,
+    }
+
+
+def build_pool(role: str, count: int, prefix: str = "slot", install: bool = True) -> list[dict[str, Any]]:
+    if count < 1:
+        raise ValueError("count must be >= 1")
+    return [
+        build_device(role, "%s_%03d" % (slugify(prefix), index), "%s_%03d" % (slugify(prefix), index), install=install)
+        for index in range(count)
+    ]
+
+
+def agent_m4l_host_targets() -> list[dict[str, Any]]:
+    targets: list[dict[str, Any]] = []
+    if contains_agent_m4l_devices(GENERATED_DIR):
+        targets.append({"label": "generated", "path": GENERATED_DIR / HOST_JS.name})
+    for role in ROLE_PRESETS:
+        folder = install_folder(role)
+        if contains_agent_m4l_devices(folder):
+            targets.append({"label": role, "path": folder / HOST_JS.name})
+    return targets
+
+
+def contains_agent_m4l_devices(folder: Path) -> bool:
+    try:
+        return folder.is_dir() and any(folder.glob("AgentM4L_*.amxd"))
+    except Exception:
+        return False
+
+
+def agent_m4l_wrapper_paths() -> list[Path]:
+    paths: list[Path] = []
+    roots = [GENERATED_DIR]
+    for role in ROLE_PRESETS:
+        roots.append(install_folder(role))
+    for root in roots:
+        try:
+            paths.extend(sorted(root.glob("AgentM4L_*.maxpat")))
+            paths.extend(sorted(root.glob("AgentM4L_*.amxd")))
+        except Exception:
+            continue
+    return paths
+
+
+def wrapper_has_console_status_sink(path: Path) -> bool:
+    try:
+        if path.suffix.lower() == ".maxpat":
+            patch = json.loads(path.read_text(encoding="utf-8"))
+        elif path.suffix.lower() == ".amxd":
+            payload = extract_ptch_chunk(path.read_bytes()).rstrip(b"\x00")
+            patch = json.loads(payload.decode("utf-8"))
+        else:
+            return False
+    except Exception:
+        return False
+    return bool(console_status_sink_ids(patch))
+
+
+def console_status_sink_ids(patch: dict[str, Any]) -> set[str]:
+    sink_ids: set[str] = set()
+    boxes = patch.get("patcher", {}).get("boxes") or []
+    for item in boxes:
+        box = item.get("box") if isinstance(item, dict) else None
+        if not isinstance(box, dict):
+            continue
+        text = str(box.get("text") or "")
+        box_id = str(box.get("id") or "")
+        if text.startswith("print AgentM4L_") or (box_id == "status" and text.startswith("print ")):
+            sink_ids.add(box_id)
+    return sink_ids
+
+
+def remove_console_status_sinks(patch: dict[str, Any]) -> bool:
+    patcher = patch.get("patcher")
+    if not isinstance(patcher, dict):
+        return False
+    sink_ids = console_status_sink_ids(patch)
+    if not sink_ids:
+        return False
+    boxes = patcher.get("boxes") or []
+    patcher["boxes"] = [
+        item for item in boxes
+        if str((item.get("box") or {}).get("id") or "") not in sink_ids
+    ]
+    lines = patcher.get("lines") or []
+    kept_lines = []
+    for item in lines:
+        line = item.get("patchline") if isinstance(item, dict) else None
+        if not isinstance(line, dict):
+            kept_lines.append(item)
+            continue
+        source = line.get("source") or []
+        destination = line.get("destination") or []
+        source_id = str(source[0]) if source else ""
+        destination_id = str(destination[0]) if destination else ""
+        if source_id in sink_ids or destination_id in sink_ids:
+            continue
+        kept_lines.append(item)
+    patcher["lines"] = kept_lines
+    return True
+
+
+def repair_console_status_sink(path: Path) -> bool:
+    try:
+        if path.suffix.lower() == ".maxpat":
+            patch = json.loads(path.read_text(encoding="utf-8"))
+            if not remove_console_status_sinks(patch):
+                return False
+            path.write_text(json.dumps(patch, indent=2), encoding="utf-8")
+            return True
+        if path.suffix.lower() == ".amxd":
+            container = path.read_bytes()
+            payload = extract_ptch_chunk(container).rstrip(b"\x00")
+            patch = json.loads(payload.decode("utf-8"))
+            if not remove_console_status_sinks(patch):
+                return False
+            new_payload = json.dumps(patch, indent=2).encode("utf-8") + b"\x00"
+            path.write_bytes(replace_ptch_chunk(container, new_payload))
+            return True
+    except Exception:
+        return False
+    return False
+
+
+def stale_console_status_wrapper_paths() -> list[Path]:
+    return [path for path in agent_m4l_wrapper_paths() if wrapper_has_console_status_sink(path)]
+
+
+def preview_paths(paths: list[str]) -> list[str]:
+    return paths[:STATUS_PATH_PREVIEW_LIMIT]
+
+
+def agent_m4l_host_status() -> dict[str, Any]:
+    source_hash = sha256_file(HOST_JS) if HOST_JS.is_file() else None
+    checked = []
+    missing = []
+    stale = []
+    for target in agent_m4l_host_targets():
+        path = Path(target["path"])
+        target_hash = sha256_file(path) if path.is_file() else None
+        current = bool(source_hash and target_hash == source_hash)
+        item = {
+            "label": str(target["label"]),
+            "path": str(path),
+            "installed": path.is_file(),
+            "current": current,
+            "target_sha256": target_hash,
+        }
+        checked.append(item)
+        if not path.is_file():
+            missing.append(str(path))
+        elif not current:
+            stale.append(str(path))
+    wrapper_paths = agent_m4l_wrapper_paths()
+    stale_wrappers = [str(path) for path in stale_console_status_wrapper_paths()]
+    return {
+        "source": str(HOST_JS),
+        "source_sha256": source_hash,
+        "current": bool(source_hash) and not missing and not stale and not stale_wrappers,
+        "targets_checked": len(checked),
+        "targets": checked,
+        "missing": missing,
+        "stale": stale,
+        "stale_wrappers": preview_paths(stale_wrappers),
+        "stale_wrappers_count": len(stale_wrappers),
+        "stale_wrappers_checked": len(wrapper_paths),
+    }
+
+
+def sync_host_js(dry_run: bool = False, repair_wrappers: bool = True) -> dict[str, Any]:
+    before = agent_m4l_host_status()
+    copied = []
+    skipped = []
+    repaired_wrappers = []
+    if not HOST_JS.is_file():
+        raise FileNotFoundError("Agent M4L host JS is missing: %s" % HOST_JS)
+    source_hash = before.get("source_sha256")
+    for target in before["targets"]:
+        path = Path(str(target["path"]))
+        if target.get("current"):
+            skipped.append(str(path))
+            continue
+        if not dry_run:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(HOST_JS, path)
+        copied.append(str(path))
+    if repair_wrappers:
+        for path in stale_console_status_wrapper_paths():
+            if dry_run:
+                repaired_wrappers.append(str(path))
+            elif repair_console_status_sink(path):
+                repaired_wrappers.append(str(path))
+    after = before if dry_run else agent_m4l_host_status()
+    after["copied"] = copied
+    after["skipped"] = skipped
+    after["repaired_wrappers"] = preview_paths(repaired_wrappers)
+    after["repaired_wrappers_count"] = len(repaired_wrappers)
+    after["repair_wrappers"] = repair_wrappers
+    after["dry_run"] = dry_run
+    after["source_sha256"] = source_hash
+    return after
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def write_webui(instance_id: str, webui: dict[str, Any]) -> dict[str, Any]:
+    slug = slugify(instance_id)
+    directory = WEBUI_DIR / slug
+    directory.mkdir(parents=True, exist_ok=True)
+    html_path = directory / "index.html"
+    css_path = directory / "style.css"
+    js_path = directory / "device.js"
+    css = str(webui.get("css") or DEFAULT_WEBUI_CSS)
+    js = str(webui.get("js") or DEFAULT_WEBUI_JS)
+    html = inject_webui_bootstrap(str(webui.get("html") or default_webui_html(str(webui.get("title") or slug), webui.get("controls") or [])))
+    css_path.write_text(css, encoding="utf-8")
+    js_path.write_text(js, encoding="utf-8")
+    html_path.write_text(html, encoding="utf-8")
+    assets = write_webui_asset_files(instance_id, webui.get("assets"))
+    return {
+        "html_path": str(html_path),
+        "css_path": str(css_path),
+        "js_path": str(js_path),
+        "url": html_path.resolve().as_uri(),
+        "assets": assets,
+    }
+
+
+def write_webui_asset_files(instance_id: str, assets: Any) -> list[dict[str, Any]]:
+    directory = WEBUI_DIR / slugify(instance_id)
+    directory.mkdir(parents=True, exist_ok=True)
+    return write_webui_assets(directory, assets)
+
+
+def write_webui_assets(directory: Path, assets: Any) -> list[dict[str, Any]]:
+    rendered = []
+    for name, asset in webui_asset_items(assets):
+        relative = safe_asset_path(name)
+        path = directory / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(asset, dict):
+            data = asset_data(asset)
+        else:
+            data = str(asset).encode("utf-8")
+        path.write_bytes(data)
+        rendered.append({
+            "path": str(path),
+            "relative_path": relative,
+            "url": path.resolve().as_uri(),
+            "bytes": len(data),
+        })
+    return rendered
+
+
+def webui_asset_items(assets: Any) -> list[tuple[str, Any]]:
+    if isinstance(assets, dict):
+        return [(str(name), asset) for name, asset in assets.items()]
+    if isinstance(assets, list):
+        result = []
+        for index, asset in enumerate(assets):
+            if isinstance(asset, dict):
+                name = asset.get("path") or asset.get("name") or asset.get("filename") or str(index)
+                result.append((str(name), asset))
+        return result
+    return []
+
+
+def asset_data(asset: dict[str, Any]) -> bytes:
+    if asset.get("base64") is not None:
+        return base64.b64decode(str(asset["base64"]))
+    for key in ("source_path", "file_path"):
+        if asset.get(key) is not None:
+            return Path(str(asset[key])).read_bytes()
+    if asset.get("content") is not None:
+        return str(asset["content"]).encode("utf-8")
+    if asset.get("text") is not None:
+        return str(asset["text"]).encode("utf-8")
+    return b""
+
+
+def safe_asset_path(name: str) -> str:
+    parts = []
+    for part in str(name).replace("\\", "/").split("/"):
+        safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", part.strip())
+        safe = re.sub(r"_+", "_", safe).strip("._-")
+        if safe:
+            parts.append(safe[:80])
+    if not parts:
+        raise ValueError("webui asset path must include a filename")
+    return "/".join(parts)
+
+
+def default_webui_html(title: str, controls: list[dict[str, Any]]) -> str:
+    if not controls:
+        controls = [{"id": "amount", "label": "Amount", "min": 0, "max": 1, "value": 0.5, "step": 0.001}]
+    rows = []
+    for control in controls:
+        cid = slugify(str(control.get("id") or "amount"))
+        label = str(control.get("label") or cid)
+        minimum = control.get("min", 0)
+        maximum = control.get("max", 1)
+        value = control.get("value", 0)
+        step = control.get("step", 0.001)
+        rows.append(
+            '<label class="control"><span>%s</span><input data-param="%s" type="range" min="%s" max="%s" step="%s" value="%s"><output>%s</output></label>'
+            % (label, cid, minimum, maximum, step, value, value)
+        )
+    return """<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>%s</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>%s</header>
+    %s
+  </main>
+  <script src="device.js"></script>
+</body>
+</html>
+""" % (title, title, "\n    ".join(rows))
+
+
+def inject_webui_bootstrap(html: str) -> str:
+    """Add load/error telemetry without constraining the page's custom UI."""
+    if "agent-m4l-bootstrap" in html:
+        return html
+    script = '<script id="agent-m4l-bootstrap">%s</script>' % AGENT_M4L_WEBUI_BOOTSTRAP_JS
+    lower = html.lower()
+    head_index = lower.find("</head>")
+    if head_index >= 0:
+        return html[:head_index] + script + html[head_index:]
+    script_index = lower.find("<script")
+    if script_index >= 0:
+        return html[:script_index] + script + html[script_index:]
+    return html + script
+
+
+AGENT_M4L_WEBUI_BOOTSTRAP_JS = (
+    "(function(){"
+    "if(window.__agentM4LBootstrap)return;"
+    "window.__agentM4LBootstrap=1;"
+    "var q=[],active=0,tries=0;"
+    "function send(a){if(window.max&&window.max.outlet){try{window.max.outlet.apply(window.max,a);return true}catch(_e){}}return false}"
+    "function flush(){active=0;tries++;for(var i=0;i<q.length;){if(send(q[i]))q.splice(i,1);else i++;}if(q.length&&tries<80)arm();}"
+    "function arm(){if(active)return;active=1;setTimeout(flush,tries<10?50:250)}"
+    "function o(){var a=Array.prototype.slice.call(arguments);if(!send(a)){q.push(a);arm();}}"
+    "window.agentM4L=window.agentM4L||{};"
+    "window.agentM4L.outlet=o;"
+    "window.agentM4L.message=function(id,msg){var a=Array.prototype.slice.call(arguments);a.unshift('message');o.apply(null,a)};"
+    "o('web_ready',Date.now()%1000000000);"
+    "document.addEventListener('DOMContentLoaded',function(){o('web_dom_ready',Date.now()%1000000000)});"
+    "function tick(){send(['agent_web_tick',Date.now()%1000000000]);setTimeout(tick,500)}setTimeout(tick,500);"
+    "window.addEventListener('error',function(e){o('web_error',String(e&&e.message||e&&e.error||'error').slice(0,240))});"
+    "window.addEventListener('unhandledrejection',function(e){o('web_error',String(e&&e.reason||'unhandledrejection').slice(0,240))});"
+    "})();"
+)
+
+
+DEFAULT_WEBUI_CSS = """
+:root { color-scheme: dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
+html, body { box-sizing: border-box; width: 100%; height: 100%; overflow: hidden; }
+body { margin: 0; background: #14161a; color: #f3f6fb; }
+main { box-sizing: border-box; width: 100%; height: 100%; padding: 12px; display: grid; gap: 10px; align-content: start; overflow: auto; }
+header { font-size: 13px; font-weight: 700; color: #9fd2ff; }
+.control { display: grid; grid-template-columns: 76px 1fr 44px; align-items: center; gap: 8px; font-size: 11px; }
+input[type=range] { width: 100%; accent-color: #62d2a2; }
+output { text-align: right; font-variant-numeric: tabular-nums; color: #c8ced8; }
+"""
+
+
+DEFAULT_WEBUI_JS = """
+const maxApi = window.max;
+const outlet = (...args) => {
+  if (window.agentM4L && window.agentM4L.outlet) {
+    window.agentM4L.outlet(...args);
+    return;
+  }
+  if (window.max && window.max.outlet) window.max.outlet(...args);
+};
+const send = (id, value) => {
+  outlet("set", id, Number(value));
+};
+document.querySelectorAll("[data-param]").forEach((el) => {
+  const output = el.parentElement.querySelector("output");
+  const update = () => {
+    output.value = el.value;
+    send(el.dataset.param, el.value);
+  };
+  el.addEventListener("input", update);
+});
+if (maxApi && maxApi.bindInlet) {
+  maxApi.bindInlet("state", (raw) => {
+    let state = {};
+    try { state = typeof raw === "string" ? JSON.parse(raw) : raw; } catch (_err) {}
+    applyState(state);
+  });
+}
+window.addEventListener("agentm4lstate", (event) => applyState(event.detail || {}));
+window.agentM4L = window.agentM4L || {};
+window.agentM4L.onstate = applyState;
+function applyState(state) {
+  Object.keys(state).forEach((id) => {
+    const el = document.querySelector(`[data-param="${id}"]`);
+    if (!el) return;
+    el.value = state[id];
+    const output = el.parentElement.querySelector("output");
+    if (output) output.value = state[id];
+  });
+}
+"""
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Build a dynamic Agent M4L host device.")
+    parser.add_argument("instance_id", nargs="?")
+    parser.add_argument("--role", default="audio_effect", choices=tuple(ROLE_PRESETS))
+    parser.add_argument("--name")
+    parser.add_argument("--pool-size", type=int)
+    parser.add_argument("--pool-prefix", default="slot")
+    parser.add_argument("--no-install", action="store_true")
+    args = parser.parse_args()
+    if args.pool_size:
+        for result in build_pool(args.role, args.pool_size, args.pool_prefix, install=not args.no_install):
+            print(result["amxd_path"])
+            if result["installed_path"]:
+                print(result["installed_path"])
+        return
+    if not args.instance_id:
+        parser.error("instance_id is required unless --pool-size is used")
+    result = build_device(args.role, args.instance_id, args.name, install=not args.no_install)
+    print(result["amxd_path"])
+    if result["installed_path"]:
+        print(result["installed_path"])
+
+
+def sync_host_main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Sync Agent M4L host files beside generated/installed AgentM4L devices.")
+    parser.add_argument("--dry-run", action="store_true", help="Report stale/missing host JS copies without writing.")
+    parser.add_argument("--no-repair-wrappers", action="store_true", help="Do not remove stale Max Console print sinks from generated/installed wrappers.")
+    args = parser.parse_args(argv)
+    try:
+        print(json.dumps(sync_host_js(dry_run=args.dry_run, repair_wrappers=not args.no_repair_wrappers), indent=2, sort_keys=True))
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, indent=2, sort_keys=True))
+        return 1
+    return 0

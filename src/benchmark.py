@@ -86,6 +86,20 @@ def _benchmarks(include_browser: bool) -> list[tuple[str, RequestFactory, bool]]
                 {"method": "eval", "params": {"expr": "len(song.tracks), len(song.scenes), len(song.return_tracks)"}},
             ],
         }), False),
+        ("agent_m4l_command_update", lambda: ("agent_m4l_device", {
+            "role": "audio_effect",
+            "instance_id": "Benchmark M4L Direct",
+            "command": "update",
+            "load": False,
+            "udp": False,
+            "id": "benchmark-m4l-update",
+            "patch": {
+                "device_width": 280,
+                "device_height": 130,
+                "objects": [{"id": "probe_value", "text": "flonum", "presentation_rect": [12, 12, 80, 22]}],
+                "connections": [],
+            },
+        }), False),
         ("device_parameter_filter", lambda: ("device_parameters", {
             "ref": {"path": "live_set tracks 0 devices 0"},
             "query": "filter",

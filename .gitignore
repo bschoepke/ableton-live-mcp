@@ -2,5 +2,8 @@
 __pycache__/
 .pytest_cache/
 *.py[cod]
+.DS_Store
+analysis/
+m4l/generated/
 vocal_hooks/
 cowbell_loops/

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import socket
 import sys
 import threading
+import time
 import types
 from pathlib import Path
 
@@ -72,6 +74,12 @@ class FakeBrowser:
                 FakeBrowserItem("Audio Effects", folder=True, children=[
                     FakeBrowserItem("Max Audio Effect", folder=True, children=[
                         FakeBrowserItem("AgentAudioTap", loadable=True, device=True),
+                        FakeBrowserItem("AgentM4L_audio_effect_Wobble", loadable=True, device=True),
+                    ]),
+                ]),
+                FakeBrowserItem("Instruments", folder=True, children=[
+                    FakeBrowserItem("Max Instrument", folder=True, children=[
+                        FakeBrowserItem("AgentM4L_instrument_Lead", loadable=True, device=True),
                     ]),
                 ]),
             ]),
@@ -95,7 +103,7 @@ class FakeApplication:
         self.browser = FakeBrowser()
 
     def get_version_string(self):
-        return "12.3.8"
+        return "test-live-version"
 
 
 class FakeVector(list):
@@ -207,6 +215,7 @@ class FakeClip:
         self.warp_mode = 0
         self.available_warp_modes = FakeVector([0, 1, 2, 3, 4, 6])
         self.warp_markers = FakeVector([FakeWarpMarker(0.0, 0.0), FakeWarpMarker(2.0, 4.0)])
+        self.legacy_remove_notes_called = False
 
     def get_all_notes_extended(self):
         return self._notes
@@ -227,6 +236,15 @@ class FakeClip:
             FakeClip._next_note_id += 1
 
     def remove_notes_extended(self, from_pitch, pitch_span, from_time, time_span):
+        pitch_end = from_pitch + pitch_span
+        time_end = from_time + time_span
+        self._notes = [
+            note for note in self._notes
+            if not (from_pitch <= note.pitch < pitch_end and from_time <= note.start_time < time_end)
+        ]
+
+    def remove_notes(self, from_time, from_pitch, time_span, pitch_span):
+        self.legacy_remove_notes_called = True
         pitch_end = from_pitch + pitch_span
         time_end = from_time + time_span
         self._notes = [
@@ -273,6 +291,23 @@ class FakeClipSlot:
     def __init__(self, clip=None):
         self.clip = clip
         self.has_clip = clip is not None
+        self.fired = False
+        self.deleted = False
+
+    def create_clip(self, length):
+        self.clip = FakeClip("Created Clip", end_time=float(length))
+        self.clip._notes = []
+        self.clip.length = float(length)
+        self.clip.loop_end = float(length)
+        self.has_clip = True
+
+    def delete_clip(self):
+        self.clip = None
+        self.has_clip = False
+        self.deleted = True
+
+    def fire(self):
+        self.fired = True
 
 
 class FakeTrack:
@@ -304,6 +339,12 @@ class FakeTrack:
     def insert_device(self, device_name, device_index=-1):
         device = FakeDevice()
         device.name = device_name
+        if "midi_effect" in device_name:
+            device.class_name = "MxDeviceMidiEffect"
+        elif "instrument" in device_name:
+            device.class_name = "MxDeviceInstrument"
+        elif "audio_effect" in device_name:
+            device.class_name = "MxDeviceAudioEffect"
         if device_index is None or device_index < 0 or device_index >= len(self.devices):
             self.devices.append(device)
         else:
@@ -377,6 +418,15 @@ def make_bridge(monkeypatch):
     bridge._events = []
     bridge._running = True
     bridge._main_thread_id = threading.current_thread().ident
+    bridge._main_thread_timeout_count = 0
+    bridge._main_thread_last_timeout_at = 0.0
+    bridge._main_thread_last_timeout_method = None
+    bridge._main_thread_last_success_at = 0.0
+    bridge._main_thread_stall_until = 0.0
+    bridge._main_thread_request_lock = threading.BoundedSemaphore(1)
+    bridge._main_thread_busy_method = None
+    bridge._main_thread_busy_since = 0.0
+    bridge._main_thread_busy_timed_out = False
     bridge.song = lambda: song
     return bridge, song, app
 
@@ -401,7 +451,7 @@ def test_resolve_get_children_and_call(monkeypatch):
     assert bridge._rpc_call({"ref": {"path": "live_set"}, "method": "get_beats_loop_start"}) == "1.1.1"
 
 
-def test_agent_audio_tap_sends_udp_command(monkeypatch):
+def test_agent_audio_tap_writes_file_command_by_default(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     sent = []
 
@@ -435,16 +485,78 @@ def test_agent_audio_tap_sends_udp_command(monkeypatch):
 
     monkeypatch.setattr(module := load_bridge_module(monkeypatch)[0], "open", lambda path, mode: FakeFile(path, mode), raising=False)
     bridge.__class__ = module.AbletonLiveMCP
-    result = bridge._rpc_agent_audio_tap({"command": "start", "path": "/tmp/tap.wav", "id": "abc"})
+    result = bridge._rpc_agent_audio_tap({"command": "start", "path": "tap.wav", "id": "abc", "command_id": "cmd-1"})
+
+    assert result["sent"] is False
+    assert result["bytes"] == 0
+    assert result["command_id"] == "cmd-1"
+    assert written == {
+        "path": module._temp_file("agent_audio_tap_command.json"),
+        "mode": "w",
+        "value": '{"id":"cmd-1","command":"start","path":"tap.wav","request_id":"abc"}',
+    }
+    assert sent == []
+
+
+def test_agent_audio_tap_generates_unique_command_ids_for_reused_request_id(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    written = []
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            self.path = path
+            self.mode = mode
+            self.value = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            written.append(json.loads(self.value))
+            return False
+
+        def write(self, value):
+            self.value += value
+            return len(value)
+
+    module = load_bridge_module(monkeypatch)[0]
+    times = iter([1.0, 2.0])
+    monkeypatch.setattr(module.time, "time", lambda: next(times))
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+    bridge.__class__ = module.AbletonLiveMCP
+
+    bridge._rpc_agent_audio_tap({"command": "start", "path": "tap.wav", "id": "take-1"})
+    bridge._rpc_agent_audio_tap({"command": "stop", "id": "take-1"})
+
+    assert written[0]["request_id"] == "take-1"
+    assert written[1]["request_id"] == "take-1"
+    assert written[0]["id"] != written[1]["id"]
+    assert written[0]["command"] == "start"
+    assert written[1]["command"] == "stop"
+
+
+def test_agent_audio_tap_can_opt_into_udp_command(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    sent = []
+
+    class FakeSocket:
+        def __init__(self, *_args):
+            pass
+
+        def sendto(self, payload, address):
+            sent.append((payload, address))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(socket, "socket", FakeSocket)
+    module = load_bridge_module(monkeypatch)[0]
+    bridge.__class__ = module.AbletonLiveMCP
+    result = bridge._rpc_agent_audio_tap({"command": "start", "path": "tap.wav", "id": "abc", "udp": True})
 
     assert result["sent"] is True
-    assert written == {
-        "path": "/tmp/agent_audio_tap_command.json",
-        "mode": "w",
-        "value": '{"id":"abc","command":"start","path":"/tmp/tap.wav"}',
-    }
     assert sent == [(
-        b"/agent_audio_tap\x00\x00\x00\x00,ss\x00start\x00\x00\x00/tmp/tap.wav\x00\x00\x00\x00",
+        b"/agent_audio_tap\x00\x00\x00\x00,ss\x00start\x00\x00\x00tap.wav\x00",
         ("127.0.0.1", 17654),
     )]
 
@@ -464,7 +576,7 @@ def test_agent_audio_tap_start_can_use_preopened_path(monkeypatch):
             pass
 
     monkeypatch.setattr(socket, "socket", FakeSocket)
-    result = bridge._rpc_agent_audio_tap({"command": "start", "id": "abc"})
+    result = bridge._rpc_agent_audio_tap({"command": "start", "id": "abc", "udp": True})
     assert result["path"] is None
     assert sent == [(b"/agent_audio_tap\x00\x00\x00\x00,s\x00\x00start\x00\x00\x00", ("127.0.0.1", 17654))]
 
@@ -490,6 +602,706 @@ def test_agent_audio_tap_setup_loads_on_master_and_solos_target(monkeypatch):
     assert song.is_playing is False
 
 
+def test_agent_audio_tap_setup_solos_resolved_track_by_canonical_path(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    for index, track in enumerate(song.tracks):
+        track.canonical_path = "live_set tracks %d" % index
+    resolved_track = FakeTrack("Track 1 proxy")
+    resolved_track.canonical_path = "live_set tracks 0"
+    original_resolve = bridge._resolve
+
+    def resolve(ref):
+        if ref.get("path") == "live_set tracks 0":
+            return resolved_track
+        return original_resolve(ref)
+
+    monkeypatch.setattr(bridge, "_resolve", resolve)
+
+    bridge._rpc_agent_audio_tap_setup({
+        "placement": "master",
+        "solo_track": {"path": "live_set tracks 0"},
+    })
+
+    assert [track.solo for track in song.tracks] == [True, False]
+
+
+def test_agent_m4l_device_writes_command_sends_udp_and_loads(monkeypatch):
+    module, app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    sent = []
+    written = {}
+
+    class FakeSocket:
+        def __init__(self, *_args):
+            pass
+
+        def sendto(self, payload, address):
+            sent.append((payload, address))
+
+        def close(self):
+            pass
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            self.path = path
+            self.mode = mode
+            self.value = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            if "w" in self.mode:
+                written[self.path] = self.value
+            return False
+
+        def write(self, value):
+            self.value += value
+            return len(value)
+
+    monkeypatch.setattr(socket, "socket", FakeSocket)
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    patch = {
+        "objects": [{"id": "osc", "text": "cycle~ 110", "x": 160, "y": 140}],
+        "connections": [],
+    }
+    result = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Wobble",
+        "device_name": "AgentM4L_audio_effect_Wobble",
+        "target_track": {"path": "live_set tracks 1"},
+        "patch": patch,
+        "webui": {"html_path": "/tmp/wobble/index.html", "presentation_rect": [0, 0, 320, 160]},
+        "device_width": 340,
+        "device_height": 180,
+        "id": "cmd1",
+    })
+
+    assert result["sent"] is True
+    assert result["loaded"] is True
+    assert app.browser.loaded == []
+    assert song.tracks[1].devices[-1].name == "AgentM4L_audio_effect_Wobble"
+    command_path = module._temp_file("agent_m4l_Wobble.json")
+    recovery_path = "%s.recovery.json" % command_path
+    assert '"instance_id":"Wobble"' in written[command_path]
+    assert '"cycle~ 110"' in written[command_path]
+    assert '"device_width":340' in written[command_path]
+    assert '"device_height":180' in written[command_path]
+    assert '"webui":{"html_path":"/tmp/wobble/index.html"' in written[command_path]
+    assert json.loads(written[recovery_path])["patch"]["objects"][0]["id"] == "osc"
+    assert sent[0][1] == ("127.0.0.1", bridge._agent_m4l_port("Wobble"))
+    assert b"/agent_m4l" in sent[0][0]
+
+
+def test_agent_m4l_device_skips_udp_when_update_payload_is_too_large(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    written = {}
+
+    class FakeSocket:
+        def __init__(self, *_args):
+            raise AssertionError("large Agent M4L updates should not open UDP sockets")
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            written["path"] = path
+            written["mode"] = mode
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def write(self, value):
+            written["value"] = written.get("value", "") + value
+            return len(value)
+
+    monkeypatch.setattr(socket, "socket", FakeSocket)
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "instrument",
+        "instance_id": "Huge UI",
+        "load": False,
+        "patch": {"objects": [{"id": "big", "text": "comment " + ("x" * 70000)}]},
+        "id": "huge1",
+    })
+
+    assert result["sent"] is False
+    assert result["udp_skipped"] is True
+    assert result["udp_bytes"] > module.AGENT_M4L_MAX_UDP_BYTES
+    assert '"comment ' in written["value"]
+
+
+def test_agent_m4l_device_value_update_does_not_require_patch_or_load(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    written = {}
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            written["path"] = path
+            written["mode"] = mode
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def write(self, value):
+            written["value"] = written.get("value", "") + value
+            return len(value)
+
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Wobble",
+        "command": "set",
+        "values": [{"id": "cutoff", "value": 0.72}],
+        "udp": False,
+        "load": False,
+        "id": "set1",
+    })
+
+    assert result["command"] == "set"
+    assert result["sent"] is False
+    assert result["loaded"] is False
+    assert result["command_file_written"] is True
+    assert '"values":[{"id":"cutoff","value":0.72}]' in written["value"]
+
+
+def test_agent_m4l_device_triggers_hidden_poll_parameter(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    device = FakeDevice()
+    device.name = "AgentM4L_instrument_Dynamic_Poller_Probe"
+    device.class_name = "MxDeviceInstrument"
+    poll = FakeParameter("command-trigger", 0.0, 0.0, 1.0)
+    device.parameters.append(poll)
+    song.tracks[1].devices.append(device)
+    written = {}
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            written["path"] = path
+            written["mode"] = mode
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def write(self, value):
+            written["value"] = written.get("value", "") + value
+            return len(value)
+
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "instrument",
+        "instance_id": "Dynamic Poller Probe",
+        "device_name": "AgentM4L_instrument_Dynamic_Poller_Probe",
+        "command": "set",
+        "values": [{"id": "native_value", "value": 0.72}],
+        "target_track": {"path": "live_set tracks 1"},
+        "udp": False,
+        "load": False,
+        "id": "set-poll",
+    })
+
+    assert result["triggered"] is True
+    assert poll.value == 1.0
+    assert '"native_value"' in written["value"]
+
+
+def test_agent_m4l_value_update_writes_file_with_recovery_patch(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    sent = []
+    stored = {
+        module._temp_file("agent_m4l_Wobble.json"): json.dumps({
+            "id": "patch1",
+            "command": "update",
+            "patch": {"objects": [{"id": "cutoff", "text": "flonum"}], "connections": []},
+        })
+    }
+
+    class FakeSocket:
+        def __init__(self, *_args):
+            pass
+
+        def sendto(self, payload, address):
+            sent.append((payload, address))
+
+        def close(self):
+            pass
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            self.path = path
+            self.mode = mode
+            self.value = "" if "w" in mode else stored.get(path, "")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            if "w" in self.mode:
+                stored[self.path] = self.value
+            return False
+
+        def read(self, *_args):
+            return self.value
+
+        def write(self, value):
+            self.value += value
+            return len(value)
+
+    monkeypatch.setattr(socket, "socket", FakeSocket)
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Wobble",
+        "command": "set",
+        "values": [{"id": "cutoff", "value": 0.72}],
+        "load": False,
+        "id": "set1",
+    })
+    payload = json.loads(stored[module._temp_file("agent_m4l_Wobble.json")])
+    recovery = json.loads(stored["%s.recovery.json" % module._temp_file("agent_m4l_Wobble.json")])
+
+    assert result["sent"] is True
+    assert result["command_file_written"] is True
+    assert sent and sent[0][1] == ("127.0.0.1", bridge._agent_m4l_port("Wobble"))
+    assert payload["command"] == "set"
+    assert payload["values"] == [{"id": "cutoff", "value": 0.72}]
+    assert "patch" not in payload
+    assert recovery["patch"]["objects"][0]["id"] == "cutoff"
+    assert b'"values":[{"id":"cutoff","value":0.72}]' in sent[0][0]
+    assert b'"patch"' not in sent[0][0]
+
+
+def test_agent_m4l_recovery_patch_preserves_top_level_bounds(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    stored = {
+        module._temp_file("agent_m4l_Panels.json"): json.dumps({
+            "objects": [{"id": "dial", "text": "flonum"}],
+            "connections": [],
+            "device_width": 720,
+            "device_height": 260,
+        })
+    }
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            self.value = stored.get(path, "")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, *_args):
+            return self.value
+
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    patch = bridge._agent_m4l_recovery_patch(module._temp_file("agent_m4l_Panels.json"))
+
+    assert patch["objects"][0]["id"] == "dial"
+    assert patch["device_width"] == 720
+    assert patch["device_height"] == 260
+
+
+def test_agent_m4l_recovery_patch_falls_back_to_sidecar(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    command_path = module._temp_file("agent_m4l_Panels.json")
+    stored = {
+        command_path: json.dumps({"id": "status1", "command": "status", "patch": None}),
+        "%s.recovery.json" % command_path: json.dumps({
+            "patch": {"objects": [{"id": "dial", "text": "flonum"}], "connections": []},
+        }),
+    }
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            self.value = stored.get(path, "")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, *_args):
+            return self.value
+
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    patch = bridge._agent_m4l_recovery_patch(command_path)
+
+    assert patch["objects"][0]["id"] == "dial"
+
+
+def test_agent_m4l_device_top_level_webuis_trigger_update(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    written = {}
+
+    class FakeFile:
+        def __init__(self, path, mode):
+            self.path = path
+            self.mode = mode
+            self.value = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            if "w" in self.mode:
+                written[self.path] = self.value
+            return False
+
+        def write(self, value):
+            self.value += value
+            return len(value)
+
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Panels",
+        "webuis": [
+            {"id": "a", "object": "jbrowser~", "html_path": "/state/a.html"},
+            {"id": "b", "object": "jweb", "html_path": "/state/b.html"},
+        ],
+        "udp": False,
+        "load": False,
+    })
+    command_path = module._temp_file("agent_m4l_Panels.json")
+    payload = json.loads(written[command_path])
+
+    assert result["command"] == "update"
+    assert payload["patch"]["webuis"][0]["object"] == "jbrowser~"
+    assert payload["webuis"][1]["html_path"] == "/state/b.html"
+    assert json.loads(written["%s.recovery.json" % command_path])["patch"]["webuis"][0]["id"] == "a"
+
+
+def test_agent_m4l_device_returns_command_id_without_blocking_for_status(monkeypatch, tmp_path):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    command_file = tmp_path / "command.json"
+    status_file = tmp_path / "status.json"
+    status_file.write_text('{"event":"old"}', encoding="utf-8")
+    before = status_file.stat().st_mtime
+
+    class FakeSocket:
+        def __init__(self, *_args):
+            pass
+
+        def sendto(self, _payload, _address):
+            status_file.write_text('{"event":"set","command_id":"set1","dynamic_objects":3,"webuis":1}', encoding="utf-8")
+            module.os.utime(str(status_file), (before + 1.0, before + 1.0))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(socket, "socket", FakeSocket)
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Wobble",
+        "command_file": str(command_file),
+        "status_file": str(status_file),
+        "command": "set",
+        "values": [{"id": "cutoff", "value": 0.72}],
+        "load": False,
+        "id": "set1",
+    })
+
+    assert status_file.stat().st_mtime >= before
+    assert result["command_id"] == "set1"
+    assert "status" not in result
+
+
+def test_agent_m4l_generated_command_id_includes_values(monkeypatch):
+    module, _app = load_bridge_module(monkeypatch)
+    bridge = object.__new__(module.AbletonLiveMCP)
+    song = FakeSong()
+    bridge._objects = {}
+    bridge._listeners = {}
+    bridge._events = []
+    bridge.song = lambda: song
+    written = []
+
+    class FakeFile:
+        def __init__(self, _path, _mode):
+            self.value = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            written.append(self.value)
+            return False
+
+        def write(self, value):
+            self.value += value
+            return len(value)
+
+    monkeypatch.setattr(module, "open", lambda path, mode: FakeFile(path, mode), raising=False)
+
+    first = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Wobble",
+        "command": "set",
+        "values": [{"id": "cutoff", "value": 0.25}],
+        "udp": False,
+        "load": False,
+    })
+    first_payload = json.loads(written[-1])
+    second = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Wobble",
+        "command": "set",
+        "values": [{"id": "cutoff", "value": 0.75}],
+        "udp": False,
+        "load": False,
+    })
+    second_payload = json.loads(written[-1])
+
+    assert first["command"] == second["command"] == "set"
+    assert first_payload["id"] != second_payload["id"]
+
+
+def test_agent_m4l_device_falls_back_to_track_insert_device_when_browser_is_stale(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    app.browser.user_library = FakeBrowserItem("User Library", folder=True, children=[])
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Fresh",
+        "device_name": "AgentM4L_audio_effect_Fresh",
+        "target_track": {"path": "live_set tracks 1"},
+        "patch": {"objects": []},
+        "udp": False,
+        "id": "fresh1",
+    })
+
+    assert result["loaded"] is True
+    assert app.browser.loaded == []
+    assert song.tracks[1].devices[-1].name == "AgentM4L_audio_effect_Fresh"
+
+
+def test_agent_m4l_device_prefers_track_insert_device_before_browser_load(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    device_name = "AgentM4L_instrument_Prism_Loom_Keys"
+    item = FakeBrowserItem(device_name, loadable=True, device=True)
+    bridge._find_browser_item_named = lambda name: item if name == device_name else None
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "instrument",
+        "instance_id": "prism_loom_keys_001",
+        "name": "Prism Loom Keys",
+        "target_track": {"path": "live_set tracks 1"},
+        "patch": {"objects": []},
+        "udp": False,
+        "id": "prism1",
+    })
+
+    assert result["loaded"] is True
+    assert app.browser.loaded == []
+    assert song.tracks[1].devices[-1].name == device_name
+    assert song.tracks[1].devices[-1].class_name == "MxDeviceInstrument"
+
+
+def test_agent_m4l_device_renames_new_device_inserted_before_existing_chain(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    target = song.tracks[1]
+    instrument = FakeDevice()
+    instrument.name = "Existing Instrument"
+    instrument.class_name = "MxDeviceInstrument"
+    audio_effect = FakeDevice()
+    audio_effect.name = "Existing Audio FX"
+    audio_effect.class_name = "MxDeviceAudioEffect"
+    target.devices = FakeVector([instrument, audio_effect])
+    device_name = "AgentM4L_midi_effect_Pulse_Router_MIDI"
+    app.browser.load_item = lambda _item: (_ for _ in ()).throw(AssertionError("browser.load_item should not be needed"))
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "midi_effect",
+        "instance_id": "Pulse Router MIDI",
+        "device_name": device_name,
+        "target_track": {"path": "live_set tracks 1"},
+        "patch": {"objects": []},
+        "udp": False,
+        "id": "midi1",
+    })
+
+    assert result["loaded"] is True
+    assert app.browser.loaded == []
+    assert [device.name for device in target.devices] == [
+        device_name,
+        "Existing Instrument",
+        "Existing Audio FX",
+    ]
+
+
+def test_agent_m4l_device_name_match_requires_matching_role_when_available(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    target = song.tracks[1]
+    device_name = "AgentM4L_midi_effect_Pulse_Router_MIDI"
+    wrong_role = FakeDevice()
+    wrong_role.name = device_name
+    wrong_role.class_name = "MxDeviceAudioEffect"
+    target.devices = FakeVector([wrong_role])
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "midi_effect",
+        "instance_id": "Pulse Router MIDI",
+        "device_name": device_name,
+        "target_track": {"path": "live_set tracks 1"},
+        "patch": {"objects": []},
+        "udp": False,
+        "id": "midi2",
+    })
+
+    assert result["loaded"] is True
+    assert app.browser.loaded == []
+    assert target.devices[0].name == device_name
+    assert target.devices[0].class_name == "MxDeviceMidiEffect"
+    assert target.devices[1].class_name == "MxDeviceAudioEffect"
+
+
+def test_agent_m4l_device_name_uses_title_when_instance_is_stable(monkeypatch):
+    bridge, _song, app = make_bridge(monkeypatch)
+    device_name = "AgentM4L_instrument_Orbit_Glass_Synth"
+    item = FakeBrowserItem(device_name, loadable=True, device=True)
+    bridge._find_browser_item_named = lambda name: item if name == device_name else None
+
+    result = bridge._rpc_agent_m4l_device({
+        "role": "instrument",
+        "instance_id": "orbit_glass_synth_001",
+        "name": "Orbit Glass Synth",
+        "target_track": {"path": "live_set tracks 1"},
+        "patch": {"objects": []},
+        "udp": False,
+        "id": "orbit1",
+    })
+
+    assert result["device_name"] == device_name
+    assert result["loaded"] is True
+    assert app.browser.loaded == []
+    assert _song.tracks[1].devices[-1].name == device_name
+
+
+def test_agent_m4l_device_reports_load_error_without_dropping_command(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    app.browser.user_library = FakeBrowserItem("User Library", folder=True, children=[])
+
+    def fail_insert(_device_name, _device_index=-1):
+        raise RuntimeError("Device AgentM4L_audio_effect_Fresh not found.")
+
+    song.tracks[1].insert_device = fail_insert
+    result = bridge._rpc_agent_m4l_device({
+        "role": "audio_effect",
+        "instance_id": "Fresh",
+        "device_name": "AgentM4L_audio_effect_Fresh",
+        "target_track": {"path": "live_set tracks 1"},
+        "patch": {"objects": []},
+        "udp": False,
+        "id": "fresh1",
+    })
+
+    assert result["sent"] is False
+    assert result["loaded"] is False
+    assert "not found" in result["load_error"]
+    assert result["command_id"] == "fresh1"
+
+
+def test_agent_m4l_cleanup_dry_runs_by_default_and_filters_role(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    song.tracks[0].insert_device("AgentM4L_audio_effect_Old_Wobble")
+    song.tracks[0].insert_device("AgentM4L_instrument_Old_Synth")
+    song.tracks[0].insert_device("EQ Eight")
+
+    result = bridge._rpc_agent_m4l_cleanup({"role": "audio_effect"})
+
+    assert result["delete"] is False
+    assert result["matched_count"] == 1
+    assert result["deleted_count"] == 0
+    assert result["matches"][0]["device_name"] == "AgentM4L_audio_effect_Old_Wobble"
+    assert [device.name for device in song.tracks[0].devices][-3:] == [
+        "AgentM4L_audio_effect_Old_Wobble",
+        "AgentM4L_instrument_Old_Synth",
+        "EQ Eight",
+    ]
+
+
+def test_agent_m4l_cleanup_deletes_with_explicit_flag(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    song.tracks[0].insert_device("AgentM4L_audio_effect_First")
+    song.tracks[0].insert_device("AgentM4L_audio_effect_Second")
+    song.tracks[1].insert_device("AgentM4L_audio_effect_Third")
+
+    result = bridge._rpc_agent_m4l_cleanup({
+        "delete": True,
+        "role": "audio_effect",
+        "track_query": "track 1",
+        "max_delete": 1,
+    })
+
+    assert result["matched_count"] == 2
+    assert result["deleted_count"] == 1
+    assert result["deleted"][0]["track_path"] == "live_set tracks 0"
+    assert [device.name for device in song.tracks[0].devices][-2:] == ["Compressor", "AgentM4L_audio_effect_Second"]
+    assert [device.name for device in song.tracks[1].devices] == ["AgentM4L_audio_effect_Third"]
+
+
 def test_transport_tool_seeks_and_retries_play(monkeypatch):
     bridge, song, _app = make_bridge(monkeypatch)
     calls = []
@@ -506,6 +1318,41 @@ def test_transport_tool_seeks_and_retries_play(monkeypatch):
     result = bridge._rpc_transport({"action": "play", "time": 2.0})
 
     assert result == {"playing": True, "time": 2.0}
+    assert calls == ["start", "continue", "start"]
+
+
+def test_transport_stop_reports_requested_state_when_live_property_lags(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    calls = []
+    song.is_playing = True
+    song.stop_playing = lambda: calls.append("stop")
+
+    result = bridge._rpc_transport({"action": "stop"})
+
+    assert result == {
+        "playing": False,
+        "time": 0.0,
+        "raw_playing": True,
+        "settled": False,
+    }
+    assert calls == ["stop", "stop"]
+
+
+def test_transport_play_reports_requested_state_when_live_property_lags(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    calls = []
+    song.is_playing = False
+    song.start_playing = lambda: calls.append("start")
+    song.continue_playing = lambda: calls.append("continue")
+
+    result = bridge._rpc_transport({"action": "play"})
+
+    assert result == {
+        "playing": True,
+        "time": 0.0,
+        "raw_playing": False,
+        "settled": False,
+    }
     assert calls == ["start", "continue", "start"]
 
 
@@ -550,6 +1397,7 @@ def test_expected_set_signature_blocks_stale_mutation(monkeypatch):
 def test_clip_notes_can_be_listed_and_updated(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
+    assert notes["note_api"] == "extended"
     assert notes["note_count"] == 1
     assert notes["notes"][0]["velocity"] == 40.0
 
@@ -557,10 +1405,70 @@ def test_clip_notes_can_be_listed_and_updated(monkeypatch):
         "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
         "updates": [{"note_id": 1, "velocity": 88.0}],
     })
+    assert updated["note_api"] == "extended"
     assert updated["updated"] == 1
     assert updated["notes"][0]["velocity"] == 88.0
     notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
     assert notes["notes"][0]["velocity"] == 88.0
+
+
+def test_clip_notes_refuses_legacy_note_api(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    monkeypatch.delattr(FakeClip, "get_all_notes_extended")
+
+    try:
+        bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
+    except RuntimeError as exc:
+        assert "refusing legacy note API" in str(exc)
+    else:
+        raise AssertionError("expected legacy note API refusal")
+
+
+def test_clip_update_notes_refuses_legacy_note_api(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    monkeypatch.delattr(FakeClip, "apply_note_modifications")
+
+    try:
+        bridge._rpc_clip_update_notes({
+            "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
+            "updates": [{"note_id": 1, "velocity": 88.0}],
+        })
+    except RuntimeError as exc:
+        assert "refusing legacy note API" in str(exc)
+    else:
+        raise AssertionError("expected legacy note API refusal")
+
+
+def test_exec_refuses_obsolete_note_api_code(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+
+    try:
+        bridge._rpc_exec({"code": "clip = song.tracks[0].clip_slots[0].clip\nclip.set_notes(())"})
+    except RuntimeError as exc:
+        assert "Refusing obsolete MIDI note API set_notes" in str(exc)
+        assert "live_clip_add_notes" in str(exc)
+    else:
+        raise AssertionError("expected obsolete note API refusal")
+
+
+def test_eval_refuses_obsolete_note_api_code(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+
+    try:
+        bridge._rpc_eval({"expr": "song.tracks[0].clip_slots[0].clip.remove_notes(0, 0, 1, 128)"})
+    except RuntimeError as exc:
+        assert "Refusing obsolete MIDI note API remove_notes" in str(exc)
+    else:
+        raise AssertionError("expected obsolete note API refusal")
+
+
+def test_exec_can_explicitly_allow_obsolete_note_api_code(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    result = bridge._rpc_exec({
+        "code": "result = 'remove_notes(compatibility probe only)'",
+        "allow_legacy_note_api": True,
+    })
+    assert result == "remove_notes(compatibility probe only)"
 
 
 def test_clip_add_notes_accepts_json_note_specs(monkeypatch):
@@ -575,10 +1483,171 @@ def test_clip_add_notes_accepts_json_note_specs(monkeypatch):
     })
 
     assert result["added"] == 2
+    assert result["note_api"] == "extended"
     assert result["note_count"] == 2
     notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
     assert [note["pitch"] for note in notes["notes"]] == [64, 67]
     assert notes["notes"][1]["mute"] is True
+
+
+def test_clip_add_notes_can_create_slot_clip_and_launch(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    slot = song.tracks[1].clip_slots[0]
+    assert slot.has_clip is False
+
+    result = bridge._rpc_clip_add_notes({
+        "ref": {"path": "live_set tracks 1 clip_slots 0"},
+        "create_clip_length": 4.0,
+        "clip_name": "Generated Pattern",
+        "loop_start": 0.0,
+        "loop_end": 4.0,
+        "fire": True,
+        "notes": [
+            {"pitch": 60, "start_time": 0.0, "duration": 0.5, "velocity": 90},
+            {"pitch": 67, "start_time": 0.5, "duration": 0.5, "velocity": 76},
+        ],
+    })
+
+    assert result["created_clip"] is True
+    assert result["launched"] is True
+    assert result["added"] == 2
+    assert result["clip"]["name"] == "Generated Pattern"
+    assert slot.has_clip is True
+    assert slot.fired is True
+    assert slot.clip.loop_end == 4.0
+    notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 1 clip_slots 0 clip"}})
+    assert [note["pitch"] for note in notes["notes"]] == [60, 67]
+
+
+def test_clip_add_notes_detects_empty_slot_without_touching_clip(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+
+    class EmptySlot:
+        has_clip = False
+
+        @property
+        def clip(self):
+            if not self.has_clip:
+                raise RuntimeError("clip is unavailable until create_clip")
+            return self._clip
+
+        def create_clip(self, length):
+            self._clip = FakeClip("Created Clip", end_time=float(length))
+            self._clip._notes = []
+            self.has_clip = True
+
+    slot = EmptySlot()
+    monkeypatch.setattr(bridge, "_resolve", lambda _ref: slot)
+
+    result = bridge._rpc_clip_add_notes({
+        "ref": {"path": "live_set tracks 0 clip_slots 0"},
+        "create_clip_length": 4.0,
+        "notes": [{"pitch": 72, "start_time": 0.0, "duration": 0.5, "velocity": 90}],
+    })
+
+    assert result["created_clip"] is True
+    assert result["note_api"] == "extended"
+    assert slot.has_clip is True
+
+
+def test_clip_add_notes_can_replace_slot_clip(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    slot = song.tracks[0].clip_slots[0]
+    old_clip = slot.clip
+    assert old_clip.get_all_notes_extended()
+
+    result = bridge._rpc_clip_add_notes({
+        "ref": {"path": "live_set tracks 0 clip_slots 0"},
+        "replace_existing_clip": True,
+        "create_clip_length": 8.0,
+        "clip_name": "Fresh Pattern",
+        "notes": [{"pitch": 72, "start_time": 0.0, "duration": 0.5, "velocity": 90}],
+    })
+
+    assert result["created_clip"] is True
+    assert result["replaced_clip"] is True
+    assert result["legacy_note_api"] is False
+    assert result["note_api"] == "extended"
+    assert result["note_count"] == 1
+    assert slot.deleted is True
+    assert slot.clip is not old_clip
+    assert slot.clip.name == "Fresh Pattern"
+    assert slot.clip.length == 8.0
+    notes = bridge._rpc_clip_notes({"ref": {"path": "live_set tracks 0 clip_slots 0 clip"}})
+    assert [note["pitch"] for note in notes["notes"]] == [72]
+
+
+def test_clip_add_notes_replace_requires_slot_ref(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+
+    try:
+        bridge._rpc_clip_add_notes({
+            "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
+            "replace_existing_clip": True,
+            "create_clip_length": 4.0,
+            "notes": [{"pitch": 72, "start_time": 0.0, "duration": 0.5, "velocity": 90}],
+        })
+    except ValueError as exc:
+        assert "clip slot ref" in str(exc)
+    else:
+        raise AssertionError("expected clip slot ref error")
+
+
+def test_clip_add_notes_requires_length_for_empty_slot(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+
+    try:
+        bridge._rpc_clip_add_notes({
+            "ref": {"path": "live_set tracks 1 clip_slots 0"},
+            "notes": [{"pitch": 60, "start_time": 0.0, "duration": 0.5, "velocity": 90}],
+        })
+    except ValueError as exc:
+        assert "create_clip_length" in str(exc)
+    else:
+        raise AssertionError("expected create_clip_length error")
+
+
+def test_clip_add_notes_refuses_legacy_clear_by_default(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    clip = song.tracks[0].clip_slots[0].clip
+
+    def missing_extended(*_args, **_kwargs):
+        raise TypeError("legacy only")
+
+    clip.remove_notes_extended = missing_extended
+
+    try:
+        bridge._rpc_clip_add_notes({
+            "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
+            "clear": True,
+            "notes": [{"pitch": 64, "start_time": 0.0, "duration": 0.5, "velocity": 72}],
+        })
+    except RuntimeError as exc:
+        assert "allow_legacy_note_api" in str(exc)
+    else:
+        raise AssertionError("expected legacy note API refusal")
+    assert clip.legacy_remove_notes_called is False
+
+
+def test_clip_add_notes_allows_legacy_clear_when_explicit(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    clip = song.tracks[0].clip_slots[0].clip
+
+    def missing_extended(*_args, **_kwargs):
+        raise TypeError("legacy only")
+
+    clip.remove_notes_extended = missing_extended
+
+    result = bridge._rpc_clip_add_notes({
+        "ref": {"path": "live_set tracks 0 clip_slots 0 clip"},
+        "clear": True,
+        "allow_legacy_note_api": True,
+        "notes": [{"pitch": 64, "start_time": 0.0, "duration": 0.5, "velocity": 72}],
+    })
+
+    assert result["legacy_note_api"] is True
+    assert result["note_api"] == "legacy"
+    assert clip.legacy_remove_notes_called is True
 
 
 def test_clip_duplicate_to_arrangement_uses_clip_object(monkeypatch):
@@ -750,7 +1819,7 @@ def test_parameter_set_validates_and_coerces_values(monkeypatch):
 
 def test_app_browser_path_roots_and_stale_id_errors(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
-    assert bridge._resolve_path("app").get_version_string() == "12.3.8"
+    assert bridge._resolve_path("app").get_version_string() == "test-live-version"
     assert bridge._resolve_path("browser instruments").name == "instruments"
     try:
         bridge._resolve({"id": 123456})
@@ -773,6 +1842,21 @@ def test_batch_and_id_resolution(monkeypatch):
     assert result[0]["result"]["properties"]["tempo"] == 120.0
 
 
+def test_ping_reports_running_remote_script_hash(monkeypatch):
+    from install_remote_script import remote_script_status
+
+    bridge, _song, _app = make_bridge(monkeypatch)
+
+    result = bridge._rpc_ping({})
+
+    assert result["ok"] is True
+    assert result["remote_script"]["path"].endswith("bridge.py")
+    assert len(result["remote_script"]["bridge_sha256"]) == 64
+    assert result["remote_script"]["runtime_version"] == "transport-stop-settle-1"
+    assert len(result["remote_script"]["runtime_code_sha256"]) == 64
+    assert result["remote_script"]["runtime_code_sha256"] == remote_script_status()["source_runtime_code_sha256"]
+
+
 def test_batch_inherits_response_controls(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     result = bridge._rpc_batch({
@@ -785,6 +1869,27 @@ def test_batch_inherits_response_controls(monkeypatch):
     })
     assert result[0]["result"] == [0, 1, {"truncated": True, "omitted": 3}]
     assert result[1]["result"] == "abc...<truncated 3 chars>"
+
+
+def test_batch_get_properties_are_not_double_encoded(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    result = bridge._run_on_main("batch", {
+        "max_depth": 3,
+        "operations": [
+            {"method": "get", "params": {
+                "ref": {"path": "live_set"},
+                "properties": ["tempo", "signature_numerator", "signature_denominator"],
+            }},
+        ],
+    })
+
+    assert result[0]["ok"] is True
+    assert result[0]["result"]["properties"] == {
+        "tempo": 120.0,
+        "signature_numerator": 4,
+        "signature_denominator": 4,
+    }
+    assert result[0]["result"]["children"] == {}
 
 
 def test_remote_script_read_line_preserves_buffered_requests(monkeypatch):
@@ -816,7 +1921,7 @@ def test_run_on_main_abandons_request_that_has_not_started(monkeypatch):
     bridge._rpc_marker = lambda _params: invoked.append(True)
 
     try:
-        bridge._run_on_main("marker", {"timeout": 0.001})
+        bridge._run_on_main("marker", {"timeout": 0.001, "strict_timeout": True})
     except RuntimeError as exc:
         assert "Timed out waiting for Live main thread" in str(exc)
     else:
@@ -825,6 +1930,228 @@ def test_run_on_main_abandons_request_that_has_not_started(monkeypatch):
     assert invoked == []
     callbacks[0]()
     assert invoked == []
+    assert bridge._main_thread_busy_method is None
+
+
+def test_bridge_status_does_not_schedule_on_main_thread(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    bridge._main_thread_id = -1
+    bridge.schedule_message = lambda _delay, _callback: (_ for _ in ()).throw(AssertionError("scheduled main thread"))
+
+    response = bridge._dispatch({"jsonrpc": "2.0", "id": 1, "method": "bridge_status", "params": {}})
+
+    assert response["result"]["ok"] is True
+    assert response["result"]["server_thread_responsive"] is True
+    assert response["result"]["main_thread"]["timeouts"] == 0
+
+
+def test_bridge_status_reports_in_flight_main_thread_request(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    bridge._main_thread_busy_method = "slow_call"
+    bridge._main_thread_busy_since = time.time() - 3.0
+    bridge._main_thread_busy_timed_out = True
+
+    status = bridge._rpc_bridge_status({})
+
+    assert status["main_thread"]["in_flight_method"] == "slow_call"
+    assert status["main_thread"]["in_flight_timed_out"] is True
+    assert status["main_thread"]["in_flight_age"] >= 2.0
+
+
+def test_run_on_main_circuit_breaker_after_timeout(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    callbacks = []
+    bridge._main_thread_id = -1
+    bridge.schedule_message = lambda _delay, callback: callbacks.append(callback)
+    bridge._rpc_marker = lambda _params: True
+
+    try:
+        bridge._run_on_main("marker", {"timeout": 0.001, "strict_timeout": True})
+    except RuntimeError as exc:
+        assert "Timed out waiting for Live main thread" in str(exc)
+    else:
+        raise AssertionError("expected timeout")
+
+    try:
+        bridge._run_on_main("marker", {"timeout": 0.001, "strict_timeout": True})
+    except RuntimeError as exc:
+        assert "stall cooldown" in str(exc)
+        assert "refusing to enqueue marker" in str(exc)
+    else:
+        raise AssertionError("expected circuit breaker refusal")
+
+    assert len(callbacks) == 1
+
+
+def test_run_on_main_rejects_when_main_thread_request_is_in_flight(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    bridge._main_thread_id = -1
+    assert bridge._main_thread_request_lock.acquire(False)
+    bridge._main_thread_busy_method = "slow_call"
+    bridge._main_thread_busy_since = time.time() - 2.0
+    bridge._main_thread_busy_timed_out = True
+    bridge.schedule_message = lambda _delay, _callback: (_ for _ in ()).throw(AssertionError("scheduled main thread"))
+
+    try:
+        bridge._run_on_main("marker", {"timeout": 0.001, "strict_timeout": True, "force_main_thread_probe": True})
+    except RuntimeError as exc:
+        message = str(exc)
+        assert "already in flight" in message
+        assert "slow_call" in message
+        assert "after that request already timed out" in message
+        assert "refusing to enqueue marker" in message
+    else:
+        raise AssertionError("expected in-flight refusal")
+    finally:
+        bridge._main_thread_request_lock.release()
+
+
+def test_started_main_thread_timeout_keeps_gate_closed_until_callback_returns(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    bridge._main_thread_id = -1
+    started = threading.Event()
+    release = threading.Event()
+    threads = []
+
+    def slow_call(_params):
+        started.set()
+        release.wait(1.0)
+        return True
+
+    def schedule(_delay, callback):
+        thread = threading.Thread(target=callback)
+        thread.daemon = True
+        threads.append(thread)
+        thread.start()
+        assert started.wait(1.0)
+
+    bridge.schedule_message = schedule
+    bridge._rpc_slow_call = slow_call
+
+    try:
+        bridge._run_on_main("slow_call", {"timeout": 0.001, "strict_timeout": True, "stall_cooldown": 0})
+    except RuntimeError as exc:
+        assert "Timed out waiting for Live main thread" in str(exc)
+    else:
+        raise AssertionError("expected timeout")
+
+    try:
+        bridge._run_on_main("marker", {"timeout": 0.001, "strict_timeout": True, "force_main_thread_probe": True})
+    except RuntimeError as exc:
+        message = str(exc)
+        assert "already in flight" in message
+        assert "slow_call" in message
+        assert "after that request already timed out" in message
+    else:
+        raise AssertionError("expected in-flight refusal")
+
+    release.set()
+    for thread in threads:
+        thread.join(1.0)
+    assert bridge._main_thread_busy_method is None
+    assert bridge._main_thread_busy_timed_out is False
+
+
+def test_run_on_main_clamps_short_non_strict_timeouts(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+
+    assert bridge._main_thread_timeout({"timeout": 0.001}) == 30.0
+    assert bridge._main_thread_timeout({"timeout": 0.001, "strict_timeout": True}) == 0.001
+    assert bridge._main_thread_timeout({"timeout": 45}) == 45.0
+
+
+def test_handle_client_closes_idle_timeout_without_stale_json_error(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    sent = []
+    bridge._handler_slots = threading.BoundedSemaphore(16)
+
+    class IdleSocket:
+        def settimeout(self, _timeout):
+            pass
+
+        def recv(self, _size):
+            raise socket.timeout("timed out")
+
+        def sendall(self, payload):
+            sent.append(payload)
+
+        def close(self):
+            pass
+
+    bridge._handle_client(IdleSocket())
+
+    assert sent == []
+
+
+def test_handle_client_serves_bridge_status_when_handler_slots_are_saturated(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    bridge._handler_slots = threading.BoundedSemaphore(1)
+    assert bridge._handler_slots.acquire(False)
+    sent = []
+
+    class StatusSocket:
+        def __init__(self):
+            self.chunks = [
+                b'{"jsonrpc":"2.0","id":7,"method":"bridge_status","params":{}}\n',
+                b"",
+            ]
+
+        def settimeout(self, _timeout):
+            pass
+
+        def recv(self, _size):
+            return self.chunks.pop(0)
+
+        def sendall(self, payload):
+            sent.append(payload)
+
+        def close(self):
+            pass
+
+    try:
+        bridge._handle_client(StatusSocket())
+    finally:
+        bridge._handler_slots.release()
+
+    response = json.loads(sent[0].decode("utf-8"))
+    assert response["id"] == 7
+    assert response["result"]["ok"] is True
+    assert response["result"]["server_thread_responsive"] is True
+
+
+def test_handle_client_rejects_main_thread_request_when_handler_slots_are_saturated(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+    bridge._handler_slots = threading.BoundedSemaphore(1)
+    assert bridge._handler_slots.acquire(False)
+    sent = []
+
+    class PingSocket:
+        def __init__(self):
+            self.chunks = [
+                b'{"jsonrpc":"2.0","id":8,"method":"ping","params":{}}\n',
+                b"",
+            ]
+
+        def settimeout(self, _timeout):
+            pass
+
+        def recv(self, _size):
+            return self.chunks.pop(0)
+
+        def sendall(self, payload):
+            sent.append(payload)
+
+        def close(self):
+            pass
+
+    try:
+        bridge._handle_client(PingSocket())
+    finally:
+        bridge._handler_slots.release()
+
+    response = json.loads(sent[0].decode("utf-8"))
+    assert response["id"] == 8
+    assert response["error"]["message"] == "Too many concurrent Ableton MCP requests"
 
 
 def test_exec_returns_result_binding(monkeypatch):
