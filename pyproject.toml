@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ableton-live-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "General-purpose MCP bridge for Ableton Live's object model."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,13 +13,26 @@ authors = [{ name = "Codex" }]
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = [
+    "pytest>=8.0",
+    "Pillow>=10",
+    "pyobjc-framework-Quartz; platform_system == 'Darwin'",
+    "windows-capture; platform_system == 'Windows'",
+]
 debug = ["pytest>=8.0"]
+visual = [
+    "Pillow>=10",
+    "pyobjc-framework-Quartz; platform_system == 'Darwin'",
+    "windows-capture; platform_system == 'Windows'",
+]
 
 [project.scripts]
 ableton-live-mcp = "server:main"
 ableton-live-mcp-validate = "validate:main"
 ableton-live-mcp-install-remote-script = "install_remote_script:main"
+ableton-live-mcp-build-m4l-device = "agent_m4l:main"
+ableton-live-mcp-sync-m4l-host = "agent_m4l:sync_host_main"
+ableton-live-mcp-capture-window = "visual_capture:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

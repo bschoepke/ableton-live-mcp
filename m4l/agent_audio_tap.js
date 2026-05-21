@@ -4,9 +4,10 @@ outlets = 3;
 
 var isRecording = false;
 var lastPath = "";
-var commandFile = "/tmp/agent_audio_tap_command.json";
+var commandFile = jsarguments.length > 1 ? String(jsarguments[1]) : "agent_audio_tap_command.json";
 var lastCommandId = "";
 var pollTask = null;
+var startTask = null;
 
 function loadbang() {
     start_polling();
@@ -97,6 +98,8 @@ function handleCommand(parts) {
     } else if (command === "start") {
         if (path) {
             openPath(path);
+            scheduleStartRecording();
+            return;
         }
         startRecording();
     } else if (command === "stop") {
@@ -106,6 +109,13 @@ function handleCommand(parts) {
     } else {
         outlet(2, "error", "unknown_command", command);
     }
+}
+
+function scheduleStartRecording() {
+    if (!startTask) {
+        startTask = new Task(startRecording, this);
+    }
+    startTask.schedule(500);
 }
 
 function openPath(path) {
