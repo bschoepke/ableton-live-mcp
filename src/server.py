@@ -9,7 +9,7 @@ from typing import Any
 
 from bridge import AbletonBridgeClient, BridgeConfig
 from agent_m4l import build_device, command_file as agent_m4l_command_file, device_name as agent_m4l_device_name, infer_device_bounds, normalize_role, slugify, status_file as agent_m4l_status_file, udp_port as agent_m4l_udp_port, write_webui, write_webui_asset_files, write_webui_assets
-from mcp import StdioMcpServer, Tool
+from mcp_stdio import StdioMcpServer, Tool
 from similar_sounds import find_similar_sounds
 from visual_capture import capture_ableton_window
 
