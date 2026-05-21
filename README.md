@@ -14,6 +14,12 @@ It should work on Mac and Windows with recent Ableton versions, but I have only 
 
 Back up your Live Set before using this. The MCP can edit your set directly and could corrupt it.
 
+## How to update
+
+`git pull` this repo or ask your agent to:
+
+`Update the https://github.com/bschoepke/ableton-live-mcp MCP server for me`
+
 ## Demos
 Here are a couple examples of live sets made from scratch with Codex in just a few minutes, along with their prompts. After it makes something, you can ask for follow up changes.
 
