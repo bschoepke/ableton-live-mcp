@@ -62,6 +62,8 @@ When validation reports `live_failure_type: "bridge_unresponsive"` or `"live_pro
 
 Never push commits, branches, or tags to a remote without explicit user authorization.
 
+On Windows/PowerShell, do not use Bash heredocs such as `python - <<'PY'`; PowerShell treats `<` as redirection. For multiline Python, use a single-quoted here-string piped into Python: `@' ... '@ | python -`. Prefer this form for Live bridge scripts or nested JSON/code strings instead of fragile `python -c` quoting.
+
 ## Bridge reliability
 
 Persistent localhost bridge sockets can be closed after an idle period. The client should proactively reconnect with `ABLETON_MCP_IDLE_TIMEOUT` and retry stale `id: null` `"timed out"` responses from older Remote Scripts. The Remote Script should close idle clients silently, without sending JSON-RPC timeout errors that can be misread as the next request's response. Use per-call `timeout` only for work that genuinely needs longer on Live's main thread.
