@@ -1290,7 +1290,7 @@ def test_agent_m4l_device_tool_materializes_webui_arrays(monkeypatch, tmp_path):
     assert forwarded["webuis"][0]["reuse"] is False
     assert forwarded["webuis"][0]["read_message"] == "readfile"
     assert forwarded["webuis"][0]["html_url"].startswith("file://")
-    assert forwarded["webuis"][0]["html_path"].endswith("Panel_Test_left/index.html")
+    assert Path(forwarded["webuis"][0]["html_path"]).as_posix().endswith("Panel_Test_left/index.html")
     assert forwarded["webuis"][1]["html_path"] == str(existing)
     assert forwarded["patch"]["webuis"] == forwarded["webuis"]
     assert forwarded["patch"]["device_width"] == 500
@@ -1373,12 +1373,12 @@ def test_agent_m4l_device_tool_materializes_patch_webui(monkeypatch, tmp_path):
 
     forwarded = bridge.calls[0][1]
     assert forwarded["patch"]["webui"]["object"] == "jbrowser~"
-    assert forwarded["patch"]["webui"]["html_path"].endswith("Nested_Panel/index.html")
+    assert Path(forwarded["patch"]["webui"]["html_path"]).as_posix().endswith("Nested_Panel/index.html")
     assert forwarded["patch"]["device_width"] == 260
     assert forwarded["patch"]["device_height"] == 140
     assert response["result"]["structuredContent"]["built"]["device_width"] == 260
     assert response["result"]["structuredContent"]["built"]["device_height"] == 140
-    assert response["result"]["structuredContent"]["webui"]["html_path"].endswith("Nested_Panel/index.html")
+    assert Path(response["result"]["structuredContent"]["webui"]["html_path"]).as_posix().endswith("Nested_Panel/index.html")
 
 
 def test_agent_m4l_device_tool_waits_for_status_without_forwarding_wait_args(tmp_path):
@@ -2150,6 +2150,59 @@ def test_find_similar_sounds_reads_live_database_without_bridge(tmp_path):
     assert [item["name"] for item in result["results"]] == ["Near Kick.wav", "Far Kick.wav"]
     assert result["results"][0]["distance"] < result["results"][1]["distance"]
     assert result["results"][0]["path"] == "Pack / Samples / Near Kick.wav"
+
+
+def test_live_database_dirs_include_windows_local_app_data(tmp_path):
+    import similar_sounds
+
+    home = tmp_path / "home"
+    local_app_data = tmp_path / "LocalAppData"
+    app_data = tmp_path / "Roaming"
+    dirs = similar_sounds.live_database_dirs(
+        system="Windows",
+        home=home,
+        environ={"LOCALAPPDATA": str(local_app_data), "APPDATA": str(app_data)},
+    )
+
+    assert dirs[:2] == [
+        local_app_data / "Ableton" / "Live Database",
+        app_data / "Ableton" / "Live Database",
+    ]
+    assert home / "Library" / "Application Support" / "Ableton" / "Live Database" in dirs
+
+
+def test_live_database_dirs_keep_macos_default(tmp_path):
+    import similar_sounds
+
+    home = tmp_path / "home"
+    dirs = similar_sounds.live_database_dirs(system="Darwin", home=home, environ={})
+
+    assert dirs[0] == home / "Library" / "Application Support" / "Ableton" / "Live Database"
+
+
+def test_latest_live_files_db_searches_platform_candidates(tmp_path, monkeypatch):
+    import similar_sounds
+
+    old_dir = tmp_path / "old" / "Ableton" / "Live Database"
+    new_dir = tmp_path / "new" / "Ableton" / "Live Database"
+    old_dir.mkdir(parents=True)
+    new_dir.mkdir(parents=True)
+    old_db = old_dir / "Live-files-12000.db"
+    new_db = new_dir / "Live-files-12300.db"
+    old_db.write_text("old", encoding="utf-8")
+    new_db.write_text("new", encoding="utf-8")
+    old_time = 1_700_000_000
+    new_time = old_time + 60
+    import os
+    os.utime(old_db, (old_time, old_time))
+    os.utime(new_db, (new_time, new_time))
+    monkeypatch.setattr(
+        similar_sounds,
+        "live_database_dirs",
+        lambda: [old_dir, new_dir],
+    )
+
+    assert similar_sounds.latest_live_files_db() == new_db
 
 
 def make_similarity_db(tmp_path):

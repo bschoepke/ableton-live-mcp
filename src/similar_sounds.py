@@ -1,19 +1,74 @@
 from __future__ import annotations
 
 import math
+import os
+import platform
 import sqlite3
 import struct
 from pathlib import Path
 from typing import Any
 
 
-DB_DIR = Path.home() / "Library/Application Support/Ableton/Live Database"
+DB_DIR_ENV_VARS = ("ABLETON_LIVE_DATABASE_DIR", "ABLETON_LIVE_DB_DIR")
+
+
+def live_database_dirs(
+    *,
+    system: str | None = None,
+    home: Path | None = None,
+    environ: dict[str, str] | None = None,
+) -> list[Path]:
+    environ = environ if environ is not None else os.environ
+    home = home or Path.home()
+    candidates: list[Path] = []
+    for name in DB_DIR_ENV_VARS:
+        value = environ.get(name)
+        if value:
+            candidates.extend(Path(item).expanduser() for item in value.split(os.pathsep) if item)
+
+    system = system or platform.system()
+    if system == "Windows":
+        local_app_data = environ.get("LOCALAPPDATA")
+        app_data = environ.get("APPDATA")
+        if local_app_data:
+            candidates.append(Path(local_app_data) / "Ableton" / "Live Database")
+        if app_data:
+            candidates.append(Path(app_data) / "Ableton" / "Live Database")
+    elif system == "Darwin":
+        candidates.append(home / "Library" / "Application Support" / "Ableton" / "Live Database")
+    else:
+        xdg_data_home = environ.get("XDG_DATA_HOME")
+        if xdg_data_home:
+            candidates.append(Path(xdg_data_home) / "Ableton" / "Live Database")
+        candidates.append(home / ".local" / "share" / "Ableton" / "Live Database")
+
+    candidates.append(home / "Library" / "Application Support" / "Ableton" / "Live Database")
+    return _dedupe(candidates)
+
+
+def _dedupe(paths: list[Path]) -> list[Path]:
+    result: list[Path] = []
+    seen: set[str] = set()
+    for path in paths:
+        key = str(path.expanduser())
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(path.expanduser())
+    return result
 
 
 def latest_live_files_db() -> Path:
-    candidates = sorted(DB_DIR.glob("Live-files-*.db"), key=lambda item: item.stat().st_mtime, reverse=True)
+    db_dirs = live_database_dirs()
+    candidates = sorted(
+        (path for db_dir in db_dirs for path in db_dir.glob("Live-files-*.db")),
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    )
     if not candidates:
-        raise FileNotFoundError("No Live-files database found in %s" % DB_DIR)
+        raise FileNotFoundError(
+            "No Live-files database found in %s" % ", ".join(str(path) for path in db_dirs)
+        )
     return candidates[0]
 
 
