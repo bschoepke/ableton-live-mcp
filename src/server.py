@@ -68,7 +68,10 @@ def schema(properties: dict[str, Any], required: list[str] | None = None) -> dic
 
 
 def loose_schema() -> dict[str, Any]:
-    return {}
+    # Minimal valid JSON Schema object: MCP requires inputSchema.type == "object",
+    # and an object schema with no "properties"/"additionalProperties" already
+    # accepts arbitrary arguments. Kept minimal to keep tools/list compact.
+    return {"type": "object"}
 
 
 def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
