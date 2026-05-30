@@ -61,6 +61,92 @@ def test_capture_refuses_non_ableton_window(tmp_path):
         visual_capture.capture_window(window, tmp_path / "browser.png")
 
 
+def test_is_max_console_window_matches_m4l_console():
+    # Max for Live hosts the Max runtime inside Live's process: the console
+    # window is owned by Live and titled "Max for Live".
+    m4l = WindowInfo(
+        platform="Darwin",
+        id=402,
+        title="Max for Live",
+        owner="Live",
+        process_path="/Applications/Ableton Live 12 Suite.app/Contents/MacOS/Live",
+        bundle_id="com.ableton.live",
+    )
+    assert visual_capture.is_max_console_window(m4l) is True
+
+
+def test_is_max_console_window_ignores_standalone_max_and_other_live_windows():
+    # The PR is scoped to the M4L console only: the standalone Max app's
+    # "Max Console" window and ordinary Live windows are not matched.
+    standalone_max = WindowInfo(
+        platform="Darwin", id=400, title="Max Console", owner="Max",
+        process_path="/Applications/Max.app/Contents/MacOS/Max",
+        bundle_id="com.cycling74.Max",
+    )
+    live_set = WindowInfo(
+        platform="Darwin", id=401, title="Untitled", owner="Live",
+        process_path="/Applications/Ableton Live 12 Suite.app/Contents/MacOS/Live",
+        bundle_id="com.ableton.live",
+    )
+    assert visual_capture.is_max_console_window(standalone_max) is False
+    assert visual_capture.is_max_console_window(live_set) is False
+
+
+def test_select_max_console_prefers_onscreen(monkeypatch):
+    # Two "Max for Live" windows (e.g. console + patcher editor): the on-screen
+    # one wins even though the other is larger.
+    offscreen = WindowInfo(
+        platform="Darwin", id=45956, title="Max for Live", owner="Live",
+        process_path="/Applications/Ableton Live 12 Suite.app/Contents/MacOS/Live",
+        bundle_id="com.ableton.live", onscreen=False,
+        bounds={"x": 0, "y": 0, "width": 1200, "height": 1200},
+    )
+    onscreen = WindowInfo(
+        platform="Darwin", id=90105, title="Max for Live", owner="Live",
+        process_path="/Applications/Ableton Live 12 Suite.app/Contents/MacOS/Live",
+        bundle_id="com.ableton.live", onscreen=True,
+        bounds={"x": 0, "y": 0, "width": 575, "height": 576},
+    )
+    monkeypatch.setattr(visual_capture, "list_platform_windows", lambda: [offscreen, onscreen])
+    assert visual_capture.select_max_console_window().id == 90105
+
+
+def test_capture_allows_max_console_window(monkeypatch):
+    window = WindowInfo(
+        platform="Darwin",
+        id=90105,
+        title="Max for Live",
+        owner="Live",
+        process_path="/Applications/Ableton Live 12 Suite.app/Contents/MacOS/Live",
+        bundle_id="com.ableton.live",
+    )
+    captured = {}
+    monkeypatch.setattr(visual_capture, "capture_macos_window", lambda w, out, backend="auto": captured.update(id=w.id) or "stub")
+    # Should not raise the non-Ableton/non-Max-Console guard.
+    assert visual_capture.capture_window(window, Path("/tmp/_unused_max_console.png")) == "stub"
+    assert captured["id"] == 90105
+
+
+def test_max_console_list_only_filters(monkeypatch):
+    monkeypatch.setattr(visual_capture, "list_platform_windows", lambda: [
+        WindowInfo(
+            platform="Darwin", id=90105, title="Max for Live", owner="Live",
+            process_path="/Applications/Ableton Live 12 Suite.app/Contents/MacOS/Live",
+            bundle_id="com.ableton.live",
+            bounds={"x": 0, "y": 0, "width": 575, "height": 576},
+        ),
+        WindowInfo(
+            platform="Darwin", id=300, title="Untitled", owner="Live",
+            process_path="/Applications/Ableton Live 12 Suite.app/Contents/MacOS/Live",
+            bundle_id="com.ableton.live",
+            bounds={"x": 0, "y": 0, "width": 1200, "height": 800},
+        ),
+    ])
+    result = visual_capture.capture_max_console_window(list_only=True)
+    assert result["count"] == 1
+    assert result["windows"][0]["id"] == 90105
+
+
 def test_title_filter_applies_after_ableton_filter(monkeypatch):
     monkeypatch.setattr(visual_capture, "list_platform_windows", lambda: [
         WindowInfo(
