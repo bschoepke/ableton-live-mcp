@@ -2269,7 +2269,10 @@ def test_observe_events_and_cleanup(monkeypatch):
 
     obj.value = 2
     obj.added[0]()
-    assert bridge._rpc_events({"limit": 10}) == [{"id": summary["id"], "property": "value", "value": 2}]
+    assert bridge._rpc_events({"limit": 10}) == {
+        "events": [{"id": summary["id"], "property": "value", "value": 2}],
+        "count": 1,
+    }
 
     bridge._rpc_observe({"ref": {"id": summary["id"]}, "property": "value", "enabled": False})
     assert len(obj.removed) == 1

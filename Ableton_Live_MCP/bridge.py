@@ -1670,7 +1670,10 @@ class AbletonLiveMCP(ControlSurface):
         limit = params.get("limit") or 100
         events = self._events[:limit]
         self._events = self._events[limit:]
-        return events
+        # MCP requires a tool result to be a JSON object (structuredContent must
+        # be a record), so wrap the drained events instead of returning a bare
+        # array, which strict clients reject.
+        return {"events": events, "count": len(events)}
 
     def _resolve(self, ref):
         ref = ref or {"path": "live_set"}

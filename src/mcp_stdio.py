@@ -85,6 +85,19 @@ class StdioMcpServer:
                 arguments = params.get("arguments", {}) or {}
                 _validate(arguments, tool.input_schema, "arguments")
                 result = tool.handler(arguments)
+                # The MCP spec requires a tool result's structuredContent to be a
+                # JSON object (record), not an array or scalar. Strict clients
+                # (e.g. Claude Code) reject the whole call otherwise ("expected
+                # record, received array"). Fail loudly here so a handler that
+                # returns a bare list/scalar surfaces on any client instead of
+                # only when a strict client validates structuredContent.
+                if not isinstance(result, dict):
+                    raise ValueError(
+                        f"Tool {name!r} returned a non-object result of type "
+                        f"{type(result).__name__}: MCP requires a tool result to be "
+                        "a JSON object so it can be carried in structuredContent. "
+                        "Wrap the payload in an object, e.g. {\"items\": [...]}."
+                    )
                 return self._result(req_id, {
                     "content": [{"type": "text", "text": json.dumps(result, separators=(",", ":"))}],
                     "structuredContent": result,

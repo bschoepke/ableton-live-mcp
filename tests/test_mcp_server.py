@@ -98,6 +98,76 @@ def test_add_tool_rejects_non_object_input_schema():
         server.add_tool(Tool("bad_tool", "desc", {}, lambda args: None))
 
 
+class ListEventsBridge(FakeBridge):
+    """Mimics a remote script that drains retained events as a bare array."""
+
+    def request(self, method, params):
+        self.calls.append((method, params))
+        if method == "events":
+            return [{"id": 1, "property": "value", "value": 2}]
+        return {"method": method, "params": params}
+
+
+def test_live_events_tool_wraps_bare_array_into_object():
+    # MCP requires structuredContent to be a JSON object; live_events historically
+    # returned a bare array, which strict clients (e.g. Claude Code) reject with
+    # "expected record, received array". The tool must wrap the events in an object.
+    bridge = ListEventsBridge()
+    server = make_server(bridge)
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 60,
+        "method": "tools/call",
+        "params": {"name": "live_events", "arguments": {"limit": 10}},
+    })
+
+    assert bridge.calls == [("events", {"limit": 10})]
+    structured = response["result"]["structuredContent"]
+    assert isinstance(structured, dict)
+    assert structured == {
+        "events": [{"id": 1, "property": "value", "value": 2}],
+        "count": 1,
+    }
+
+
+def test_all_forwarding_tool_results_are_json_objects():
+    # Every tool result must be a JSON object so it can be carried in
+    # structuredContent. Drive each bridge-forwarding tool with a bridge whose
+    # events handler returns a bare array (the known offender) and assert the
+    # wrapped MCP result is always an object.
+    bridge = ListEventsBridge()
+    server = make_server(bridge)
+    for index, tool in enumerate(server.tools.values()):
+        response = server.handle({
+            "jsonrpc": "2.0",
+            "id": 700 + index,
+            "method": "tools/call",
+            "params": {"name": tool.name, "arguments": {}},
+        })
+        result = response.get("result")
+        # Argument validation may legitimately reject empty arguments; only
+        # assert on results that were actually produced.
+        if result is None:
+            continue
+        assert isinstance(result["structuredContent"], dict), tool.name
+
+
+def test_tool_call_rejects_non_object_result():
+    # The result-time guard must fail loudly when a handler returns a non-object,
+    # so this class of bug can't silently regress into a client-side rejection.
+    server = make_server(FakeBridge())
+    server.add_tool(Tool("bare_array_tool", "desc", {"type": "object"}, lambda args: [1, 2, 3]))
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 61,
+        "method": "tools/call",
+        "params": {"name": "bare_array_tool", "arguments": {}},
+    })
+
+    assert "structuredContent" not in (response.get("result") or {})
+    assert "non-object result" in response["error"]["message"]
+
+
 def test_initialize_reports_current_server_version():
     server = make_server(FakeBridge())
     response = server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})

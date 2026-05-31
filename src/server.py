@@ -478,9 +478,19 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "property": {"type": "string"},
         "enabled": {"type": "boolean"},
     }, ["ref", "property", "enabled"]), forward("observe")))
+    def drain_events(args):
+        # The bridge/remote script returns retained events as a bare JSON array,
+        # but MCP requires a tool result to be an object (structuredContent must
+        # be a record). Wrap the list so strict clients accept the result. A
+        # remote that already returns an object is passed through unchanged.
+        result = bridge.request("events", args)
+        if isinstance(result, list):
+            return {"events": result, "count": len(result)}
+        return result
+
     server.add_tool(Tool("live_events", "Drain retained Live listener events.", schema({
         "limit": {"type": "integer", "minimum": 1},
-    }), forward("events")))
+    }), drain_events))
     return server
 
 
