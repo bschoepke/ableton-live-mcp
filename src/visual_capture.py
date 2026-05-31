@@ -542,14 +542,35 @@ def list_windows_windows() -> list[WindowInfo]:
 def capture_windows_window(window: WindowInfo, output: Path, backend: str = "auto") -> None:
     if backend not in ("auto", "windows-capture"):
         raise RuntimeError("Windows Ableton visual capture supports backend='auto' or 'windows-capture'")
-    ensure_windows_capture_title_unambiguous(window)
+    # Re-verify the window id still maps to an Ableton Live / Max Console window
+    # before we touch the capture library, so a stale or recycled HWND fails
+    # with a clear message instead of an opaque native error (and we never
+    # capture an unrelated window). Done first so the suite stays green where
+    # windows-capture isn't installed (e.g. macOS).
+    ensure_windows_capture_window_resolvable(window)
     try:
         from windows_capture import InternalCaptureControl, WindowsCapture
     except ImportError as exc:
         raise RuntimeError("Windows Ableton visual capture requires the windows-capture package") from exc
 
+    # Prefer HWND-based selection. windows-capture matches `window_name` by
+    # substring, so a non-target window whose title merely *contains* the
+    # target's title gets captured instead — and the Max Console title
+    # "Max for Live" is especially collision-prone (e.g. a browser tab open to
+    # this PR, or an M4L patcher editor sharing the title). Selecting by the
+    # concrete HWND removes the ambiguity. Older windows-capture (< 2.0) lacks
+    # `window_hwnd`; there we fall back to title selection, but only after
+    # re-verifying the title unambiguously identifies this window.
+    import inspect
+
+    supports_hwnd = "window_hwnd" in inspect.signature(WindowsCapture.__init__).parameters
+    if supports_hwnd:
+        capture = WindowsCapture(cursor_capture=False, draw_border=False, monitor_index=None, window_hwnd=int(window.id))
+    else:
+        ensure_windows_capture_title_unambiguous(window)
+        capture = WindowsCapture(cursor_capture=False, draw_border=False, monitor_index=None, window_name=window.title)
+
     saved = {"ok": False}
-    capture = WindowsCapture(cursor_capture=False, draw_border=False, monitor_index=None, window_name=window.title)
 
     @capture.event
     def on_frame_arrived(frame, capture_control: InternalCaptureControl):
@@ -564,6 +585,23 @@ def capture_windows_window(window: WindowInfo, output: Path, backend: str = "aut
     capture.start()
     if not saved["ok"] or not output.exists() or output.stat().st_size <= 0:
         raise RuntimeError("Windows Ableton visual capture produced no image")
+
+
+def ensure_windows_capture_window_resolvable(window: WindowInfo) -> None:
+    matches = [
+        candidate for candidate in list_platform_windows()
+        if candidate.platform == "Windows" and str(candidate.id) == str(window.id)
+    ]
+    if not matches:
+        raise RuntimeError(
+            "Refusing Windows capture because the window id %r could not be re-verified"
+            % window.id
+        )
+    if not any(is_ableton_live_window(candidate) or is_max_console_window(candidate) for candidate in matches):
+        raise RuntimeError(
+            "Refusing Windows capture because window id %r is not an Ableton Live / Max Console window"
+            % window.id
+        )
 
 
 def ensure_windows_capture_title_unambiguous(window: WindowInfo) -> None:

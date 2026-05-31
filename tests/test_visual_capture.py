@@ -61,6 +61,57 @@ def test_capture_refuses_non_ableton_window(tmp_path):
         visual_capture.capture_window(window, tmp_path / "browser.png")
 
 
+def test_capture_windows_window_selects_by_hwnd(tmp_path, monkeypatch):
+    # windows-capture matches window_name by *substring*, so a non-target
+    # window whose title merely contains "Max for Live" (e.g. a browser tab on
+    # this PR, or an M4L patcher editor) would be grabbed instead. Capture must
+    # select by the concrete HWND.
+    import sys
+    import types
+
+    recorded = {}
+
+    class FakeCapture:
+        def __init__(self, cursor_capture=False, draw_border=False, monitor_index=None, window_name=None, window_hwnd=None):
+            recorded["window_name"] = window_name
+            recorded["window_hwnd"] = window_hwnd
+            self._on_frame = None
+
+        def event(self, fn):
+            if fn.__name__ == "on_frame_arrived":
+                self._on_frame = fn
+            return fn
+
+        def start(self):
+            class _Ctl:
+                def stop(self):
+                    pass
+
+            class _Frame:
+                def save_as_image(self, path):
+                    Path(path).write_bytes(b"\x89PNG\r\n\x1a\n")
+
+            self._on_frame(_Frame(), _Ctl())
+
+    fake_mod = types.ModuleType("windows_capture")
+    fake_mod.WindowsCapture = FakeCapture
+    fake_mod.InternalCaptureControl = object
+    monkeypatch.setitem(sys.modules, "windows_capture", fake_mod)
+
+    window = WindowInfo(
+        platform="Windows",
+        id=90210,
+        title="Max for Live",
+        owner="Ableton Live 12 Suite",
+        process_path=r"C:\ProgramData\Ableton\Live 12 Suite\Program\Ableton Live 12 Suite.exe",
+        bounds={"x": 0, "y": 0, "width": 575, "height": 576},
+    )
+    monkeypatch.setattr(visual_capture, "list_platform_windows", lambda: [window])
+    visual_capture.capture_windows_window(window, tmp_path / "console.png")
+    assert recorded["window_hwnd"] == 90210
+    assert recorded["window_name"] is None
+
+
 def test_is_max_console_window_matches_m4l_console():
     # Max for Live hosts the Max runtime inside Live's process: the console
     # window is owned by Live and titled "Max for Live".
@@ -443,18 +494,6 @@ def test_macos_capture_reports_screencapture_stderr(monkeypatch, tmp_path):
         visual_capture.capture_window(window, tmp_path / "live.png", backend="screencapture")
 
 
-def test_windows_capture_rejects_empty_title(tmp_path):
-    window = WindowInfo(
-        platform="Windows",
-        id=100,
-        title="",
-        owner="Ableton Live",
-        process_path=r"C:\Program Files\Ableton\Ableton Live Suite\Program\Ableton Live Suite.exe",
-    )
-    with pytest.raises(RuntimeError, match="non-empty Ableton Live window title"):
-        visual_capture.capture_window(window, tmp_path / "live.png", backend="windows-capture")
-
-
 def test_windows_capture_rejects_stale_window_id(monkeypatch, tmp_path):
     target = WindowInfo(
         platform="Windows",
@@ -477,7 +516,9 @@ def test_windows_capture_rejects_stale_window_id(monkeypatch, tmp_path):
         visual_capture.capture_window(target, tmp_path / "live.png", backend="windows-capture")
 
 
-def test_windows_capture_rejects_duplicate_ableton_titles(monkeypatch, tmp_path):
+def test_windows_capture_rejects_id_belonging_to_non_ableton(monkeypatch, tmp_path):
+    # A re-verified id that resolves to a non-Ableton window is refused, even
+    # though the caller's WindowInfo claims an Ableton owner.
     target = WindowInfo(
         platform="Windows",
         id=100,
@@ -486,40 +527,16 @@ def test_windows_capture_rejects_duplicate_ableton_titles(monkeypatch, tmp_path)
         process_path=r"C:\Program Files\Ableton\Ableton Live Suite\Program\Ableton Live Suite.exe",
     )
     monkeypatch.setattr(visual_capture, "list_platform_windows", lambda: [
-        target,
         WindowInfo(
             platform="Windows",
-            id=101,
-            title="Untitled",
-            owner="Ableton Live",
-            process_path=r"C:\Program Files\Ableton\Ableton Live Suite\Program\Ableton Live Suite.exe",
-        ),
-    ])
-
-    with pytest.raises(RuntimeError, match="multiple Ableton Live windows share the title"):
-        visual_capture.capture_window(target, tmp_path / "live.png", backend="windows-capture")
-
-
-def test_windows_capture_rejects_title_shared_with_non_ableton(monkeypatch, tmp_path):
-    target = WindowInfo(
-        platform="Windows",
-        id=100,
-        title="Untitled",
-        owner="Ableton Live",
-        process_path=r"C:\Program Files\Ableton\Ableton Live Suite\Program\Ableton Live Suite.exe",
-    )
-    monkeypatch.setattr(visual_capture, "list_platform_windows", lambda: [
-        target,
-        WindowInfo(
-            platform="Windows",
-            id=200,
+            id=100,
             title="Untitled",
             owner="Notes",
             process_path=r"C:\Windows\notepad.exe",
         ),
     ])
 
-    with pytest.raises(RuntimeError, match="shared by non-Ableton windows"):
+    with pytest.raises(RuntimeError, match="not an Ableton Live / Max Console window"):
         visual_capture.capture_window(target, tmp_path / "live.png", backend="windows-capture")
 
 

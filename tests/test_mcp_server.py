@@ -3453,7 +3453,7 @@ def test_dev_extra_includes_visual_capture_dependencies():
     assert '"pytest>=8.0"' in dev_block
     assert '"Pillow>=10"' in dev_block
     assert '"pyobjc-framework-Quartz; platform_system == \'Darwin\'"' in dev_block
-    assert '"windows-capture; platform_system == \'Windows\'"' in dev_block
+    assert '"windows-capture>=2.0; platform_system == \'Windows\'"' in dev_block
 
 
 def test_smoke_suite_runs_expected_bridge_methods():
