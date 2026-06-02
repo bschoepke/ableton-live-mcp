@@ -3829,3 +3829,38 @@ def test_prompt_audit_can_preflight_generated_m4l_creativity_without_live():
     assert audit["name"] == "generated_m4l_creative_devices_local_preflight"
     assert sum(1 for call in audit["calls"] if call["method"] == "local_m4l_preflight") == 3
     assert audit["max_call_bytes"] < 5000
+
+
+# --- salvaged from PR #10 (tool-result-must-be-object), superseded by this PR ---
+
+
+class ListEventsBridge(FakeBridge):
+    """Mimics a remote script that drains retained events as a bare array."""
+
+    def request(self, method, params):
+        self.calls.append((method, params))
+        if method == "events":
+            return [{"id": 1, "property": "value", "value": 2}]
+        return {"method": method, "params": params}
+
+
+def test_all_forwarding_tool_results_are_json_objects():
+    # Every tool result must be a JSON object so it can be carried in
+    # structuredContent. Drive each bridge-forwarding tool with a bridge whose
+    # events handler returns a bare array (the known offender) and assert the
+    # wrapped MCP result is always an object.
+    bridge = ListEventsBridge()
+    server = make_server(bridge)
+    for index, tool in enumerate(server.tools.values()):
+        response = server.handle({
+            "jsonrpc": "2.0",
+            "id": 700 + index,
+            "method": "tools/call",
+            "params": {"name": tool.name, "arguments": {}},
+        })
+        result = response.get("result")
+        # Argument validation may legitimately reject empty arguments; only
+        # assert on results that were actually produced.
+        if result is None:
+            continue
+        assert isinstance(result["structuredContent"], dict), tool.name
