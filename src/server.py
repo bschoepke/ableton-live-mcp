@@ -446,6 +446,16 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "target_track": ref,
         **mutation_controls,
     }, ["item"]), forward("browser_load")))
+    server.add_tool(Tool("live_load_device", "Find device/preset by name in indexed browser (User Library/Places), load onto track; replaces dragging .amxd. path_contains disambiguates same-named matches; ambiguous->candidates. roots default user_folders+user_library.", schema({
+        "name": {"type": "string"},
+        "path_contains": {"type": "string"},
+        "name_exact": {"type": "boolean"},
+        "target_track": ref,
+        "roots": {"type": "array", "items": {"type": "string"}},
+        "max_depth": {"type": "integer", "minimum": 0},
+        "max_visited": {"type": "integer", "minimum": 1},
+        **mutation_controls,
+    }, ["name"]), forward("load_device")))
     server.add_tool(Tool("live_browser_preview", "Preview or stop previewing a BrowserItem.", schema({
         "item": browser_item_ref,
         "stop": {"type": "boolean"},

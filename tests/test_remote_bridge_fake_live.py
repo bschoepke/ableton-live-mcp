@@ -2201,6 +2201,52 @@ def test_browser_load_can_reresolve_stale_id_by_uri_or_path(monkeypatch):
     assert song.view.selected_track.name == "Track 1"
 
 
+def test_load_device_finds_and_loads_by_name(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    song.view.selected_track = None
+    result = bridge._rpc_load_device({
+        "name": "AgentAudioTap",
+        "target_track": {"path": "live_set tracks 0"},
+    })
+    assert result["loaded"] is True
+    assert result["item"]["name"] == "AgentAudioTap"
+    assert app.browser.loaded == ["AgentAudioTap"]
+    assert song.view.selected_track.name == "Track 1"
+
+
+def test_load_device_reports_candidates_when_ambiguous(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    result = bridge._rpc_load_device({"name": "AgentM4L", "name_exact": False})
+    assert result["loaded"] is False
+    assert result["ambiguous"] is True
+    names = sorted(candidate["name"] for candidate in result["candidates"])
+    assert names == ["AgentM4L_audio_effect_Wobble", "AgentM4L_instrument_Lead"]
+    assert app.browser.loaded == []
+
+
+def test_load_device_path_contains_disambiguates(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    result = bridge._rpc_load_device({
+        "name": "AgentM4L",
+        "name_exact": False,
+        "path_contains": "Instruments",
+        "target_track": {"path": "live_set tracks 0"},
+    })
+    assert result["loaded"] is True
+    assert app.browser.loaded == ["AgentM4L_instrument_Lead"]
+
+
+def test_load_device_raises_when_missing(monkeypatch):
+    bridge, song, app = make_bridge(monkeypatch)
+    try:
+        bridge._rpc_load_device({"name": "NoSuchDevice"})
+    except KeyError:
+        pass
+    else:
+        raise AssertionError("expected KeyError for missing device")
+    assert app.browser.loaded == []
+
+
 def test_browser_capabilities_report_roots_and_semantic_attrs(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     result = bridge._rpc_browser_capabilities({})
