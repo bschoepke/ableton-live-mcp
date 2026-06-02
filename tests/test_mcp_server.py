@@ -182,6 +182,92 @@ def test_tool_call_forwards_arguments_to_bridge():
     assert "\n" not in content
 
 
+def test_tool_call_normalizes_none_result_into_record():
+    # Void-returning LOM methods (e.g. live_call delete_device) make the bridge
+    # return None. MCP requires structuredContent to be a JSON object, so a null
+    # would fail strict client validation even though the call succeeded.
+    class NoneBridge:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, method, params):
+            self.calls.append((method, params))
+            return None
+
+    bridge = NoneBridge()
+    server = make_server(bridge)
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 60,
+        "method": "tools/call",
+        "params": {
+            "name": "live_call",
+            "arguments": {"ref": {"path": "live_set tracks 0"}, "method": "delete_device", "args": [0]},
+        },
+    })
+
+    assert bridge.calls == [("call", {"ref": {"path": "live_set tracks 0"}, "method": "delete_device", "args": [0]})]
+    assert "error" not in response
+    structured = response["result"]["structuredContent"]
+    assert structured == {"ok": True, "result": None}
+    assert json.loads(response["result"]["content"][0]["text"]) == {"ok": True, "result": None}
+
+
+@pytest.mark.parametrize("tool_name,method,arguments,returned", [
+    ("live_exec", "exec", {"code": "result = song.name"}, "My Set"),
+    ("live_exec", "exec", {"code": "result = len(song.tracks)"}, 7),
+    ("live_exec", "exec", {"code": "result = song.is_playing"}, True),
+    ("live_exec", "exec", {"code": "result = [t.name for t in song.tracks]"}, ["Drums", "Bass"]),
+    ("live_eval", "eval", {"expr": "song.name"}, "My Set"),
+    ("live_eval", "eval", {"expr": "len(song.tracks)"}, 4),
+])
+def test_tool_call_normalizes_scalar_and_list_results_into_record(tool_name, method, arguments, returned):
+    # live_exec/live_eval (and collection tools) can return scalars or lists.
+    # MCP requires structuredContent to be a JSON object, so a bare string/int/
+    # bool/list would fail strict client validation even though the code ran.
+    # Mirrors the None case: wrap any non-object return as {"ok": true, "result": ...}.
+    class ScalarBridge:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, method, params):
+            self.calls.append((method, params))
+            return returned
+
+    bridge = ScalarBridge()
+    server = make_server(bridge)
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 61,
+        "method": "tools/call",
+        "params": {"name": tool_name, "arguments": arguments},
+    })
+
+    assert bridge.calls == [(method, arguments)]
+    assert "error" not in response
+    structured = response["result"]["structuredContent"]
+    assert isinstance(structured, dict)
+    assert structured == {"ok": True, "result": returned}
+    assert json.loads(response["result"]["content"][0]["text"]) == {"ok": True, "result": returned}
+
+
+def test_tool_call_does_not_double_wrap_dict_results():
+    # Dict returns (the common case) must pass through untouched -- no nesting
+    # under a second "result" key.
+    bridge = FakeBridge()
+    server = make_server(bridge)
+    response = server.handle({
+        "jsonrpc": "2.0",
+        "id": 62,
+        "method": "tools/call",
+        "params": {"name": "live_eval", "arguments": {"expr": "{'value': 1}"}},
+    })
+
+    structured = response["result"]["structuredContent"]
+    assert structured == {"method": "eval", "params": {"expr": "{'value': 1}"}}
+    assert "result" not in structured
+
+
 def test_ping_tool_accepts_timeout_for_stressed_live_sets():
     bridge = FakeBridge()
     server = make_server(bridge)
