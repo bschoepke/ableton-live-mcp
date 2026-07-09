@@ -1603,6 +1603,119 @@ class AbletonLiveMCP(ControlSurface):
         Live.Application.get_application().browser.load_item(item)
         return self._browser_item_result(None, item, None)
 
+    def _rpc_load_device(self, params):
+        # Convenience over browser_search + browser_load: find a loadable device/preset
+        # by name in the indexed browser (User Library or user "Places") and load it onto
+        # a track in one call. path_contains disambiguates multiple same-named matches
+        # (e.g. per-worktree dev builds). Skips the drag-and-drop step entirely.
+        name = (params.get("name") or "").strip()
+        if not name:
+            raise ValueError("load_device requires a 'name'")
+        want = name.lower()
+        path_contains = (params.get("path_contains") or "").strip().lower()
+        name_exact = params.get("name_exact")
+        if name_exact is None:
+            name_exact = True
+        roots = params.get("roots") or ["user_folders", "user_library"]
+        max_depth = int(params.get("max_depth") if params.get("max_depth") is not None else 12)
+        max_visited = int(params.get("max_visited") or 20000)
+        browser = Live.Application.get_application().browser
+
+        candidates = []
+        visited = 0
+        truncated = False
+
+        def roots_for(rname):
+            if not hasattr(browser, rname):
+                return []
+            root = getattr(browser, rname)
+            if self._is_browser_item(root):
+                try:
+                    return root.iter_children
+                except Exception:
+                    return (root,)
+            try:
+                return iter(root)
+            except Exception:
+                return ()
+
+        def children_of(item):
+            try:
+                return item.iter_children
+            except Exception:
+                return ()
+
+        def walk(root_name, item, path, depth):
+            nonlocal visited, truncated
+            if truncated or visited >= max_visited:
+                truncated = True
+                return
+            visited += 1
+            iname = getattr(item, "name", "")
+            current_path = path + [iname]
+            path_text = " > ".join([part for part in current_path if part])
+            if bool(getattr(item, "is_loadable", False)):
+                lname = iname.lower()
+                name_ok = (lname == want) if name_exact else (want in lname)
+                if name_ok and (not path_contains or path_contains in path_text.lower()):
+                    candidates.append((item, self._browser_item_result(root_name, item, path_text)))
+            if depth >= max_depth:
+                return
+            for child in children_of(item):
+                walk(root_name, child, current_path, depth + 1)
+                if truncated:
+                    return
+
+        for root_name in roots:
+            for item in roots_for(root_name):
+                walk(root_name, item, [root_name], 0)
+                if truncated:
+                    break
+            if truncated:
+                break
+
+        if not candidates:
+            raise KeyError(
+                "No loadable device named %r found under roots %s%s. Add its folder to Live's "
+                "browser (User Library, or Places > Add Folder) so Live indexes it, then retry."
+                % (name, list(roots), (" with path containing %r" % path_contains) if path_contains else "")
+            )
+        if len(candidates) > 1:
+            return {
+                "loaded": False,
+                "ambiguous": True,
+                "candidates": [result for _item, result in candidates],
+                "hint": "Multiple matches. Re-call with path_contains set to a unique path fragment "
+                        "(e.g. the worktree dir name), or use browser_load with one candidate's uri.",
+            }
+
+        item, item_result = candidates[0]
+        target = params.get("target_track")
+        target_track = None
+        if target:
+            target_track = self._resolve(target)
+            self.song().view.selected_track = target_track
+        else:
+            try:
+                target_track = self.song().view.selected_track
+            except Exception:
+                target_track = None
+        before_ids = set()
+        if target_track is not None:
+            before_ids = set(self._object_id(device) for device in getattr(target_track, "devices", []))
+        browser.load_item(item)
+        result = {"loaded": True, "item": item_result}
+        if target_track is not None:
+            new_device = self._find_new_track_device(target_track, before_ids)
+            if new_device is not None:
+                result["device"] = {
+                    "id": self._object_id(new_device),
+                    "name": getattr(new_device, "name", ""),
+                    "class_name": getattr(new_device, "class_name", None),
+                }
+            result["track"] = {"id": self._object_id(target_track), "name": getattr(target_track, "name", "")}
+        return result
+
     def _rpc_browser_preview(self, params):
         browser = Live.Application.get_application().browser
         if params.get("stop"):

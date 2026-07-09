@@ -2333,7 +2333,8 @@ def test_tool_list_stays_compact():
     server = make_server(FakeBridge())
     response = server.handle({"jsonrpc": "2.0", "id": 7, "method": "tools/list"})
     payload = json.dumps(response, separators=(",", ":"))
-    assert len(payload) < 16350
+    # Bumped from 16350 when live_load_device was added (~789 bytes). Keep new tools terse.
+    assert len(payload) < 17200
     live_eval = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_eval")
     assert "live_exec" in live_eval["description"]
     assert "duplicate session clips" not in live_eval["description"].lower()
