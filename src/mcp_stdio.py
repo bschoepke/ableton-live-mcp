@@ -33,6 +33,19 @@ class StdioMcpServer:
         self.tools: dict[str, Tool] = {}
 
     def add_tool(self, tool: Tool) -> None:
+        # The MCP spec requires every tool's inputSchema to be a JSON Schema
+        # object (type == "object"). Strict clients (e.g. Claude Code) reject the
+        # entire tools/list when any single tool violates this, which silently
+        # disables every tool on the server. Fail loudly at registration so a
+        # malformed schema surfaces at startup on any client -- including lenient
+        # ones -- instead of only when a strict client connects.
+        schema = tool.input_schema
+        if not isinstance(schema, dict) or schema.get("type") != "object":
+            raise ValueError(
+                f"Tool {tool.name!r} has an invalid inputSchema: MCP requires a "
+                f'JSON Schema object with "type": "object" (got {schema!r}). '
+                "Build it with schema(...) or loose_schema()."
+            )
         self.tools[tool.name] = tool
 
     def serve(self, stdin: TextIO | None = None, stdout: TextIO | None = None) -> None:

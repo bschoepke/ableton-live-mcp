@@ -14,6 +14,7 @@ import validate
 from benchmark import run_benchmark
 from bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig, effective_main_thread_timeout
 from install_remote_script import install_remote_script, main as install_remote_script_main, remote_script_root, remote_script_status
+from mcp_stdio import Tool
 from prompt_audit import run_generated_m4l_local_preflight, run_prompt_audit
 from server import agent_m4l_status_timeout, agent_m4l_status_timeout_reason, expected_agent_m4l_status_event, make_server, should_build_agent_m4l, summarize_agent_m4l_status, wait_agent_m4l_status
 from validate import main as validate_main
@@ -71,6 +72,30 @@ def test_lists_general_purpose_tools():
         "live_observe",
         "live_events",
     } <= names
+
+
+def test_all_tools_expose_object_input_schemas():
+    # MCP requires every tool inputSchema to be a JSON Schema object; strict
+    # clients (e.g. Claude Code) drop the entire tools/list otherwise, silently
+    # disabling every tool. Guard against regressions such as a new tool
+    # registered with an empty/loose schema.
+    server = make_server(FakeBridge())
+    response = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    bad = [
+        tool["name"]
+        for tool in response["result"]["tools"]
+        if not isinstance(tool.get("inputSchema"), dict)
+        or tool["inputSchema"].get("type") != "object"
+    ]
+    assert not bad, f"tools advertise non-object inputSchema: {bad}"
+
+
+def test_add_tool_rejects_non_object_input_schema():
+    # The registration guard must reject malformed schemas at startup rather
+    # than letting them reach a client's tools/list.
+    server = make_server(FakeBridge())
+    with pytest.raises(ValueError):
+        server.add_tool(Tool("bad_tool", "desc", {}, lambda args: None))
 
 
 def test_initialize_reports_current_server_version():
