@@ -11,7 +11,7 @@ from bridge import AbletonBridgeClient, BridgeConfig
 from agent_m4l import build_device, command_file as agent_m4l_command_file, device_name as agent_m4l_device_name, infer_device_bounds, normalize_role, slugify, status_file as agent_m4l_status_file, udp_port as agent_m4l_udp_port, write_webui, write_webui_asset_files, write_webui_assets
 from mcp_stdio import StdioMcpServer, Tool
 from similar_sounds import find_similar_sounds
-from visual_capture import capture_ableton_window
+from visual_capture import capture_ableton_window, capture_max_console_window
 
 
 __version__ = "0.1.1"
@@ -51,6 +51,7 @@ AGENT_M4L_CLEANUP_DESCRIPTION = "Dry-run/delete AgentM4L; ask before delete."
 AGENT_AUDIO_TAP_DESCRIPTION = "AgentAudioTap: command open/start/stop/status; start with path; UDP optional."
 AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap; solo target track; verify."
 VISUAL_CAPTURE_DESCRIPTION = "Ableton Live window-only; device-detail crop/downscale; region-rel; no arbitrary apps/windows."
+MAX_CONSOLE_CAPTURE_DESCRIPTION = "Max Console ('Max for Live' window) as an image: Max errors/post() the LOM hides. Opts: display=<n>/backend/list_only, crop/downscale."
 AGENT_AUDIO_TAP_SCHEMA = {
     "type": "object",
     "properties": {
@@ -284,6 +285,19 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         bottom_fraction=args.get("bottom_fraction"),
         max_width=args.get("max_width"),
         max_height=args.get("max_height"),
+    )))
+    server.add_tool(Tool("live_max_console_capture", MAX_CONSOLE_CAPTURE_DESCRIPTION, loose_schema(), lambda args: capture_max_console_window(
+        output_path=args.get("output_path"),
+        title_contains=args.get("title_contains"),
+        list_only=bool(args.get("list_only", False)),
+        backend=str(args.get("backend") or "auto"),
+        region=args.get("region"),
+        crop=args.get("crop"),
+        crop_relative_to_region=bool(args.get("crop_relative_to_region", False)),
+        bottom_fraction=args.get("bottom_fraction"),
+        max_width=args.get("max_width"),
+        max_height=args.get("max_height"),
+        display=args.get("display"),
     )))
     def agent_m4l_device(args):
         built = None

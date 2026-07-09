@@ -2358,10 +2358,7 @@ def test_tool_list_stays_compact():
     server = make_server(FakeBridge())
     response = server.handle({"jsonrpc": "2.0", "id": 7, "method": "tools/list"})
     payload = json.dumps(response, separators=(",", ":"))
-    # Ceiling allows for the few bytes that spec-valid {"type": "object"} schemas
-    # cost over an (invalid) empty schema on the loose-schema tools; still tight
-    # enough to catch real bloat from new tools or verbose descriptions.
-    assert len(payload) < 16600
+    assert len(payload) < 16700
     live_eval = next(tool for tool in response["result"]["tools"] if tool["name"] == "live_eval")
     assert "live_exec" in live_eval["description"]
     assert "duplicate session clips" not in live_eval["description"].lower()
@@ -3481,7 +3478,7 @@ def test_dev_extra_includes_visual_capture_dependencies():
     assert '"pytest>=8.0"' in dev_block
     assert '"Pillow>=10"' in dev_block
     assert '"pyobjc-framework-Quartz; platform_system == \'Darwin\'"' in dev_block
-    assert '"windows-capture; platform_system == \'Windows\'"' in dev_block
+    assert '"windows-capture>=2.0; platform_system == \'Windows\'"' in dev_block
 
 
 def test_smoke_suite_runs_expected_bridge_methods():

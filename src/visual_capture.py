@@ -16,6 +16,12 @@ from ableton_paths import state_dir
 
 
 ABLETON_BUNDLE_ID = "com.ableton.live"
+# The Max for Live console is a top-level window hosted inside Live's own
+# process (Max for Live embeds the Max runtime in Live), so it is owned by
+# Live and titled "Max for Live". Capturing it lets an agent read Max-level
+# errors (object-not-found, native errors, bridge stderr) that never reach a
+# plugin's own JS logging.
+MAX_CONSOLE_WINDOW_TITLE = "Max for Live"
 
 
 @dataclass(frozen=True)
@@ -40,6 +46,17 @@ def list_ableton_windows() -> list[WindowInfo]:
     )
 
 
+def list_max_console_windows() -> list[WindowInfo]:
+    # Prefer on-screen, then larger: if an M4L patcher editor (same owner +
+    # "Max for Live" title) is open alongside the console, this favors the
+    # visible one.
+    return sorted(
+        [window for window in list_platform_windows() if is_max_console_window(window)],
+        key=lambda window: (1 if window.onscreen else 0, window_area(window)),
+        reverse=True,
+    )
+
+
 def list_platform_windows() -> list[WindowInfo]:
     system = platform.system()
     if system == "Darwin":
@@ -60,6 +77,31 @@ def is_ableton_live_window(window: WindowInfo) -> bool:
     if system == "Windows":
         return process_name.lower().startswith("ableton live")
     return False
+
+
+def is_max_console_window(window: WindowInfo) -> bool:
+    # The Max for Live console window is owned by Live and titled "Max for
+    # Live" (M4L hosts the Max runtime inside Live's process). Caveat: an open
+    # M4L *patcher editor* shares that owner+title; when both are open,
+    # on-screen + largest wins in select_max_console_window.
+    if str(window.title or "") != MAX_CONSOLE_WINDOW_TITLE:
+        return False
+    process_name = (executable_stem(window.process_path) or executable_stem(window.owner)).lower()
+    return window.bundle_id == ABLETON_BUNDLE_ID or process_name == "live" or process_name.startswith("ableton live")
+
+
+def select_max_console_window(title_contains: str | None = None) -> WindowInfo:
+    windows = list_max_console_windows()
+    if title_contains:
+        needle = title_contains.lower()
+        windows = [window for window in windows if needle in window.title.lower()]
+    if not windows:
+        suffix = " matching %r" % title_contains if title_contains else ""
+        raise RuntimeError(
+            "No Max for Live console window%s is available to capture. Open it in Live "
+            "(a device's Max edit button → the Max Console) so the window exists first." % suffix
+        )
+    return windows[0]
 
 
 def select_ableton_window(title_contains: str | None = None) -> WindowInfo:
@@ -110,6 +152,81 @@ def capture_ableton_window(
     return result
 
 
+def capture_max_console_window(
+    output_path: str | os.PathLike[str] | None = None,
+    title_contains: str | None = None,
+    list_only: bool = False,
+    backend: str = "auto",
+    region: str | None = None,
+    crop: Any = None,
+    crop_relative_to_region: bool = False,
+    bottom_fraction: float | None = None,
+    max_width: int | None = None,
+    max_height: int | None = None,
+    display: int | None = None,
+) -> dict[str, Any]:
+    # The Max Console's content lives on a GPU/IOSurface layer that the legacy
+    # per-window APIs (screencapture -l / Quartz CGWindowListCreateImage) can't
+    # read — they return all-black even when the window is fully visible. So on
+    # macOS the default is the 'sck' (ScreenCaptureKit) backend, which reads the
+    # window content directly and in isolation, regardless of z-order. Two
+    # alternatives remain: backend='screencapture'/'quartz' (legacy, ~always
+    # black here — kept for parity/diagnostics) and display=<n> (grab the whole
+    # display the console is parked on; useful if SCK is unavailable, e.g.
+    # macOS < 14).
+    windows = list_max_console_windows()
+    if list_only:
+        result = {"windows": [window_result(window) for window in windows], "count": len(windows)}
+        try:
+            result["displays"] = list_macos_displays()
+        except Exception as exc:
+            result["displays_error"] = str(exc)
+        return result
+    output = Path(output_path) if output_path else default_max_console_path()
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    if display is not None:
+        backend_used = capture_macos_display(int(display), output)
+        postprocess = postprocess_capture(output, region, crop, crop_relative_to_region, bottom_fraction, max_width, max_height)
+        result = {
+            "ok": True,
+            "path": str(output),
+            "backend": backend_used,
+            "display": int(display),
+            "postprocess": postprocess,
+        }
+        if postprocess.get("content", {}).get("blank"):
+            result.update(blank_capture_guidance())
+            result["next_action"] = "display_blank_try_another_display_index_see_list_only_displays"
+        return result
+
+    window = select_max_console_window(title_contains)
+    # On macOS, default to ScreenCaptureKit (the legacy backends are black here).
+    console_backend = backend
+    if backend == "auto" and platform.system() == "Darwin":
+        console_backend = "sck"
+    backend_used = capture_window(window, output, console_backend)
+    postprocess = postprocess_capture(output, region, crop, crop_relative_to_region, bottom_fraction, max_width, max_height)
+    result = {
+        "ok": True,
+        "path": str(output),
+        "backend": backend_used,
+        "window": window_result(window),
+        "postprocess": postprocess,
+    }
+    if postprocess.get("content", {}).get("blank"):
+        result.update(blank_capture_guidance())
+        result["warning"] = "blank_capture"
+        if backend_used in ("screencapture", "quartz"):
+            # Legacy backends can't read the console's GPU-backed surface.
+            result["next_action"] = "max_console_legacy_backend_returns_black_use_default_sck_backend_or_display_index"
+            result["hint"] = "Drop backend (defaults to 'sck' on macOS 14+) or pass display=<n>; list_only=true enumerates displays."
+        else:
+            result["next_action"] = "max_console_blank_check_console_visible_or_try_display_index"
+            result["hint"] = "Ensure the Max Console is open/visible, or pass display=<n> (list_only=true enumerates displays)."
+    return result
+
+
 def blank_capture_guidance() -> dict[str, str]:
     return {
         "warning": "blank_capture",
@@ -120,14 +237,67 @@ def blank_capture_guidance() -> dict[str, str]:
 
 
 def capture_window(window: WindowInfo, output: Path, backend: str = "auto") -> str:
-    if not is_ableton_live_window(window):
-        raise RuntimeError("Refusing to capture a non-Ableton Live window")
+    if not (is_ableton_live_window(window) or is_max_console_window(window)):
+        raise RuntimeError("Refusing to capture a non-Ableton Live / non-Max-Console window")
     if window.platform == "Darwin":
         return capture_macos_window(window, output, backend)
     if window.platform == "Windows":
         capture_windows_window(window, output, backend)
         return "windows-capture"
     raise RuntimeError("Unsupported visual capture platform: %s" % window.platform)
+
+
+def list_macos_displays() -> list[dict[str, Any]]:
+    try:
+        from Quartz import (
+            CGGetActiveDisplayList,
+            CGDisplayBounds,
+            CGDisplayPixelsHigh,
+            CGDisplayPixelsWide,
+            CGMainDisplayID,
+        )
+    except ImportError as exc:
+        raise RuntimeError("macOS display enumeration requires pyobjc-framework-Quartz") from exc
+    err, display_ids, count = CGGetActiveDisplayList(16, None, None)
+    if err:
+        raise RuntimeError("CGGetActiveDisplayList failed with error %s" % err)
+    main_id = int(CGMainDisplayID())
+    displays = []
+    for offset in range(count):
+        did = int(display_ids[offset])
+        bounds = CGDisplayBounds(did)
+        # screencapture -D uses a 1-based index; main display is 1. We surface
+        # the bounds + main flag so the caller can match a window to a display.
+        displays.append({
+            "screencapture_index": offset + 1,
+            "display_id": did,
+            "is_main": did == main_id,
+            "width": int(CGDisplayPixelsWide(did)),
+            "height": int(CGDisplayPixelsHigh(did)),
+            "origin": {"x": int(bounds.origin.x), "y": int(bounds.origin.y)},
+        })
+    return displays
+
+
+def capture_macos_display(display_index: int, output: Path) -> str:
+    if platform.system() != "Darwin":
+        raise RuntimeError("Display-index capture is currently macOS-only")
+    if int(display_index) < 1:
+        raise RuntimeError("display index is 1-based (1 = main display)")
+    try:
+        subprocess.run(
+            ["screencapture", "-x", "-D", str(int(display_index)), "-t", "png", str(output)],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip() or "exit status %s" % exc.returncode
+        raise RuntimeError(detail) from exc
+    if not output.exists() or output.stat().st_size <= 0:
+        raise RuntimeError("no image was written for display index %s" % display_index)
+    return "screencapture-display"
 
 
 def list_macos_windows() -> list[WindowInfo]:
@@ -159,8 +329,17 @@ def list_macos_windows() -> list[WindowInfo]:
 
 
 def capture_macos_window(window: WindowInfo, output: Path, backend: str = "auto") -> str:
-    if backend not in ("auto", "screencapture", "quartz"):
-        raise RuntimeError("macOS Ableton visual capture supports backend='auto', 'screencapture', or 'quartz'")
+    if backend not in ("auto", "screencapture", "quartz", "sck"):
+        raise RuntimeError("macOS visual capture supports backend='auto', 'screencapture', 'quartz', or 'sck'")
+    # ScreenCaptureKit is the only backend that reads GPU/IOSurface-backed
+    # window content (e.g. the Max Console — screencapture/quartz return black)
+    # and it captures the window in isolation regardless of z-order. It is NOT
+    # in the "auto" chain because for ordinary windows screencapture is faster
+    # and the legacy path's black output wouldn't trip an exception here (the
+    # blank is only detected later in postprocess), so it must be opt-in.
+    if backend == "sck":
+        capture_macos_window_sck(window, output)
+        return "sck"
     errors = []
     if backend in ("auto", "screencapture"):
         try:
@@ -224,6 +403,18 @@ def capture_macos_window_quartz(window: WindowInfo, output: Path) -> None:
     )
     if image is None:
         raise RuntimeError("no image returned; sharing_state=%s onscreen=%s" % (window.sharing_state, window.onscreen))
+    write_cgimage_png(image, output)
+
+
+def write_cgimage_png(image: Any, output: Path) -> None:
+    from Quartz import (
+        CFURLCreateFromFileSystemRepresentation,
+        CGImageDestinationAddImage,
+        CGImageDestinationCreateWithURL,
+        CGImageDestinationFinalize,
+        CGImageGetHeight,
+        CGImageGetWidth,
+    )
     width = int(CGImageGetWidth(image) or 0)
     height = int(CGImageGetHeight(image) or 0)
     if width <= 0 or height <= 0:
@@ -238,6 +429,70 @@ def capture_macos_window_quartz(window: WindowInfo, output: Path) -> None:
         raise RuntimeError("could not finalize PNG")
     if not output.exists() or output.stat().st_size <= 0:
         raise RuntimeError("no image was written")
+
+
+def _sck_await(call, what: str, timeout: float = 10.0):
+    # ScreenCaptureKit's APIs are completion-handler (async) only. The handlers
+    # fire on a GCD background queue, so blocking this thread on an Event does
+    # not deadlock them — no CFRunLoop spin needed.
+    import threading
+
+    box: dict[str, Any] = {}
+    done = threading.Event()
+
+    def handler(result, error):
+        box["result"] = result
+        box["error"] = error
+        done.set()
+
+    call(handler)
+    if not done.wait(timeout=timeout):
+        raise RuntimeError("ScreenCaptureKit timed out trying to %s" % what)
+    if box.get("error"):
+        raise RuntimeError("ScreenCaptureKit failed to %s: %s" % (what, box["error"]))
+    return box.get("result")
+
+
+def capture_macos_window_sck(window: WindowInfo, output: Path, scale: int = 2) -> None:
+    try:
+        from ScreenCaptureKit import (
+            SCContentFilter,
+            SCScreenshotManager,
+            SCShareableContent,
+            SCStreamConfiguration,
+        )
+    except ImportError as exc:
+        raise RuntimeError(
+            "ScreenCaptureKit capture requires pyobjc-framework-ScreenCaptureKit (pip install pyobjc-framework-ScreenCaptureKit)"
+        ) from exc
+    if not hasattr(SCScreenshotManager, "captureImageWithFilter_configuration_completionHandler_"):
+        raise RuntimeError("SCScreenshotManager.captureImage… requires macOS 14+")
+    content = _sck_await(
+        lambda h: SCShareableContent.getShareableContentWithCompletionHandler_(h),
+        "enumerate shareable content",
+    )
+    target = None
+    for candidate in content.windows():
+        if int(candidate.windowID()) == int(window.id):
+            target = candidate
+            break
+    if target is None:
+        raise RuntimeError(
+            "window id %s is not in ScreenCaptureKit's shareable set (off-screen, minimized, or not shareable)" % window.id
+        )
+    content_filter = SCContentFilter.alloc().initWithDesktopIndependentWindow_(target)
+    config = SCStreamConfiguration.alloc().init()
+    frame = target.frame()
+    config.setWidth_(max(1, int(frame.size.width * scale)))
+    config.setHeight_(max(1, int(frame.size.height * scale)))
+    config.setShowsCursor_(False)
+    image = _sck_await(
+        lambda h: SCScreenshotManager.captureImageWithFilter_configuration_completionHandler_(content_filter, config, h),
+        "capture window image",
+    )
+    if image is None:
+        raise RuntimeError("ScreenCaptureKit returned no image")
+    write_cgimage_png(image, output)
 
 
 def list_windows_windows() -> list[WindowInfo]:
@@ -287,14 +542,35 @@ def list_windows_windows() -> list[WindowInfo]:
 def capture_windows_window(window: WindowInfo, output: Path, backend: str = "auto") -> None:
     if backend not in ("auto", "windows-capture"):
         raise RuntimeError("Windows Ableton visual capture supports backend='auto' or 'windows-capture'")
-    ensure_windows_capture_title_unambiguous(window)
+    # Re-verify the window id still maps to an Ableton Live / Max Console window
+    # before we touch the capture library, so a stale or recycled HWND fails
+    # with a clear message instead of an opaque native error (and we never
+    # capture an unrelated window). Done first so the suite stays green where
+    # windows-capture isn't installed (e.g. macOS).
+    ensure_windows_capture_window_resolvable(window)
     try:
         from windows_capture import InternalCaptureControl, WindowsCapture
     except ImportError as exc:
         raise RuntimeError("Windows Ableton visual capture requires the windows-capture package") from exc
 
+    # Prefer HWND-based selection. windows-capture matches `window_name` by
+    # substring, so a non-target window whose title merely *contains* the
+    # target's title gets captured instead — and the Max Console title
+    # "Max for Live" is especially collision-prone (e.g. a browser tab open to
+    # this PR, or an M4L patcher editor sharing the title). Selecting by the
+    # concrete HWND removes the ambiguity. Older windows-capture (< 2.0) lacks
+    # `window_hwnd`; there we fall back to title selection, but only after
+    # re-verifying the title unambiguously identifies this window.
+    import inspect
+
+    supports_hwnd = "window_hwnd" in inspect.signature(WindowsCapture.__init__).parameters
+    if supports_hwnd:
+        capture = WindowsCapture(cursor_capture=False, draw_border=False, monitor_index=None, window_hwnd=int(window.id))
+    else:
+        ensure_windows_capture_title_unambiguous(window)
+        capture = WindowsCapture(cursor_capture=False, draw_border=False, monitor_index=None, window_name=window.title)
+
     saved = {"ok": False}
-    capture = WindowsCapture(cursor_capture=False, draw_border=False, monitor_index=None, window_name=window.title)
 
     @capture.event
     def on_frame_arrived(frame, capture_control: InternalCaptureControl):
@@ -309,6 +585,23 @@ def capture_windows_window(window: WindowInfo, output: Path, backend: str = "aut
     capture.start()
     if not saved["ok"] or not output.exists() or output.stat().st_size <= 0:
         raise RuntimeError("Windows Ableton visual capture produced no image")
+
+
+def ensure_windows_capture_window_resolvable(window: WindowInfo) -> None:
+    matches = [
+        candidate for candidate in list_platform_windows()
+        if candidate.platform == "Windows" and str(candidate.id) == str(window.id)
+    ]
+    if not matches:
+        raise RuntimeError(
+            "Refusing Windows capture because the window id %r could not be re-verified"
+            % window.id
+        )
+    if not any(is_ableton_live_window(candidate) or is_max_console_window(candidate) for candidate in matches):
+        raise RuntimeError(
+            "Refusing Windows capture because window id %r is not an Ableton Live / Max Console window"
+            % window.id
+        )
 
 
 def ensure_windows_capture_title_unambiguous(window: WindowInfo) -> None:
@@ -567,6 +860,10 @@ def default_capture_path() -> Path:
     return state_dir() / ("ableton_window_%d.png" % int(time.time() * 1000))
 
 
+def default_max_console_path() -> Path:
+    return state_dir() / ("max_console_%d.png" % int(time.time() * 1000))
+
+
 def window_result(window: WindowInfo) -> dict[str, Any]:
     result = asdict(window)
     if result.get("process_path"):
@@ -578,7 +875,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Capture only Ableton Live windows for visual validation.")
     parser.add_argument("--output", help="PNG output path. Defaults to the Ableton MCP state directory.")
     parser.add_argument("--title-contains", help="Optional substring filter applied only after Ableton Live windows are found.")
-    parser.add_argument("--backend", default="auto", choices=("auto", "screencapture", "quartz", "windows-capture"))
+    parser.add_argument("--backend", default="auto", choices=("auto", "screencapture", "quartz", "sck", "windows-capture"))
     parser.add_argument("--region", help="Optional post-capture region. Use 'device-detail' for Live's bottom device view.")
     parser.add_argument("--crop", help="Optional post-capture crop as x,y,width,height inside the Ableton Live window.")
     parser.add_argument("--crop-relative-to-region", action="store_true", help="Interpret --crop coordinates relative to --region instead of the full Ableton Live window.")
@@ -586,8 +883,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-width", type=int, help="Downscale output to this maximum width.")
     parser.add_argument("--max-height", type=int, help="Downscale output to this maximum height.")
     parser.add_argument("--list", action="store_true", help="List capturable Ableton Live windows without capturing.")
+    parser.add_argument("--max-console", action="store_true", help="Capture the Max Console window (Max for Live runtime log) instead of an Ableton Live window.")
+    parser.add_argument("--display", type=int, help="With --max-console: capture this whole display (1=main) instead of the window. Needed because the Max Console's surface is unreadable via the per-window API.")
     args = parser.parse_args(argv)
     try:
+        if args.max_console:
+            result = capture_max_console_window(
+                output_path=args.output,
+                title_contains=args.title_contains,
+                list_only=args.list,
+                backend=args.backend,
+                region=args.region,
+                crop=args.crop,
+                crop_relative_to_region=args.crop_relative_to_region,
+                bottom_fraction=args.bottom_fraction,
+                max_width=args.max_width,
+                max_height=args.max_height,
+                display=args.display,
+            )
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return 0 if result.get("ok") else 1
         result = capture_ableton_window(
             output_path=args.output,
             title_contains=args.title_contains,

@@ -17,13 +17,15 @@ dev = [
     "pytest>=8.0",
     "Pillow>=10",
     "pyobjc-framework-Quartz; platform_system == 'Darwin'",
-    "windows-capture; platform_system == 'Windows'",
+    "pyobjc-framework-ScreenCaptureKit; platform_system == 'Darwin'",
+    "windows-capture>=2.0; platform_system == 'Windows'",
 ]
 debug = ["pytest>=8.0"]
 visual = [
     "Pillow>=10",
     "pyobjc-framework-Quartz; platform_system == 'Darwin'",
-    "windows-capture; platform_system == 'Windows'",
+    "pyobjc-framework-ScreenCaptureKit; platform_system == 'Darwin'",
+    "windows-capture>=2.0; platform_system == 'Windows'",
 ]
 
 [project.scripts]
