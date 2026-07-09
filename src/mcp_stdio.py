@@ -85,6 +85,19 @@ class StdioMcpServer:
                 arguments = params.get("arguments", {}) or {}
                 _validate(arguments, tool.input_schema, "arguments")
                 result = tool.handler(arguments)
+                if not isinstance(result, dict):
+                    # MCP requires structuredContent to be a JSON object. Tools can
+                    # return non-object values -- live_call on a void setter like
+                    # delete_device yields None; live_eval/live_exec yield whatever
+                    # the code evaluates to (str/int/bool/list); collection tools
+                    # return lists -- which would otherwise emit a non-object
+                    # structuredContent and fail strict client validation (Claude
+                    # Code rejects the whole call: "expected record, received
+                    # <type>"), even though the call ran. Wrap any non-object return
+                    # in a success record so the value is always addressable under
+                    # .result and never mistaken for a failure. None is just the
+                    # void case of this rule -> {"ok": true, "result": null}.
+                    result = {"ok": True, "result": result}
                 return self._result(req_id, {
                     "content": [{"type": "text", "text": json.dumps(result, separators=(",", ":"))}],
                     "structuredContent": result,

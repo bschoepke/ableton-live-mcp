@@ -224,6 +224,15 @@ class AbletonLiveMCP(ControlSurface):
                 result = self._rpc_bridge_status(params)
             else:
                 result = self._run_on_main(method, params)
+            if result is None:
+                # Void-returning LOM methods (delete_device and most setters/actions
+                # via call, or eval/exec yielding None) would otherwise produce a
+                # top-level result: null, which the MCP server surfaces as
+                # structuredContent: null and strict clients reject. Coerce to a
+                # success record here so the JSON-RPC contract never returns a bare
+                # null. (Batch sub-ops are already wrapped in _rpc_batch and do not
+                # pass through here, so they are unaffected.)
+                result = {"ok": True, "result": None}
             return {"jsonrpc": "2.0", "id": req_id, "result": result}
         except Exception as exc:
             error = {"code": -32000, "message": str(exc)}
