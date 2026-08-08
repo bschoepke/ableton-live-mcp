@@ -10,6 +10,8 @@ from typing import Any
 from bridge import AbletonBridgeClient, BridgeConfig
 from agent_m4l import build_device, command_file as agent_m4l_command_file, device_name as agent_m4l_device_name, infer_device_bounds, normalize_role, slugify, status_file as agent_m4l_status_file, udp_port as agent_m4l_udp_port, write_webui, write_webui_asset_files, write_webui_assets
 from mcp_stdio import StdioMcpServer, Tool
+from export_set import export_set
+from save_set import save_set
 from similar_sounds import find_similar_sounds
 from visual_capture import capture_ableton_window, capture_max_console_window
 
@@ -94,6 +96,15 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     timeout_control = {"timeout": {"type": "number"}}
     server.add_tool(Tool("live_ping", "Bridge health.", schema(timeout_control), forward("ping")))
     server.add_tool(Tool("live_bridge_status", "Socket-thread status; no Live API/main-thread scheduling.", schema(timeout_control), forward("bridge_status")))
+    server.add_tool(Tool("live_save_set", "Save the Live Set: OS-level Ctrl/Cmd+S verified via .als mtime (LOM has no save API). Refuses a never-saved set (Save As dialog risk). Check saved:true.", schema({
+        "timeout": {"type": "number", "description": "Seconds to wait for the set file's mtime to change (default 10)."},
+    }), lambda args: save_set(bridge, timeout=float((args or {}).get("timeout") or 10.0))))
+    server.add_tool(Tool("live_export", "Render the arrangement to WAV by driving the export dialog (no export API exists). Uses the loop brace or start_beats+length_beats as the range and Live's LAST-USED format settings. Refuses to overwrite. Check exported:true.", schema({
+        "output_path": {"type": "string", "description": "Target .wav (must not exist)."},
+        "start_beats": {"type": "number"},
+        "length_beats": {"type": "number"},
+        "timeout": {"type": "number", "description": "Seconds to wait for the render (default 240)."},
+    }, ["output_path"]), lambda args: export_set(bridge, (args or {}).get("output_path"), start_beats=(args or {}).get("start_beats"), length_beats=(args or {}).get("length_beats"), timeout=float((args or {}).get("timeout") or 240.0))))
     response_controls = {
         "detail": {"type": "boolean"},
         "max_items": {"type": "integer"},
