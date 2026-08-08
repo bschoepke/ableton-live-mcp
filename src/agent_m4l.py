@@ -426,10 +426,25 @@ def make_host_patch(role: str, instance_id: str, title: str | None = None, devic
             _box("midiin", "newobj", "midiin", HOST_COL_0, 280.0),
             _box("midi-wake-prepend", "newobj", "prepend __midi_wake", HOST_COL_0, 308.0),
             _box("midiout", "newobj", "midiout", HOST_COL_0, 336.0),
+            # Note audition path: [js] outlet 3 emits "pitch velocity duration_ms"
+            # lists; makenote pairs the note-offs. midiformat's note inlet needs a
+            # [pitch velocity] LIST — its inlet 1 is poly key pressure, NOT
+            # velocity (wired that way, velocity became pressure events and the
+            # bare pitch made velocity-0 note-ons = note-offs = silence; field-hit
+            # 2026-08-08) — so pack pairs makenote's outputs first. Right-to-left
+            # delivery fills pack's cold velocity inlet before the hot pitch.
+            _box("audition-makenote", "newobj", "makenote 100 500", HOST_COL_1, 280.0),
+            _box("audition-pack", "newobj", "pack 0 0", HOST_COL_1, 308.0),
+            _box("audition-midiformat", "newobj", "midiformat", HOST_COL_1, 336.0),
         ]
         lines += [
             _line("midiin", 0, "midi-wake-prepend", 0),
             _line("midi-wake-prepend", 0, "js", 0),
+            _line("js", 3, "audition-makenote", 0),
+            _line("audition-makenote", 0, "audition-pack", 0),
+            _line("audition-makenote", 1, "audition-pack", 1),
+            _line("audition-pack", 0, "audition-midiformat", 0),
+            _line("audition-midiformat", 0, "midiout", 0),
         ]
     return {
         "patcher": {

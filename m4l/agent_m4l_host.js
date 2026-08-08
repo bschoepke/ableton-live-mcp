@@ -1,6 +1,9 @@
 autowatch = 1;
 inlets = 1;
-outlets = 3;
+// Outlet 3 emits note events (pitch velocity duration_ms) into the patch's
+// makenote -> midiformat -> midiout chain (midi_effect role) so an agent can
+// audition sounds through a track's instrument without creating clips.
+outlets = 4;
 
 var role = jsarguments.length > 1 ? String(jsarguments[1]) : "audio_effect";
 var instanceId = jsarguments.length > 2 ? String(jsarguments[2]) : "default";
@@ -716,9 +719,67 @@ function applyRaw(raw) {
         report("status", { objects: dynamicObjects.length, device_width: currentDeviceWidth });
     } else if (command.command === "web_reload" || command.command === "reload_webui") {
         reloadWebUiCommand(command);
+    } else if (command.command === "play_notes") {
+        playNotesCommand(command);
     } else {
         applySpec(command.patch || command.spec || command);
     }
+}
+
+// --- note audition: schedule note events out of outlet 3 --------------------
+// State lives in module vars and a single Task walks the queue: Task.arguments
+// does not survive deferral in Live's [js] (same finding as AgentAudioTap's
+// deferred start, 2026-06-13), so nothing is passed through the Task itself.
+
+var noteQueue = [];
+var noteTask = null;
+var noteEpoch = 0;
+
+function playNotesCommand(command) {
+    var notes = command.notes || [];
+    var accepted = 0;
+    for (var i = 0; i < notes.length; i++) {
+        var note = notes[i] || {};
+        var pitch = Math.round(Number(note.pitch));
+        if (!(pitch >= 0 && pitch <= 127)) {
+            continue;
+        }
+        noteQueue.push({
+            at: Math.max(0, Number(note.at_ms || 0)),
+            pitch: pitch,
+            velocity: Math.max(1, Math.min(127, Math.round(Number(note.velocity === undefined ? 100 : note.velocity)))),
+            duration: Math.max(10, Number(note.duration_ms || 500))
+        });
+        accepted += 1;
+    }
+    if (!accepted) {
+        report("error", { reason: "play_notes_no_valid_notes" });
+        return;
+    }
+    noteQueue.sort(function (a, b) { return a.at - b.at; });
+    noteEpoch = currentTimeMs();
+    scheduleNextNote();
+    report("play_notes", { scheduled: accepted, queue: noteQueue.length });
+}
+
+function scheduleNextNote() {
+    if (!noteQueue.length) {
+        return;
+    }
+    if (!noteTask) {
+        noteTask = new Task(fireDueNotes, this);
+    }
+    var delay = Math.max(0, noteQueue[0].at - (currentTimeMs() - noteEpoch));
+    noteTask.schedule(delay);
+}
+
+function fireDueNotes() {
+    var elapsed = currentTimeMs() - noteEpoch;
+    while (noteQueue.length && noteQueue[0].at <= elapsed + 1) {
+        var note = noteQueue.shift();
+        outlet(3, note.pitch, note.velocity, note.duration);
+    }
+    scheduleNextNote();
 }
 
 function ensureRecovered(command) {
