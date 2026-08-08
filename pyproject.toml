@@ -13,8 +13,12 @@ authors = [{ name = "Codex" }]
 dependencies = []
 
 [project.optional-dependencies]
+analyze = [
+    "numpy>=1.24",
+]
 dev = [
     "pytest>=8.0",
+    "numpy>=1.24",
     "Pillow>=10",
     "pyobjc-framework-Quartz; platform_system == 'Darwin'",
     "pyobjc-framework-ScreenCaptureKit; platform_system == 'Darwin'",
