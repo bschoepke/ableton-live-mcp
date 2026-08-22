@@ -2209,6 +2209,12 @@ class AbletonLiveMCP(ControlSurface):
         return (self._object_id(clip), state)
 
     def _take(self, values, limit):
+        if values is None:
+            return [], False
+        try:
+            values = iter(values)
+        except TypeError:
+            values = iter((values,))
         if limit is None:
             limit = DEFAULT_CHILD_LIMIT
         if limit is not None and limit < 0:

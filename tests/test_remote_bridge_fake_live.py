@@ -148,6 +148,10 @@ class FakeDevice:
         ])
 
 
+class FakeMixerDevice:
+    pass
+
+
 class FakeEnvelope:
     def __init__(self):
         self._events = []
@@ -322,6 +326,8 @@ class FakeTrack:
         self.devices = FakeVector(devices or [])
         self.clip_slots = FakeVector(clip_slots or [])
         self.arrangement_clips = FakeVector(arrangement_clips or [])
+        self.mixer_device = FakeMixerDevice()
+        self.optional_device = None
 
     def duplicate_clip_to_arrangement(self, clip, destination_time):
         copied = FakeClip(clip.name, midi=clip.is_midi_clip, start_time=destination_time, end_time=destination_time + clip.length)
@@ -449,6 +455,29 @@ def test_resolve_get_children_and_call(monkeypatch):
     assert len([item for item in children if not item.get("truncated")]) == 1
     assert children[-1] == {"truncated": True}
     assert bridge._rpc_call({"ref": {"path": "live_set"}, "method": "get_beats_loop_start"}) == "1.1.1"
+
+
+def test_get_and_children_wrap_scalar_live_object_children(monkeypatch):
+    bridge, _song, _app = make_bridge(monkeypatch)
+
+    result = bridge._rpc_get({
+        "ref": {"path": "live_set tracks 0"},
+        "children": ["mixer_device"],
+    })
+    assert len(result["children"]["mixer_device"]) == 1
+    assert result["children"]["mixer_device"][0]["class"] == "FakeMixerDevice"
+
+    children = bridge._rpc_children({
+        "ref": {"path": "live_set tracks 0"},
+        "child": "mixer_device",
+    })
+    assert len(children) == 1
+    assert children[0]["class"] == "FakeMixerDevice"
+
+    assert bridge._rpc_children({
+        "ref": {"path": "live_set tracks 0"},
+        "child": "optional_device",
+    }) == []
 
 
 def test_dispatch_normalizes_void_call_into_success_record(monkeypatch):
