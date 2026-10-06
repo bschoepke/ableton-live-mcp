@@ -522,6 +522,7 @@ def test_agent_audio_tap_setup_and_transport_tools_forward_to_bridge():
         "solo_track": {"path": "live_set tracks 0"},
         "remove_existing": True,
         "reset_time": 0,
+        "verify": False,   # handshake covered by its own tests below
     }
     response = server.handle({
         "jsonrpc": "2.0",
@@ -530,6 +531,7 @@ def test_agent_audio_tap_setup_and_transport_tools_forward_to_bridge():
         "params": {"name": "live_agent_audio_tap_setup", "arguments": setup_args},
     })
     assert response["result"]["structuredContent"]["method"] == "agent_audio_tap_setup"
+    setup_args = {k: v for k, v in setup_args.items() if k != "verify"}
 
     transport_args = {"action": "play", "time": 0}
     response = server.handle({
@@ -540,6 +542,83 @@ def test_agent_audio_tap_setup_and_transport_tools_forward_to_bridge():
     })
     assert bridge.calls == [("agent_audio_tap_setup", setup_args), ("transport", transport_args)]
     assert response["result"]["structuredContent"]["method"] == "transport"
+
+
+class HandshakeFakeBridge(FakeBridge):
+    """Fake bridge whose tap device 'answers' the status handshake by writing the
+    status file — from the Nth probe onward (a deaf-then-reloaded instance)."""
+
+    def __init__(self, status_path, respond_from_probe=1):
+        super().__init__()
+        self.status_path = status_path
+        self.respond_from_probe = respond_from_probe
+        self.probes = 0
+
+    def request(self, method, params):
+        self.calls.append((method, params))
+        if method == "agent_audio_tap" and params.get("command") == "status":
+            self.probes += 1
+            command_id = "probe-%d" % self.probes
+            if self.probes >= self.respond_from_probe:
+                self.status_path.write_text(json.dumps({
+                    "event": "status", "recording": False, "path": "",
+                    "last_command_id": command_id, "seq": self.probes,
+                }), encoding="utf-8")
+            return {"command_id": command_id}
+        return {"method": method, "params": params}
+
+
+def _call_setup(server, arguments):
+    response = server.handle({
+        "jsonrpc": "2.0", "id": 40, "method": "tools/call",
+        "params": {"name": "live_agent_audio_tap_setup", "arguments": arguments},
+    })
+    return response["result"]["structuredContent"]
+
+
+def test_agent_audio_tap_setup_handshake_ready(tmp_path, monkeypatch):
+    import server as server_module
+    monkeypatch.setattr(server_module, "agent_audio_tap_status_file", lambda: tmp_path / "status.json")
+    bridge = HandshakeFakeBridge(tmp_path / "status.json")
+    result = _call_setup(make_server(bridge), {"verify_timeout": 1.0})
+    assert result["ready"] is True
+    assert result["reloaded"] is False
+    assert result["handshake"]["last_command_id"] == "probe-1"
+    setups = [p for m, p in bridge.calls if m == "agent_audio_tap_setup"]
+    assert len(setups) == 1 and "remove_existing" not in setups[0]
+
+
+def test_agent_audio_tap_setup_reloads_deaf_instance(tmp_path, monkeypatch):
+    # First probe unanswered (deaf instance, e.g. after Collect All and Save):
+    # setup must reload with remove_existing and hand back ready from the fresh one.
+    import server as server_module
+    monkeypatch.setattr(server_module, "agent_audio_tap_status_file", lambda: tmp_path / "status.json")
+    bridge = HandshakeFakeBridge(tmp_path / "status.json", respond_from_probe=2)
+    result = _call_setup(make_server(bridge), {"verify_timeout": 0.6, "reload_timeout": 1.5})
+    assert result["ready"] is True
+    assert result["reloaded"] is True
+    setups = [p for m, p in bridge.calls if m == "agent_audio_tap_setup"]
+    assert len(setups) == 2
+    assert setups[1]["remove_existing"] is True
+
+
+def test_agent_audio_tap_setup_reports_never_ready(tmp_path, monkeypatch):
+    import server as server_module
+    monkeypatch.setattr(server_module, "agent_audio_tap_status_file", lambda: tmp_path / "status.json")
+    bridge = HandshakeFakeBridge(tmp_path / "status.json", respond_from_probe=99)
+    result = _call_setup(make_server(bridge), {"verify_timeout": 0.5, "reload_timeout": 0.5})
+    assert result["ready"] is False
+    assert result["reloaded"] is True
+    assert "hint" in result
+
+
+def test_agent_audio_tap_setup_verify_false_skips_handshake(tmp_path, monkeypatch):
+    import server as server_module
+    monkeypatch.setattr(server_module, "agent_audio_tap_status_file", lambda: tmp_path / "status.json")
+    bridge = HandshakeFakeBridge(tmp_path / "status.json")
+    result = _call_setup(make_server(bridge), {"verify": False})
+    assert "ready" not in result
+    assert bridge.probes == 0
 
 
 def test_transport_tool_rejects_unknown_action_before_bridge():

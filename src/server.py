@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ableton_paths import state_dir
 from bridge import AbletonBridgeClient, BridgeConfig
 from agent_m4l import build_device, command_file as agent_m4l_command_file, device_name as agent_m4l_device_name, infer_device_bounds, normalize_role, slugify, status_file as agent_m4l_status_file, udp_port as agent_m4l_udp_port, write_webui, write_webui_asset_files, write_webui_assets
 from mcp_stdio import StdioMcpServer, Tool
@@ -50,7 +51,7 @@ AGENT_M4L_TOOL_DESCRIPTION = (
 )
 AGENT_M4L_CLEANUP_DESCRIPTION = "Dry-run/delete AgentM4L; ask before delete."
 AGENT_AUDIO_TAP_DESCRIPTION = "AgentAudioTap: command open/start/stop/status; start with path; UDP optional."
-AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap; solo target track; verify."
+AGENT_AUDIO_TAP_SETUP_DESCRIPTION = "Load AgentAudioTap; solo target track; status-file handshake proves the [js] is alive (auto-reloads a deaf instance). Trust captures only when ready:true. Opts: verify=false, verify_timeout, reload_timeout."
 VISUAL_CAPTURE_DESCRIPTION = "Ableton Live window-only; device-detail crop/downscale; region-rel; no arbitrary apps/windows."
 MAX_CONSOLE_CAPTURE_DESCRIPTION = "Max Console ('Max for Live' window) as an image: Max errors/post() the LOM hides. Opts: display=<n>/backend/list_only, crop/downscale."
 AGENT_AUDIO_TAP_SCHEMA = {
@@ -76,12 +77,70 @@ def loose_schema() -> dict[str, Any]:
     return {"type": "object"}
 
 
+def agent_audio_tap_status_file() -> Path:
+    # Must mirror the derivation in m4l/agent_audio_tap.js: the device turns its
+    # baked command-file path (state_dir()/agent_audio_tap_command.json) into the
+    # sibling status file by replacing the trailing "command.json".
+    return state_dir() / "agent_audio_tap_status.json"
+
+
+def agent_audio_tap_handshake(bridge, timeout: float, poll_interval: float = 0.15):
+    """Prove the AgentAudioTap [js] is alive: send a status command, then poll the
+    status file the device writes until its last_command_id matches. Returns
+    (ready, last_status_seen). A loaded-but-deaf instance (observed after Live's
+    "Collect All and Save", 2026-08-08) never echoes the id and times out."""
+    probe = bridge.request("agent_audio_tap", {"command": "status", "udp": True})
+    want = probe.get("command_id") if isinstance(probe, dict) else None
+    status_path = agent_audio_tap_status_file()
+    deadline = time.monotonic() + max(0.5, float(timeout))
+    last = None
+    while time.monotonic() < deadline:
+        try:
+            last = json.loads(status_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            last = None
+        if want and isinstance(last, dict) and last.get("last_command_id") == want:
+            return True, last
+        time.sleep(poll_interval)
+    return False, last
+
+
 def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
     bridge = client or AbletonBridgeClient(BridgeConfig.from_env())
     server = StdioMcpServer("ableton-live-mcp", __version__, ABLETON_MCP_INSTRUCTIONS)
 
     def forward(method: str):
         return lambda args: bridge.request(method, args)
+
+    def agent_audio_tap_setup_verified(args):
+        params = dict(args or {})
+        verify = params.pop("verify", True)
+        verify_timeout = float(params.pop("verify_timeout", 4.0))
+        reload_timeout = float(params.pop("reload_timeout", 15.0))
+        result = bridge.request("agent_audio_tap_setup", params)
+        if not verify:
+            return result
+        ready, status = agent_audio_tap_handshake(bridge, verify_timeout)
+        reloaded = False
+        if not ready:
+            # Deaf instance: replace it with a fresh load and give that one the
+            # full M4L init window before concluding failure.
+            reload_params = dict(params)
+            reload_params["remove_existing"] = True
+            result = bridge.request("agent_audio_tap_setup", reload_params)
+            reloaded = True
+            ready, status = agent_audio_tap_handshake(bridge, reload_timeout)
+        result = dict(result) if isinstance(result, dict) else {"result": result}
+        result["ready"] = ready
+        result["reloaded"] = reloaded
+        if status is not None:
+            result["handshake"] = status
+        if not ready:
+            result["hint"] = (
+                "AgentAudioTap never answered the status handshake, even after a fresh reload. "
+                "Check the device on the target track and the Max console; do not trust captures until ready is true."
+            )
+        return result
 
     ref = {
         "type": "object",
@@ -307,7 +366,7 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         **mutation_controls,
     }, ["ref", "device_name"]), forward("track_insert_device")))
     server.add_tool(Tool("live_agent_audio_tap", AGENT_AUDIO_TAP_DESCRIPTION, AGENT_AUDIO_TAP_SCHEMA, forward("agent_audio_tap")))
-    server.add_tool(Tool("live_agent_audio_tap_setup", AGENT_AUDIO_TAP_SETUP_DESCRIPTION, loose_schema(), forward("agent_audio_tap_setup")))
+    server.add_tool(Tool("live_agent_audio_tap_setup", AGENT_AUDIO_TAP_SETUP_DESCRIPTION, loose_schema(), agent_audio_tap_setup_verified))
     server.add_tool(Tool("live_visual_capture", VISUAL_CAPTURE_DESCRIPTION, loose_schema(), lambda args: capture_ableton_window(
         output_path=args.get("output_path"),
         title_contains=args.get("title_contains"),

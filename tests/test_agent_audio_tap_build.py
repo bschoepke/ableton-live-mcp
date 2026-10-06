@@ -35,6 +35,17 @@ def test_agent_audio_tap_builds_amxd_container(tmp_path):
     assert builder.max_arg(command_file).encode("utf-8") in data
 
 
+def test_agent_audio_tap_js_writes_status_file_handshake():
+    # The liveness handshake requires the js to write a status file (sibling of
+    # the baked command file) on loadbang and after every command, echoing the
+    # processed command id so a client can prove the instance is alive.
+    source = Path("m4l/agent_audio_tap.js").read_text(encoding="utf-8")
+    assert 'commandFile.replace(/command(\\.json)?$/, "status$1")' in source
+    assert "writeStatusFile" in source
+    assert "last_command_id" in source
+    assert 'report("loaded")' in source  # loadbang announces itself
+
+
 def test_agent_audio_tap_js_has_cross_platform_command_file_default():
     source = Path("m4l/agent_audio_tap.js").read_text(encoding="utf-8")
     assert "jsarguments" in source
