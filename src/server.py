@@ -128,6 +128,94 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "steps": {"type": "integer", "minimum": 1, "description": "History steps to move (default 1)."},
         "redo": {"type": "boolean", "description": "Move forward (redo) instead of back."},
     }), live_undo))
+    def live_cue_points(args):
+        # Locators are created with song.set_or_delete_cue(), which toggles a cue at the
+        # playhead. Assigning current_song_time only lands after the Live call returns, so
+        # every move is its own request, confirmed before toggling. Times are in beats.
+        params = dict(args or {})
+        action = params.get("action") or "list"
+        settle_timeout = float(params.get("settle_timeout") or 2.0)
+
+        def cues():
+            found = bridge.request("eval", {"expr": "[(c.time, c.name) for c in song.cue_points]"}) or []
+            return sorted(({"time": float(t), "name": n} for t, n in found), key=lambda cue: cue["time"])
+
+        def at(time_value):
+            return [cue for cue in cues() if abs(cue["time"] - time_value) < 1e-6]
+
+        def until(check, what):
+            deadline = time.monotonic() + settle_timeout
+            while not check():
+                if time.monotonic() > deadline:
+                    raise RuntimeError("Live did not %s within %.1fs" % (what, settle_timeout))
+                time.sleep(0.02)
+
+        def seek(time_value):
+            bridge.request("exec", {"code": "song.current_song_time = %r" % float(time_value)})
+            until(lambda: abs(float(bridge.request("eval", {"expr": "song.current_song_time"})) - time_value) < 1e-6,
+                  "move the playhead to beat %s" % time_value)
+
+        def find():
+            if params.get("time") is not None:
+                matches = at(float(params["time"]))
+            elif params.get("name") is not None:
+                matches = [cue for cue in cues() if cue["name"] == params["name"]]
+            else:
+                raise ValueError("%s needs time or name" % action)
+            if len(matches) != 1:
+                raise ValueError("%d cue points match %s" % (len(matches), {k: params[k] for k in ("time", "name") if k in params}))
+            return matches[0]
+
+        def rename(time_value, name):
+            bridge.request("exec", {"code": "[c for c in song.cue_points if abs(c.time - %r) < 1e-6][0].name = %r" % (time_value, name)})
+
+        def toggle(time_value, present):
+            state = bridge.request("eval", {"expr": "(song.is_playing, song.current_song_time, song.song_length)"})
+            if state[0]:
+                raise RuntimeError("stop the transport first; Live drops cue points at the moving playhead")
+            if time_value > float(state[2]):
+                raise ValueError("beat %s is past the end of the song (%s); Live cannot place the playhead there" % (time_value, state[2]))
+            restore = float(state[1])
+            seek(time_value)
+            try:
+                bridge.request("exec", {"code": "song.set_or_delete_cue()"})
+                until(lambda: bool(at(time_value)) == present, ("add" if present else "delete") + " the cue point")
+            finally:
+                seek(restore)
+
+        if action == "list":
+            return {"cue_points": cues()}
+        if action == "add":
+            if params.get("time") is None:
+                raise ValueError("add needs time")
+            time_value = float(params["time"])
+            existed = bool(at(time_value))
+            if not existed:
+                toggle(time_value, True)
+            if params.get("name") is not None:
+                rename(time_value, params["name"])
+            return {"added": not existed, "existed": existed, "cue_point": at(time_value)[0], "cue_points": cues()}
+        cue = find()
+        if action == "rename":
+            if params.get("new_name") is None:
+                raise ValueError("rename needs new_name")
+            rename(cue["time"], params["new_name"])
+            return {"renamed": True, "cue_point": at(cue["time"])[0]}
+        if action == "delete":
+            toggle(cue["time"], False)
+            return {"deleted": cue, "cue_points": cues()}
+        if action == "jump":
+            bridge.request("exec", {"code": "[c for c in song.cue_points if abs(c.time - %r) < 1e-6][0].jump()" % cue["time"]})
+            return {"jumped": cue}
+        raise ValueError("action must be list, add, rename, delete, or jump")
+
+    server.add_tool(Tool("live_cue_points", "Arrangement locators: list, add(time[,name]), rename(time|name,new_name), delete(time|name), jump. Beats; add/delete need transport stopped, playhead restored.", schema({
+        "action": {"type": "string", "enum": ["list", "add", "rename", "delete", "jump"]},
+        "time": {"type": "number"},
+        "name": {"type": "string"},
+        "new_name": {"type": "string"},
+        "settle_timeout": {"type": "number"},
+    }), live_cue_points))
     response_controls = {
         "detail": {"type": "boolean"},
         "max_items": {"type": "integer"},
