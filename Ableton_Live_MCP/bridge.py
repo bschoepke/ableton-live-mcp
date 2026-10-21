@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import traceback
+import urllib.parse
 
 import Live
 from _Framework.ControlSurface import ControlSurface
@@ -1732,6 +1733,125 @@ class AbletonLiveMCP(ControlSurface):
                 }
             result["track"] = {"id": self._object_id(target_track), "name": getattr(target_track, "name", "")}
         return result
+
+    def _rpc_load_sample(self, params):
+        # Load an audio file by path the way dragging it from the browser would: onto a MIDI
+        # track as Simpler (replacing the sample of an existing Simpler), or into a Drum Rack
+        # pad as a Drum Sampler. Live's API has no load-from-path for Simpler, so the file is
+        # resolved to a BrowserItem through the user's Places (browser.user_folders).
+        file_path = (params.get("file_path") or "").strip()
+        if not file_path:
+            raise ValueError("load_sample requires a 'file_path'")
+        browser = Live.Application.get_application().browser
+        item, item_path, resolved_by = self._browser_item_for_file(browser, file_path, int(params.get("max_visited") or 20000))
+        if item is None:
+            return item_path
+        if resolved_by == "name":
+            file_path = os.path.basename(file_path)   # only the name is known to match
+
+        song = self.song()
+        track = self._resolve(params["target_track"]) if params.get("target_track") else song.view.selected_track
+        if not getattr(track, "has_midi_input", True):
+            raise ValueError("load_sample needs a MIDI track; for audio tracks use track_create_audio_clip")
+        song.view.selected_track = track
+        result = {"loaded": True, "resolved_by": resolved_by,
+                  "item": self._browser_item_result("user_folders", item, item_path),
+                  "track": {"id": self._object_id(track), "name": getattr(track, "name", "")}}
+
+        pad_note = params.get("drum_pad")
+        if pad_note is not None:
+            rack = next((d for d in getattr(track, "devices", []) if getattr(d, "can_have_drum_pads", False)), None)
+            if rack is None:
+                try:
+                    track.insert_device("Drum Rack", 0)
+                except Exception as exc:
+                    raise ValueError("could not add a Drum Rack to %r (%s); use a track without an instrument" % (getattr(track, "name", ""), exc))
+                rack = next(d for d in track.devices if getattr(d, "can_have_drum_pads", False))
+            pad = rack.drum_pads[int(pad_note)]
+            rack.view.selected_drum_pad = pad
+            song.view.select_device(rack)
+            browser.load_item(item)
+            devices = [d for chain in getattr(pad, "chains", []) for d in getattr(chain, "devices", [])]
+            result["device"] = self._sample_device_summary(rack)
+            result["drum_pad"] = {"note": int(pad_note), "name": getattr(pad, "name", ""),
+                                  "devices": [self._sample_device_summary(d) for d in devices]}
+            stem = os.path.splitext(os.path.basename(file_path))[0]
+            result["verified"] = any(self._same_file(d, file_path) for d in devices) or getattr(pad, "name", "").lower() == stem.lower()
+            return result
+
+        simpler = next((d for d in getattr(track, "devices", []) if getattr(d, "class_name", "") == "OriginalSimpler"), None)
+        if simpler is not None:
+            song.view.select_device(simpler)
+        before_ids = set(self._object_id(d) for d in getattr(track, "devices", []))
+        browser.load_item(item)
+        device = simpler or self._find_new_track_device(track, before_ids)
+        if device is not None:
+            result["device"] = self._sample_device_summary(device)
+            result["replaced"] = simpler is not None
+        result["verified"] = device is not None and self._same_file(device, file_path)
+        return result
+
+    def _browser_item_for_file(self, browser, file_path, max_visited):
+        """Return (item, browser path, "path"|"name") for a file in the user's Places, or (None, candidates, None)."""
+        nt = os.name == "nt" or ":" in file_path[:3]
+        norm = lambda path: (path.replace("\\", "/").rstrip("/").lower() if nt else path.rstrip("/"))
+        wanted = norm(os.path.normpath(file_path))
+        name = os.path.basename(file_path)
+        stem = os.path.splitext(name)[0]
+        places = list(getattr(browser, "user_folders", None) or [])
+        for place in places:
+            uri = getattr(place, "uri", "") or ""
+            if not uri.startswith("userfolder:"):
+                continue
+            base = norm(urllib.parse.unquote(uri[len("userfolder:"):]))
+            if not wanted.startswith(base + "/"):
+                continue
+            node, parts = place, [getattr(place, "name", "")]
+            for part in wanted[len(base) + 1:].split("/"):
+                children = list(getattr(node, "children", []) or [])
+                node = next((c for c in children if norm(getattr(c, "name", "")) in (part, norm(os.path.splitext(part)[0]))), None)
+                if node is None:
+                    break
+                parts.append(getattr(node, "name", ""))
+            if node is not None and getattr(node, "is_loadable", False):
+                return node, " > ".join(parts), "path"
+
+        # Not under a Place by path (or Live hasn't indexed it yet): fall back to a bounded name search.
+        matches, visited, stack = [], 0, [(place, [getattr(place, "name", "")]) for place in places]
+        while stack and visited < max_visited:
+            node, path = stack.pop()
+            visited += 1
+            node_name = getattr(node, "name", "")
+            if getattr(node, "is_loadable", False) and node_name in (name, stem):
+                matches.append((node, " > ".join(path)))
+            for child in getattr(node, "children", []) or []:
+                stack.append((child, path + [getattr(child, "name", "")]))
+        if len(matches) == 1:
+            return matches[0] + ("name",)
+        if matches:
+            return None, {"loaded": False, "ambiguous": True,
+                          "candidates": [self._browser_item_result("user_folders", m, path) for m, path in matches],
+                          "hint": "Several Places items share this name; pass a file_path inside a Place or use browser_load."}, None
+        raise KeyError("%r is not in Live's browser. Add its folder to Places (Browser > Add Folder) so Live "
+                       "indexes it, or use track_create_audio_clip for audio tracks." % file_path)
+
+    def _sample_device_summary(self, device):
+        summary = {"id": self._object_id(device), "name": getattr(device, "name", ""),
+                   "class_name": getattr(device, "class_name", None)}
+        sample = getattr(device, "sample", None)
+        if sample is not None:
+            summary["sample"] = getattr(sample, "file_path", None)
+        return summary
+
+    def _same_file(self, device, file_path):
+        # file_path may be a bare file name when the sample was found by name only
+        sample = getattr(device, "sample", None)
+        loaded = getattr(sample, "file_path", None) if sample is not None else None
+        if not loaded:
+            return False
+        if os.path.basename(file_path) == file_path:
+            loaded = os.path.basename(loaded.replace("\\", "/"))
+        return os.path.normcase(os.path.normpath(loaded)) == os.path.normcase(os.path.normpath(file_path))
 
     def _rpc_browser_preview(self, params):
         browser = Live.Application.get_application().browser

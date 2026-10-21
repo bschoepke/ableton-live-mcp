@@ -1901,6 +1901,136 @@ def test_parameter_set_validates_and_coerces_values(monkeypatch):
     assert bridge._rpc_parameter_set({"ref": device_on_ref, "value": 0.6, "coerce": True})["parameter"]["value"] == 1
 
 
+
+class FakePlaceItem(FakeBrowserItem):
+    def __init__(self, name, uri=None, **kwargs):
+        FakeBrowserItem.__init__(self, name, **kwargs)
+        if uri:
+            self.uri = uri
+
+    @property
+    def children(self):
+        return list(self._children)
+
+
+class FakeSimpler(FakeDevice):
+    def __init__(self, file_path):
+        FakeDevice.__init__(self)
+        self.class_name = "OriginalSimpler"
+        self.sample = types.SimpleNamespace(file_path=file_path)
+        self.name = Path(file_path).stem
+
+
+class FakeDrumRack(FakeDevice):
+    def __init__(self):
+        FakeDevice.__init__(self)
+        self.name = "Drum Rack"
+        self.class_name = "DrumGroupDevice"
+        self.can_have_drum_pads = True
+        self.drum_pads = [types.SimpleNamespace(note=note, name="", chains=[]) for note in range(128)]
+        self.view = types.SimpleNamespace(selected_drum_pad=None)
+
+
+SAMPLE_PLACE = "C:/Samples Library"
+
+
+def make_sample_bridge(monkeypatch):
+    """Bridge whose browser has one Place mirroring files on disk; load_item behaves like Live's."""
+    bridge, song, app = make_bridge(monkeypatch)
+    kick = FakePlaceItem("Kick 01.wav", loadable=True)
+    snare = FakePlaceItem("Snare 01.wav", loadable=True)
+    dupe_a = FakePlaceItem("Hat.wav", loadable=True)
+    dupe_b = FakePlaceItem("Hat.wav", loadable=True)
+    app.browser.user_folders = [FakePlaceItem("Samples Library", uri="userfolder:C:/Samples%20Library", folder=True, children=[
+        FakePlaceItem("Drums", folder=True, children=[kick, snare, dupe_a]),
+        FakePlaceItem("Other", folder=True, children=[dupe_b]),
+    ])]
+    files = {id(kick): SAMPLE_PLACE + "/Drums/Kick 01.wav", id(snare): SAMPLE_PLACE + "/Drums/Snare 01.wav",
+             id(dupe_a): SAMPLE_PLACE + "/Drums/Hat.wav", id(dupe_b): SAMPLE_PLACE + "/Other/Hat.wav"}
+    song.view.selected_device = None
+    song.view.select_device = lambda device: setattr(song.view, "selected_device", device)
+
+    def load_item(item):
+        app.browser.loaded.append(item.name)
+        track, path = song.view.selected_track, files[id(item)]
+        device = song.view.selected_device
+        if isinstance(device, FakeDrumRack) and device.view.selected_drum_pad is not None:
+            pad = device.view.selected_drum_pad
+            pad.name = Path(path).stem
+            cell = FakeSimpler(path)
+            cell.class_name = "DrumCell"
+            pad.chains = [types.SimpleNamespace(devices=[cell])]
+            return
+        simpler = next((d for d in track.devices if isinstance(d, FakeSimpler)), None)
+        if simpler is not None:
+            simpler.sample.file_path = path
+        else:
+            track.devices.append(FakeSimpler(path))
+
+    app.browser.load_item = load_item
+    return bridge, song, app
+
+
+def track_ref(bridge, track):
+    obj_id = bridge._object_id(track)
+    bridge._remember_object(obj_id, track)
+    return {"id": obj_id}
+
+
+def test_load_sample_resolves_place_path_into_simpler_and_replaces(monkeypatch):
+    bridge, song, app = make_sample_bridge(monkeypatch)
+    track = song.tracks[1]
+    loaded = bridge._rpc_load_sample({"file_path": r"c:\samples library\drums\kick 01.wav", "target_track": track_ref(bridge, track)})
+    assert loaded["loaded"] is True and loaded["resolved_by"] == "path" and loaded["verified"] is True
+    assert loaded["item"]["path"] == "Samples Library > Drums > Kick 01.wav"
+    assert loaded["device"]["class_name"] == "OriginalSimpler" and loaded["replaced"] is False
+    assert song.view.selected_track is track
+
+    replaced = bridge._rpc_load_sample({"file_path": SAMPLE_PLACE + "/Drums/Snare 01.wav", "target_track": track_ref(bridge, track)})
+    assert replaced["replaced"] is True and replaced["verified"] is True
+    assert [d.sample.file_path for d in track.devices] == [SAMPLE_PLACE + "/Drums/Snare 01.wav"]
+
+
+def test_load_sample_into_drum_pad_adds_rack_when_missing(monkeypatch):
+    bridge, song, _app = make_sample_bridge(monkeypatch)
+    track = song.tracks[1]
+    track.insert_device = lambda name, index=-1: track.devices.insert(index, FakeDrumRack())
+    result = bridge._rpc_load_sample({"file_path": SAMPLE_PLACE + "/Drums/Kick 01.wav", "target_track": track_ref(bridge, track), "drum_pad": 36})
+    assert result["device"]["class_name"] == "DrumGroupDevice"
+    assert result["drum_pad"]["note"] == 36 and result["drum_pad"]["name"] == "Kick 01"
+    assert result["drum_pad"]["devices"][0]["class_name"] == "DrumCell"
+    assert result["verified"] is True
+
+
+def test_load_sample_falls_back_to_unique_name_and_reports_ambiguity(monkeypatch):
+    bridge, song, _app = make_sample_bridge(monkeypatch)
+    track = song.tracks[1]
+    by_name = bridge._rpc_load_sample({"file_path": "D:/elsewhere/Snare 01.wav", "target_track": track_ref(bridge, track)})
+    assert by_name["resolved_by"] == "name" and by_name["verified"] is True
+
+    ambiguous = bridge._rpc_load_sample({"file_path": "D:/elsewhere/Hat.wav", "target_track": track_ref(bridge, track)})
+    assert ambiguous["loaded"] is False and ambiguous["ambiguous"] is True
+    assert sorted(c["path"] for c in ambiguous["candidates"]) == ["Samples Library > Drums > Hat.wav", "Samples Library > Other > Hat.wav"]
+
+
+def test_load_sample_rejects_unknown_files_and_audio_tracks(monkeypatch):
+    bridge, song, app = make_sample_bridge(monkeypatch)
+    track = song.tracks[1]
+    try:
+        bridge._rpc_load_sample({"file_path": "C:/nowhere/missing.wav", "target_track": track_ref(bridge, track)})
+    except KeyError as exc:
+        assert "Places" in str(exc)
+    else:
+        raise AssertionError("expected unknown file error")
+    track.has_midi_input = False
+    try:
+        bridge._rpc_load_sample({"file_path": SAMPLE_PLACE + "/Drums/Kick 01.wav", "target_track": track_ref(bridge, track)})
+    except ValueError as exc:
+        assert "track_create_audio_clip" in str(exc)
+    else:
+        raise AssertionError("expected audio track error")
+    assert app.browser.loaded == []
+
 def test_app_browser_path_roots_and_stale_id_errors(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     assert bridge._resolve_path("app").get_version_string() == "test-live-version"

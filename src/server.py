@@ -507,6 +507,13 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "max_visited": {"type": "integer", "minimum": 1},
         **mutation_controls,
     }, ["name"]), forward("load_device")))
+    server.add_tool(Tool("live_load_sample", "Load audio file from a browser Place onto MIDI track: Simpler (replaces its sample) or Drum Rack pad (drum_pad=note).", schema({
+        "file_path": {"type": "string"},
+        "target_track": ref,
+        "drum_pad": {"type": "integer", "minimum": 0, "maximum": 127},
+        "max_visited": {"type": "integer", "minimum": 1},
+        **mutation_controls,
+    }, ["file_path"]), forward("load_sample")))
     server.add_tool(Tool("live_browser_preview", "Preview or stop previewing a BrowserItem.", schema({
         "item": browser_item_ref,
         "stop": {"type": "boolean"},
