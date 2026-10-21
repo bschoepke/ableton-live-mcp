@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from bridge import AbletonBridgeClient, BridgeConfig
+from bridge import AbletonBridgeClient, AbletonBridgeError, BridgeConfig
 from agent_m4l import build_device, command_file as agent_m4l_command_file, device_name as agent_m4l_device_name, infer_device_bounds, normalize_role, slugify, status_file as agent_m4l_status_file, udp_port as agent_m4l_udp_port, write_webui, write_webui_asset_files, write_webui_assets
 from mcp_stdio import StdioMcpServer, Tool
 from similar_sounds import find_similar_sounds
@@ -128,6 +128,119 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "steps": {"type": "integer", "minimum": 1, "description": "History steps to move (default 1)."},
         "redo": {"type": "boolean", "description": "Move forward (redo) instead of back."},
     }), live_undo))
+    def capture_meters(params, duration, wanted, began):
+        # Preferred: the Remote Script samples on Live's ~100 ms timer; we only poll its status.
+        bridge.request("meter_capture", {"action": "start", "tracks": sorted(wanted), "until_beat": params.get("until_beat")})
+        try:
+            idle = 0
+            while time.monotonic() - began < duration:
+                time.sleep(0.25)
+                status = bridge.request("meter_capture", {"action": "status"})
+                idle = idle + 1 if not status.get("playing") else 0
+                if not status.get("capturing") or idle > 3:
+                    break
+        finally:
+            done = bridge.request("meter_capture", {"action": "stop", "max_string_length": 1 << 24})
+        names = done.get("names") or []
+        return [(row[0], row[1], list(zip(names, row[2:]))) for row in json.loads(done.get("rows_json") or "[]")]
+
+    def poll_meters(params, duration, interval, until_beat, wanted, sample_code, began):
+        # Fallback for Remote Scripts without meter_capture: one socket round trip per sample.
+        rows = []
+        while time.monotonic() - began < duration:
+            song_time, playing, master, meters = bridge.request("exec", {"code": sample_code})
+            rows.append((float(song_time), float(master), [(n, float(v)) for n, v in meters if not wanted or n in wanted]))
+            if (until_beat is not None and song_time >= float(until_beat)) or (not playing and len(rows) > 3):
+                break
+            time.sleep(interval)
+        return rows
+
+    def live_meters(args):
+        # Mix check without Max for Live: poll output meters while the set plays and
+        # summarise per track and per section. Values are Live's meter scale (0..1), not dBFS.
+        params = dict(args or {})
+        duration = min(float(params.get("duration") or 8.0), 600.0)
+        interval = max(float(params.get("interval") or 0.1), 0.02)
+        until_beat = params.get("until_beat")
+        wanted = set(params.get("tracks") or [])
+        sample_code = (
+            "m = song.master_track; "
+            "result = [song.current_song_time, song.is_playing, max(m.output_meter_left, m.output_meter_right),"
+            " [(t.name, max(t.output_meter_left, t.output_meter_right)) for t in list(song.tracks) + list(song.return_tracks)]]"
+        )
+        started = params.get("play_from") is not None
+        beat = float(params["play_from"]) if started else None
+        if started:
+            # start_playing() begins at the start marker; the seek lands on the next Live call
+            bridge.request("exec", {"code": "song.start_playing()"})
+            bridge.request("exec", {"code": "song.current_song_time = %r" % beat})
+        began = time.monotonic()
+        try:
+            rows, method = capture_meters(params, duration, wanted, began), "remote_tick"
+        except AbletonBridgeError as exc:
+            if "meter_capture" not in str(exc):
+                raise
+            rows, method = poll_meters(params, duration, interval, until_beat, wanted, sample_code, began), "socket_poll"
+        finally:
+            if started and not params.get("keep_playing"):
+                bridge.request("exec", {"code": "song.stop_playing()"})
+        if started:
+            # drop readings taken before the seek landed
+            first = next((i for i, row in enumerate(rows) if 0 <= row[0] - beat < 4), len(rows))
+            rows = rows[first:]
+
+        def stats(levels):
+            return {"peak": round(max(levels), 3), "mean": round(sum(levels) / len(levels), 3)} if levels else None
+
+        def per_track(selected):
+            levels = {}
+            for _, _, meters in selected:
+                for name, level in meters:
+                    levels.setdefault(name, []).append(level)
+            return {name: stats(values) for name, values in levels.items()}
+
+        tracks = per_track(rows)
+        result = {
+            "samples": len(rows),
+            "rate_hz": round(len(rows) / max(time.monotonic() - began, 1e-6), 1),
+            "method": method,
+            "beats": [round(rows[0][0], 2), round(rows[-1][0], 2)] if rows else None,
+            "scale": "Live meter 0..1, not dBFS",
+            "master": stats([row[1] for row in rows]),
+            "tracks": tracks,
+            "silent": sorted(name for name, value in tracks.items() if value["peak"] < 0.01),
+        }
+        if rows and not any(row[1] > 0 for row in rows) and not started:
+            result["hint"] = "Nothing was playing; pass play_from to start the transport."
+        soloed = bridge.request("eval", {"expr": "[t.name for t in list(song.tracks) + list(song.return_tracks) if t.solo]"})
+        if soloed:
+            result["soloed"] = soloed
+            result["warning"] = "Tracks are soloed, so the master only carries them."
+        if params.get("sections"):
+            result["sections"] = {}
+            for section in params["sections"]:
+                chosen = [row for row in rows if float(section["start"]) <= row[0] < float(section["end"])]
+                loudest = sorted(((value["peak"], name) for name, value in per_track(chosen).items()), reverse=True)[:5]
+                result["sections"][section.get("name") or "%s-%s" % (section["start"], section["end"])] = {
+                    "samples": len(chosen),
+                    "master": stats([row[1] for row in chosen]),
+                    "loudest": [{"track": name, "peak": peak} for peak, name in loudest],
+                }
+        return result
+
+    server.add_tool(Tool("live_meters", "Poll track/return/master output meters while playing; per-track and per-section peak/mean (Live meter 0..1, not dBFS). play_from starts+stops transport.", schema({
+        "duration": {"type": "number", "description": "Seconds to sample (max 600)."},
+        "interval": {"type": "number"},
+        "play_from": {"type": "number"},
+        "until_beat": {"type": "number"},
+        "keep_playing": {"type": "boolean"},
+        "tracks": {"type": "array", "items": {"type": "string"}},
+        "sections": {"type": "array", "items": {"type": "object", "properties": {
+            "name": {"type": "string"},
+            "start": {"type": "number"},
+            "end": {"type": "number"},
+        }, "required": ["start", "end"], "additionalProperties": False}},
+    }), live_meters))
     response_controls = {
         "detail": {"type": "boolean"},
         "max_items": {"type": "integer"},

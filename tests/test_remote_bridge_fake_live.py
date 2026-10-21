@@ -1901,6 +1901,30 @@ def test_parameter_set_validates_and_coerces_values(monkeypatch):
     assert bridge._rpc_parameter_set({"ref": device_on_ref, "value": 0.6, "coerce": True})["parameter"]["value"] == 1
 
 
+
+def test_meter_capture_samples_on_live_ticks_until_beat(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    queued = []
+    bridge.schedule_message = lambda delay, callback: queued.append(callback)
+    for track, level in zip(song.tracks, (0.5, 0.0)):
+        track.output_meter_left = track.output_meter_right = level
+    song.return_tracks[0].output_meter_left = song.return_tracks[0].output_meter_right = 0.2
+    song.master_track.output_meter_left, song.master_track.output_meter_right = 0.6, 0.7
+    song.is_playing = True
+
+    started = bridge._rpc_meter_capture({"action": "start", "tracks": ["Track 1", "A-Reverb"], "until_beat": 2.0})
+    assert started["tracks"] == ["Track 1", "A-Reverb"]
+    while queued:
+        song.current_song_time += 1.0
+        queued.pop(0)()
+    status = bridge._rpc_meter_capture({"action": "status"})
+    assert status == {"capturing": False, "samples": 3, "time": 2.0, "playing": True}
+
+    done = bridge._rpc_meter_capture({"action": "stop"})
+    assert done["names"] == ["Track 1", "A-Reverb"]
+    assert json.loads(done["rows_json"]) == [[0.0, 0.7, 0.5, 0.2], [1.0, 0.7, 0.5, 0.2], [2.0, 0.7, 0.5, 0.2]]
+    assert bridge._rpc_meter_capture({"action": "status"}) == {"capturing": False, "samples": 0}
+
 def test_app_browser_path_roots_and_stale_id_errors(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)
     assert bridge._resolve_path("app").get_version_string() == "test-live-version"

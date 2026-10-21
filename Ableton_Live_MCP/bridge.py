@@ -1742,6 +1742,49 @@ class AbletonLiveMCP(ControlSurface):
         browser.preview_item(item)
         return {"previewing": True, "item": self._browser_item_result(None, item, None)}
 
+    def _rpc_meter_capture(self, params):
+        # Sample output meters on Live's own timer (one row per ~100 ms tick) so readings don't
+        # depend on socket round trips. start -> status... -> stop returns the buffered rows.
+        action = params.get("action") or "status"
+        capture = getattr(self, "_meter_capture", None)
+        if action == "start":
+            song = self.song()
+            wanted = set(params.get("tracks") or [])
+            tracks = [t for t in list(song.tracks) + list(song.return_tracks) if not wanted or t.name in wanted]
+            self._meter_capture = {
+                "active": True, "tracks": tracks, "rows": [],
+                "max_samples": int(params.get("max_samples") or 12000),
+                "until_beat": params.get("until_beat"),
+            }
+            self._meter_tick()
+            return {"capturing": True, "tracks": [t.name for t in tracks]}
+        if capture is None:
+            return {"capturing": False, "samples": 0}
+        if action == "stop":
+            capture["active"] = False
+            self._meter_capture = None
+            # rows go back as one JSON string so the response encoder's list limits can't truncate them
+            return {"capturing": False, "samples": len(capture["rows"]),
+                    "names": [t.name for t in capture["tracks"]], "rows_json": json.dumps(capture["rows"])}
+        last = capture["rows"][-1] if capture["rows"] else None
+        return {"capturing": capture["active"], "samples": len(capture["rows"]),
+                "time": last[0] if last else None, "playing": bool(getattr(self.song(), "is_playing", False))}
+
+    def _meter_tick(self):
+        capture = getattr(self, "_meter_capture", None)
+        if not capture or not capture["active"] or not self._running:
+            return
+        song = self.song()
+        master = song.master_track
+        row = [round(float(song.current_song_time), 3), round(max(master.output_meter_left, master.output_meter_right), 4)]
+        row += [round(max(t.output_meter_left, t.output_meter_right), 4) for t in capture["tracks"]]
+        capture["rows"].append(row)
+        until = capture["until_beat"]
+        if len(capture["rows"]) >= capture["max_samples"] or (until is not None and row[0] >= float(until)):
+            capture["active"] = False
+            return
+        self.schedule_message(1, self._meter_tick)
+
     def _rpc_eval(self, params):
         self._reject_legacy_note_api_code(params.get("expr"), params)
         ref = params.get("ref")
