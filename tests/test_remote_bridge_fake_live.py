@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import socket
 import sys
 import threading
@@ -1900,6 +1901,97 @@ def test_parameter_set_validates_and_coerces_values(monkeypatch):
         raise AssertionError("expected quantized validation error")
     assert bridge._rpc_parameter_set({"ref": device_on_ref, "value": 0.6, "coerce": True})["parameter"]["value"] == 1
 
+
+
+class FakeCurveParameter(FakeParameter):
+    """Display strings like Live's: a dB fader with -inf and a unicode minus, a Hz/kHz filter, ms/s times."""
+
+    def __init__(self, name, render, **kwargs):
+        FakeParameter.__init__(self, name, **kwargs)
+        self._render = render
+
+    def str_for_value(self, value):
+        return self._render(value)
+
+
+def _db_display(value):
+    if value <= 0.0:
+        return "-inf dB"
+    db = 40.0 * math.log10(value / 0.85)
+    return ("%.1f dB" % db).replace("-", chr(0x2212))
+
+
+def _hz_display(value):
+    hz = 20.0 * 1000.0 ** value
+    return "%.1f kHz" % (hz / 1000.0) if hz >= 1000.0 else "%.0f Hz" % hz
+
+
+def _release_display(value):
+    seconds = 0.001 * 10000.0 ** value
+    return "%.2f s" % seconds if seconds >= 1.0 else "%.0f ms" % (seconds * 1000.0)
+
+
+def test_parameter_set_accepts_display_values(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    device = song.tracks[0].devices[0]
+    volume = FakeCurveParameter("Volume", _db_display, value=0.85)
+    freq = FakeCurveParameter("Frequency", _hz_display, value=0.9)
+    release = FakeCurveParameter("Release", _release_display, value=0.5)
+    falling = FakeCurveParameter("Inverted", lambda v: "%.1f dB" % (-24.0 * v), value=0.0)
+    kind = FakeParameter("Type", 0.0, maximum=3.0, quantized=True, items=["Low-pass", "High-pass", "Band-pass", "Notch"])
+    device.parameters.extend([volume, freq, release, falling, kind])
+    ref = lambda param: {"id": bridge._parameter_summary(param)["id"]}
+
+    result = bridge._rpc_parameter_set({"ref": ref(volume), "display": "-6 dB"})
+    assert result["requested_display"] == "-6 dB"
+    assert abs(40.0 * math.log10(volume.value / 0.85) + 6.0) < 1e-3
+    assert result["parameter"]["display"] == chr(0x2212) + "6.0 dB"
+
+    bridge._rpc_parameter_set({"ref": ref(volume), "display": "-inf dB"})
+    assert volume.value == 0.0
+
+    bridge._rpc_parameter_set({"ref": ref(freq), "display": "900 Hz"})
+    assert abs(20.0 * 1000.0 ** freq.value - 900.0) < 0.5
+    bridge._rpc_parameter_set({"ref": ref(freq), "display": "2.4 kHz"})
+    assert abs(20.0 * 1000.0 ** freq.value - 2400.0) < 1.0
+
+    bridge._rpc_parameter_set({"ref": ref(release), "display": "1.5 s"})
+    assert abs(0.001 * 10000.0 ** release.value - 1.5) < 1e-3
+    bridge._rpc_parameter_set({"ref": ref(release), "display": 0.25})
+    assert abs(0.001 * 10000.0 ** release.value - 0.25) < 1e-3
+
+    bridge._rpc_parameter_set({"ref": ref(falling), "display": "-12 dB"})
+    assert abs(falling.value - 0.5) < 1e-6
+
+    assert bridge._rpc_parameter_set({"ref": ref(kind), "display": "high-pass"})["parameter"]["value"] == 1.0
+    assert bridge._rpc_parameter_set({"ref": ref(kind), "display": "Notch"})["parameter"]["value"] == 3.0
+
+
+def test_parameter_set_display_rejects_unmatchable_values(monkeypatch):
+    bridge, song, _app = make_bridge(monkeypatch)
+    device = song.tracks[0].devices[0]
+    freq = FakeCurveParameter("Frequency", _hz_display, value=0.9)
+    kind = FakeParameter("Type", 0.0, maximum=3.0, quantized=True, items=["Low-pass", "High-pass", "Band-pass", "Notch"])
+    device.parameters.extend([freq, kind])
+    ref = lambda param: {"id": bridge._parameter_summary(param)["id"]}
+    for param, display, message in [
+        (freq, "40 kHz", "outside the parameter range"),
+        (freq, "bright", "no number"),
+        (kind, "pass", "matches none or several"),
+        (FakeCurveParameter("Rate", lambda v: "1/16" if v < 0.5 else "Sync", value=0.0), "-6 dB", "no numeric display"),
+    ]:
+        try:
+            bridge._rpc_parameter_set({"ref": ref(param), "display": display})
+        except ValueError as exc:
+            assert message in str(exc), (display, str(exc))
+        else:
+            raise AssertionError("expected %r to be rejected" % display)
+    try:
+        bridge._rpc_parameter_set({"ref": ref(freq)})
+    except ValueError as exc:
+        assert "value or display" in str(exc)
+    else:
+        raise AssertionError("expected missing value error")
 
 def test_app_browser_path_roots_and_stale_id_errors(monkeypatch):
     bridge, _song, _app = make_bridge(monkeypatch)

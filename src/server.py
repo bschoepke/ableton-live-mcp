@@ -187,12 +187,13 @@ def make_server(client: AbletonBridgeClient | None = None) -> StdioMcpServer:
         "limit": {"type": "integer", "minimum": 0},
         **response_controls,
     }, ["ref"]), forward("device_parameters")))
-    server.add_tool(Tool("live_parameter_set", "Set DeviceParameter value.", schema({
+    server.add_tool(Tool("live_parameter_set", "Set DeviceParameter by raw value, or display ('-6 dB', '900 Hz', 'High-pass').", schema({
         "ref": ref,
         "value": {"type": "number"},
+        "display": {"type": ["string", "number"]},
         "coerce": {"type": "boolean"},
         **mutation_controls,
-    }, ["ref", "value"]), forward("parameter_set")))
+    }, ["ref"]), forward("parameter_set")))
     server.add_tool(Tool("live_clip_notes", "List MIDI notes from a clip compactly.", schema({
         "ref": ref,
         "limit": {"type": "integer", "minimum": 0},

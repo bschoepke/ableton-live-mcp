@@ -3,6 +3,7 @@ from __future__ import absolute_import, print_function
 import json
 import hashlib
 import os
+import re
 import socket
 import sys
 import threading
@@ -87,6 +88,21 @@ def _constant_signature(value):
     if hasattr(value, "co_code"):
         return _code_signature(value)
     return repr(value)
+
+
+_DISPLAY_NUMBER = re.compile(r"([-+]?(?:\d+\.?\d*|\.\d+)|[-+]?inf)\s*([a-zA-Z%]*)")
+_DISPLAY_UNIT_SCALE = {"khz": 1000.0, "ms": 0.001}
+
+
+def _display_number(text):
+    """Parse a Live display string (or plain number) into comparable base units: Hz, s, dB, %."""
+    if isinstance(text, (int, float)):
+        return float(text)
+    match = _DISPLAY_NUMBER.search(str(text).replace(chr(0x2212), "-"))  # Live renders negatives with a unicode minus
+    if not match:
+        return None
+    number = float(match.group(1))
+    return number * _DISPLAY_UNIT_SCALE.get(match.group(2).lower(), 1.0)
 
 
 class _EncodedResult(list):
@@ -1109,8 +1125,11 @@ class AbletonLiveMCP(ControlSurface):
         if not hasattr(param, "value"):
             raise AttributeError("Object has no value property")
         value = params.get("value")
+        display = params.get("display")
+        if value is None and display is None:
+            raise ValueError("value or display is required")
         if value is None:
-            raise ValueError("value is required")
+            value = self._value_for_display(param, display)
         min_value = before.get("min")
         max_value = before.get("max")
         if params.get("coerce"):
@@ -1134,8 +1153,55 @@ class AbletonLiveMCP(ControlSurface):
             "before": before,
             "requested_value": params.get("value"),
             "applied_value": after.get("value"),
+            **({"requested_display": display} if display is not None else {}),
             "changed": after.get("value") != before.get("value"),
         }
+
+    def _value_for_display(self, param, display):
+        # Map a human value ("-6 dB", "900 Hz", "2.4 kHz", "250 ms", "High-pass") onto the
+        # parameter's raw range. Quantized parameters match value_items by name; continuous
+        # ones are bisected over str_for_value, which works for Live's non-linear dB/Hz curves.
+        if getattr(param, "is_quantized", False) and isinstance(display, str):
+            items = [str(item) for item in getattr(param, "value_items", [])]
+            want = display.strip().lower()
+            for matcher in (lambda item: item.lower() == want, lambda item: item.lower().startswith(want)):
+                matches = [index for index, item in enumerate(items) if matcher(item)]
+                if len(matches) == 1:
+                    return param.min + matches[0]
+            raise ValueError("display %r matches none or several of %s" % (display, items))
+        target = _display_number(display)
+        if target is None:
+            raise ValueError("display %r has no number to match" % (display,))
+        at_lo, at_hi = _display_number(param.str_for_value(param.min)), _display_number(param.str_for_value(param.max))
+        if at_lo is None or at_hi is None:
+            raise ValueError("parameter %r has no numeric display to match" % getattr(param, "name", ""))
+        rising = at_hi >= at_lo
+        if not min(at_lo, at_hi) <= target <= max(at_lo, at_hi):
+            raise ValueError("display %r is outside the parameter range %s .. %s" % (
+                display, param.str_for_value(param.min), param.str_for_value(param.max)))
+        if target in (float("inf"), float("-inf")):
+            return param.min if (target < 0) == rising else param.max
+
+        def edge(inclusive):
+            # first raw value whose display passes the target (or reaches it, when inclusive)
+            a, b = float(param.min), float(param.max)
+            for _ in range(48):
+                mid = (a + b) / 2.0
+                shown = _display_number(param.str_for_value(mid))
+                if shown is None:
+                    raise ValueError("parameter %r has no numeric display at %s" % (getattr(param, "name", ""), mid))
+                before = shown <= target if inclusive else shown < target
+                if before == rising:
+                    a = mid
+                else:
+                    b = mid
+            return (a + b) / 2.0
+
+        # Displays are rounded, so many raw values show the same text; aim for the middle of that run.
+        low, high = edge(False), edge(True)
+        if not rising:
+            low, high = high, low
+        return (low + high) / 2.0 if high > low else low
 
     def _rpc_clip_notes(self, params):
         clip = self._resolve(params.get("ref"))
